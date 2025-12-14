@@ -10,12 +10,13 @@ interp_points = np.linspace(0, 100, 100)
 
 # Database connection settings
 def get_connection():
+    secrets = st.secrets["db"]
     return psycopg2.connect(
-        dbname=st.secrets["db"]["dbname"],
-        user=st.secrets["db"]["user"],
-        password=st.secrets["db"]["password"],
-        host=st.secrets["db"]["host"],
-        port=st.secrets["db"]["port"]
+        host=secrets["host"],
+        port=secrets["port"],
+        dbname=secrets["dbname"],
+        user=secrets["user"],
+        password=secrets["password"],
     )
 
 def normalize_time(df, start_frame, end_frame):
