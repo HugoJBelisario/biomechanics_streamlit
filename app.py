@@ -370,32 +370,53 @@ with tab1:
     arm_segment = "RAR" if handedness == "R" else "LAR"
 
     # --- Session date selection ---
+    # --- Session date selection (multi + All Dates) ---
     cur.execute("""
-        SELECT DISTINCT t.take_date
-        FROM takes t
-        JOIN athletes a ON a.athlete_id = t.athlete_id
-        WHERE a.athlete_name = %s
-        ORDER BY t.take_date
-    """, (selected_pitcher,))
+                SELECT DISTINCT t.take_date
+                FROM takes t
+                         JOIN athletes a ON a.athlete_id = t.athlete_id
+                WHERE a.athlete_name = %s
+                ORDER BY t.take_date
+                """, (selected_pitcher,))
     dates = [row[0].strftime("%Y-%m-%d") for row in cur.fetchall()]
-    selected_date = st.selectbox("Select Session Date", dates)
+    dates.insert(0, "All Dates")
+
+    selected_dates = st.multiselect(
+        "Select Session Date(s)",
+        options=dates,
+        default=["All Dates"],
+        key="tab1_dates"
+    )
 
     # --- Get takes for selected pitcher/date ---
-    cur.execute("""
-        SELECT t.take_id, t.file_name, t.pitch_velo
-        FROM takes t
-        JOIN athletes a ON t.athlete_id = a.athlete_id
-        WHERE a.athlete_name = %s AND t.take_date = %s
-        ORDER BY t.file_name
-    """, (selected_pitcher, selected_date))
-    take_rows = cur.fetchall()
+    # --- Get takes for selected pitcher / dates ---
+    if "All Dates" in selected_dates or not selected_dates:
+        cur.execute("""
+                    SELECT t.take_id, t.file_name, t.pitch_velo, t.take_date
+                    FROM takes t
+                             JOIN athletes a ON t.athlete_id = a.athlete_id
+                    WHERE a.athlete_name = %s
+                    ORDER BY t.take_date, t.file_name
+                    """, (selected_pitcher,))
+        take_rows = cur.fetchall()
+    else:
+        placeholders = ",".join(["%s"] * len(selected_dates))
+        cur.execute(f"""
+            SELECT t.take_id, t.file_name, t.pitch_velo, t.take_date
+            FROM takes t
+            JOIN athletes a ON t.athlete_id = a.athlete_id
+            WHERE a.athlete_name = %s
+              AND t.take_date IN ({placeholders})
+            ORDER BY t.take_date, t.file_name
+        """, (selected_pitcher, *selected_dates))
+        take_rows = cur.fetchall()
 
     if not take_rows:
         st.warning("No takes found for this pitcher and date.")
         st.stop()
 
     rows = []
-    for tid, file_name, velo in take_rows:
+    for tid, file_name, velo, take_date in take_rows:
         # Query torso power
         cur.execute("""
             SELECT frame, x_data FROM time_series_data ts
@@ -464,6 +485,7 @@ with tab1:
 
         rows.append({
             "take_id": tid,
+            "Session Date": take_date.strftime("%Y-%m-%d"),
             "Velocity": velo,
             "AUC (Drive → 0)": round(float(auc_total), 2),
             "AUC (Drive → Peak Arm Energy)": round(float(auc_to_peak), 2),
@@ -492,7 +514,7 @@ with tab1:
                     auc_peak = float(row["AUC (Drive → Peak Arm Energy)"])
                 except Exception:
                     auc_peak = float("nan")
-                return f"{row['Velocity']} mph, {auc0:.2f}, {auc_peak:.2f}"
+                return f"{row['Session Date']} | {row['Velocity']} mph | {auc0:.2f} → {auc_peak:.2f}"
 
             df_tab1["label"] = df_tab1.apply(make_label_tab1, axis=1)
 
