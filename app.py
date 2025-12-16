@@ -1608,6 +1608,7 @@ with tab3:
                 else:
                     # LHP: take the most POSITIVE value
                     vals = np.array([np.nanmax(y_window)])
+                vals = np.array([abs(raw_val)])
 
             # Z-axis: always return the positive maxima for the Z component, but restrict to values before Shoulder ER Max frame
             elif torso_pelvis_axis == "Z":
