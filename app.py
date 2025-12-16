@@ -1578,12 +1578,36 @@ with tab3:
                 raw_val = np.nanmin(x_vals)
                 vals = np.array([abs(raw_val)])  # normalize flexion to positive
 
-            # Y-axis: use absolute maxima regardless of sign or handedness
+            # Y-axis: handedness-aware, pre-BR windowed logic
             elif torso_pelvis_axis == "Y":
+                # ---------------------------------------------
+                # Pre‑BR windowed torso–pelvis Y angular velocity
+                # Convention:
+                #   RHP → NEGATIVE peak (glove-side)
+                #   LHP → POSITIVE peak (glove-side)
+                # Window: 50 frames before Ball Release
+                # ---------------------------------------------
                 y_vals = arr[:, 1]
-                # Use absolute maxima regardless of sign or handedness
-                idx = np.nanargmax(np.abs(y_vals))
-                vals = np.array([y_vals[idx]])
+                frame_vals = frames
+
+                if br_frame_010 is not None:
+                    start = br_frame_010 - 50
+                    end   = br_frame_010
+                    mask = (frame_vals >= start) & (frame_vals <= end)
+                    y_window = y_vals[mask]
+                else:
+                    y_window = y_vals
+
+                # Fallback if window empty
+                if y_window.size == 0:
+                    y_window = y_vals
+
+                if handedness_local == "R":
+                    # RHP: take the most NEGATIVE value
+                    vals = np.array([np.nanmin(y_window)])
+                else:
+                    # LHP: take the most POSITIVE value
+                    vals = np.array([np.nanmax(y_window)])
 
             # Z-axis: always return the positive maxima for the Z component, but restrict to values before Shoulder ER Max frame
             elif torso_pelvis_axis == "Z":
