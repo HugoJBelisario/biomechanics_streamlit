@@ -538,24 +538,65 @@ with tab1:
         df_tab1["AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(df_tab1["AUC (Drive → Peak Arm Energy)"], errors="coerce")
         df_tab1 = df_tab1.dropna(subset=["Velocity", "AUC (Drive → 0)", "AUC (Drive → Peak Arm Energy)"])
 
-        slope1, intercept1, r_value1, _, _ = linregress(df_tab1["Velocity"], df_tab1["AUC (Drive → 0)"])
-        slope2, intercept2, r_value2, _, _ = linregress(df_tab1["Velocity"], df_tab1["AUC (Drive → Peak Arm Energy)"])
-        line1 = slope1 * df_tab1["Velocity"] + intercept1
-        line2 = slope2 * df_tab1["Velocity"] + intercept2
+        import plotly.express as px
+
+        color_cycle = px.colors.qualitative.Plotly
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df_tab1["Velocity"], y=df_tab1["AUC (Drive → 0)"],
-            mode='markers', name="AUC (Drive → 0)", marker=dict(color='blue')))
-        fig.add_trace(go.Scatter(
-            x=df_tab1["Velocity"], y=line1,
-            mode='lines', name=f"R²={r_value1**2:.2f}", line=dict(color='blue', dash='dash')))
-        fig.add_trace(go.Scatter(
-            x=df_tab1["Velocity"], y=df_tab1["AUC (Drive → Peak Arm Energy)"],
-            mode='markers', name="AUC (Drive → Peak Arm Energy)", marker=dict(color='orange')))
-        fig.add_trace(go.Scatter(
-            x=df_tab1["Velocity"], y=line2,
-            mode='lines', name=f"R²={r_value2**2:.2f}", line=dict(color='orange', dash='dash')))
+        color_idx = 0
+
+        for date, sub in df_tab1.groupby("Session Date"):
+
+            if len(sub) < 2:
+                continue
+
+            color = color_cycle[color_idx % len(color_cycle)]
+            x = sub["Velocity"]
+
+            # ---------------- AUC Drive → 0 ----------------
+            y0 = sub["AUC (Drive → 0)"]
+            slope0, intercept0, r0, _, _ = linregress(x, y0)
+            x_fit = np.linspace(x.min(), x.max(), 100)
+            y_fit0 = slope0 * x_fit + intercept0
+
+            fig.add_trace(go.Scatter(
+                x=x,
+                y=y0,
+                mode="markers",
+                marker=dict(color=color),
+                name=f"{date} | AUC → 0"
+            ))
+
+            fig.add_trace(go.Scatter(
+                x=x_fit,
+                y=y_fit0,
+                mode="lines",
+                line=dict(color=color, dash="dash"),
+                name=f"{date} | R²={r0 ** 2:.2f}"
+            ))
+
+            # ----------- AUC Drive → Peak Arm Energy --------
+            y1 = sub["AUC (Drive → Peak Arm Energy)"]
+            slope1, intercept1, r1, _, _ = linregress(x, y1)
+            y_fit1 = slope1 * x_fit + intercept1
+
+            fig.add_trace(go.Scatter(
+                x=x,
+                y=y1,
+                mode="markers",
+                marker=dict(color=color, symbol="triangle-up"),
+                name=f"{date} | AUC → Peak"
+            ))
+
+            fig.add_trace(go.Scatter(
+                x=x_fit,
+                y=y_fit1,
+                mode="lines",
+                line=dict(color=color, dash="dot"),
+                name=f"{date} | Peak R²={r1 ** 2:.2f}"
+            ))
+
+            color_idx += 1
 
         fig.update_layout(
         title="Velocity vs Trunk AUC",
