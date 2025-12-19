@@ -1241,7 +1241,6 @@ with tab3:
         "Max Shoulder External Rotation Velocity",
         "Max Elbow Extension Velocity",
         "Max Shoulder Horizontal Abduction/Adduction Velocity",
-        "Max Hand Velocity",
         "Max Shoulder Horizontal Abduction",
         "Max Shoulder External Rotation",
         "Shoulder External Rotation at Max Shoulder Horizontal Abduction",
@@ -1279,7 +1278,6 @@ with tab3:
             "Max Shoulder External Rotation Velocity",
             "Max Elbow Extension Velocity",
             "Max Shoulder Horizontal Abduction/Adduction Velocity",
-            "Max Hand Velocity",
         ],
 
         "Pelvis and Torso Angular Velocities": [
@@ -1374,7 +1372,6 @@ with tab3:
             lead_knee_velo_segment = "LT_KNEE_ANGULAR_VELOCITY"
             elbow_velo_segment = "RT_ELBOW_ANGULAR_VELOCITY"
             shank_seg_name = "LSK"
-            hand_velo_segment = "RHA"
         else:
             shoulder_velo_segment = "LT_SHOULDER_ANGULAR_VELOCITY"
             hip_velo_segment   = "LT_HIP_ANGULAR_VELOCITY"
@@ -1383,7 +1380,6 @@ with tab3:
             lead_knee_velo_segment = "RT_KNEE_ANGULAR_VELOCITY"
             elbow_velo_segment = "LT_ELBOW_ANGULAR_VELOCITY"
             shank_seg_name = "RSK"
-            hand_velo_segment = "LHA"
 
         # Get ball release frame for this take
         br_frame_010 = get_ball_release_frame(take_id_010, handedness_local, cur)
@@ -1488,13 +1484,6 @@ with tab3:
             velo_segment = "RT_SHOULDER" if handedness_local == "R" else "LT_SHOULDER"
         elif selected_metric_010 == "Shoulder External Rotation at Max Shoulder Horizontal Abduction":
             velo_segment = "RT_SHOULDER_ANGLE" if handedness_local == "R" else "LT_SHOULDER_ANGLE"
-        elif selected_metric_010 == "Max Hand Velocity":
-            # Peak hand CGVel (X) across entire pitch
-            x_vals = arr[:, 0]
-
-            # Peak magnitude, direction-agnostic
-            raw_val = np.nanmax(np.abs(x_vals))
-            vals = np.array([raw_val])
         else:
             velo_segment = None
 
@@ -1510,11 +1499,10 @@ with tab3:
               AND c.category_name = CASE
                     WHEN %s = 'CenterOfMass_VELO' THEN 'PROCESSED'
                     WHEN %s IN ('RT_SHOULDER', 'LT_SHOULDER') THEN 'JOINT_ANGLES'
-                    WHEN %s IN ('RHA', 'LHA') THEN 'CGVel'
                     ELSE 'ORIGINAL'
                 END
               AND s.segment_name = %s
-        """, (take_id_010, velo_segment, velo_segment, velo_segment, velo_segment))
+        """, (take_id_010, velo_segment, velo_segment, velo_segment))
         data = cur.fetchall()
         if not data:
             continue
