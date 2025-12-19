@@ -1489,7 +1489,12 @@ with tab3:
         elif selected_metric_010 == "Shoulder External Rotation at Max Shoulder Horizontal Abduction":
             velo_segment = "RT_SHOULDER_ANGLE" if handedness_local == "R" else "LT_SHOULDER_ANGLE"
         elif selected_metric_010 == "Max Hand Velocity":
-            velo_segment = hand_velo_segment
+            # Peak hand CGVel (X) across entire pitch
+            x_vals = arr[:, 0]
+
+            # Peak magnitude, direction-agnostic
+            raw_val = np.nanmax(np.abs(x_vals))
+            vals = np.array([raw_val])
         else:
             velo_segment = None
 
