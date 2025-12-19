@@ -1372,6 +1372,7 @@ with tab3:
             lead_knee_velo_segment = "LT_KNEE_ANGULAR_VELOCITY"
             elbow_velo_segment = "RT_ELBOW_ANGULAR_VELOCITY"
             shank_seg_name = "LSK"
+            hand_velo_segment = "RHA"
         else:
             shoulder_velo_segment = "LT_SHOULDER_ANGULAR_VELOCITY"
             hip_velo_segment   = "LT_HIP_ANGULAR_VELOCITY"
@@ -1380,6 +1381,7 @@ with tab3:
             lead_knee_velo_segment = "RT_KNEE_ANGULAR_VELOCITY"
             elbow_velo_segment = "LT_ELBOW_ANGULAR_VELOCITY"
             shank_seg_name = "RSK"
+            hand_velo_segment = "LHA"
 
         # Get ball release frame for this take
         br_frame_010 = get_ball_release_frame(take_id_010, handedness_local, cur)
@@ -1484,6 +1486,8 @@ with tab3:
             velo_segment = "RT_SHOULDER" if handedness_local == "R" else "LT_SHOULDER"
         elif selected_metric_010 == "Shoulder External Rotation at Max Shoulder Horizontal Abduction":
             velo_segment = "RT_SHOULDER_ANGLE" if handedness_local == "R" else "LT_SHOULDER_ANGLE"
+        elif selected_metric_010 == "Max Hand Velocity":
+            velo_segment = hand_velo_segment
         else:
             velo_segment = None
 
@@ -1499,10 +1503,11 @@ with tab3:
               AND c.category_name = CASE
                     WHEN %s = 'CenterOfMass_VELO' THEN 'PROCESSED'
                     WHEN %s IN ('RT_SHOULDER', 'LT_SHOULDER') THEN 'JOINT_ANGLES'
+                    WHEN %s IN ('RHA', 'LHA') THEN 'CGVel'
                     ELSE 'ORIGINAL'
                 END
               AND s.segment_name = %s
-        """, (take_id_010, velo_segment, velo_segment, velo_segment))
+        """, (take_id_010, velo_segment, velo_segment, velo_segment, velo_segment))
         data = cur.fetchall()
         if not data:
             continue
