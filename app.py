@@ -1241,6 +1241,7 @@ with tab3:
         "Max Shoulder External Rotation Velocity",
         "Max Elbow Extension Velocity",
         "Max Shoulder Horizontal Abduction/Adduction Velocity",
+        "Max Hand Velocity",
         "Max Shoulder Horizontal Abduction",
         "Max Shoulder External Rotation",
         "Shoulder External Rotation at Max Shoulder Horizontal Abduction",
@@ -1278,6 +1279,7 @@ with tab3:
             "Max Shoulder External Rotation Velocity",
             "Max Elbow Extension Velocity",
             "Max Shoulder Horizontal Abduction/Adduction Velocity",
+            "Max Hand Velocity",
         ],
 
         "Pelvis and Torso Angular Velocities": [
