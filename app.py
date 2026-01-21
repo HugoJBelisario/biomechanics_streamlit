@@ -244,7 +244,7 @@ st.title("Biomechanics Viewer")
 conn = get_connection()
 cur = conn.cursor()
 
-tab1, tab2, tab3 = st.tabs(["Compensation Analysis", "Session Comparison", "0-10 Report"])
+tab1, tab2, tab3, tab4 = st.tabs(["Compensation Analysis", "Session Comparison", "0-10 Report", "Time-Series"])
 def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment, arm_segment, velocity_min, velocity_max):
     # Get all take_ids on that date within velocity range
     cur.execute("""
@@ -272,7 +272,7 @@ def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment,
         """, (take_id, torso_segment))
         df_power = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
         df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
-        drive_start_frame = df_power[df_power["x_data"] < -1000]["frame"].min()
+        drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
         if pd.isna(drive_start_frame):
             continue
 
@@ -287,10 +287,26 @@ def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment,
         df_knee = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
         if df_knee.empty:
             continue
-        df_knee_pre_drive = df_knee[df_knee["frame"] < drive_start_frame]
-        if df_knee_pre_drive.empty:
+        # --- Rear knee anchor (Pulldown-safe) ---
+        df_knee["x_data"] = pd.to_numeric(df_knee["x_data"], errors="coerce")
+        df_knee = df_knee.dropna(subset=["x_data"])
+
+        if throw_type == "Pulldown":
+            knee_window = df_knee[
+                (df_knee["frame"] >= drive_start_frame - 100) &
+                (df_knee["frame"] < drive_start_frame)
+                ]
+        else:
+            knee_window = df_knee[df_knee["frame"] < drive_start_frame]
+
+        if knee_window.empty:
             continue
-        max_knee_frame = df_knee_pre_drive.loc[df_knee_pre_drive["x_data"].idxmin(), "frame"]
+
+        idx = knee_window["x_data"].idxmin()
+        if pd.isna(idx):
+            continue
+
+        max_knee_frame = int(knee_window.loc[idx, "frame"])
 
         # Arm energy to get end frame
         cur.execute("""
@@ -368,6 +384,32 @@ with tab1:
     rear_knee = "RT_KNEE" if handedness == "R" else "LT_KNEE"
     torso_segment = "RTA_DIST_R" if handedness == "R" else "RTA_DIST_L"
     arm_segment = "RAR" if handedness == "R" else "LAR"
+    shoulder_stp_segment = "RTA_RAR" if handedness == "R" else "RTA_LAR"
+
+    # --- Throw type selection (default = Mound) ---
+    cur.execute("""
+        SELECT DISTINCT COALESCE(t.throw_type, 'Mound') AS throw_type
+        FROM takes t
+        JOIN athletes a ON t.athlete_id = a.athlete_id
+        WHERE a.athlete_name = %s
+        ORDER BY throw_type
+    """, (selected_pitcher,))
+    throw_type_options = [r[0] for r in cur.fetchall()] or ["Mound", "Pulldown"]
+
+    # Default to Mound if available, otherwise first option
+    default_throw_types = ["Mound"] if "Mound" in throw_type_options else [throw_type_options[0]]
+
+    selected_throw_types = st.multiselect(
+        "Throw Type(s)",
+        options=throw_type_options,
+        default=default_throw_types,
+        key="throw_types"
+    )
+
+    # Safety: if user clears selection, treat as Mound
+    if not selected_throw_types:
+        selected_throw_types = default_throw_types
+
 
     # --- Session date selection ---
     # --- Session date selection (multi + All Dates) ---
@@ -391,24 +433,38 @@ with tab1:
     # --- Get takes for selected pitcher/date ---
     # --- Get takes for selected pitcher / dates ---
     if "All Dates" in selected_dates or not selected_dates:
-        cur.execute("""
-                    SELECT t.take_id, t.file_name, t.pitch_velo, t.take_date
+        placeholders_tt = ",".join(["%s"] * len(selected_throw_types))
+        cur.execute(f"""
+                    SELECT
+                        t.take_id,
+                        t.file_name,
+                        t.pitch_velo,
+                        t.take_date,
+                        COALESCE(t.throw_type, 'Mound') AS throw_type
                     FROM takes t
                              JOIN athletes a ON t.athlete_id = a.athlete_id
                     WHERE a.athlete_name = %s
+                      AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
                     ORDER BY t.take_date, t.file_name
-                    """, (selected_pitcher,))
+                    """, (selected_pitcher, *selected_throw_types))
         take_rows = cur.fetchall()
     else:
         placeholders = ",".join(["%s"] * len(selected_dates))
+        placeholders_tt = ",".join(["%s"] * len(selected_throw_types))
         cur.execute(f"""
-            SELECT t.take_id, t.file_name, t.pitch_velo, t.take_date
+            SELECT
+                t.take_id,
+                t.file_name,
+                t.pitch_velo,
+                t.take_date,
+                COALESCE(t.throw_type, 'Mound') AS throw_type
             FROM takes t
             JOIN athletes a ON t.athlete_id = a.athlete_id
             WHERE a.athlete_name = %s
               AND t.take_date IN ({placeholders})
+              AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
             ORDER BY t.take_date, t.file_name
-        """, (selected_pitcher, *selected_dates))
+        """, (selected_pitcher, *selected_dates, *selected_throw_types))
         take_rows = cur.fetchall()
 
     if not take_rows:
@@ -416,7 +472,7 @@ with tab1:
         st.stop()
 
     rows = []
-    for tid, file_name, velo, take_date in take_rows:
+    for tid, file_name, velo, take_date, throw_type in take_rows:
         # Query torso power
         cur.execute("""
             SELECT frame, x_data FROM time_series_data ts
@@ -428,7 +484,19 @@ with tab1:
         df_power = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
         df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
 
-        drive_start_frame = df_power[df_power["x_data"] < -1000]["frame"].min()
+        # --- Drive start: within 50 frames BEFORE MER ---
+        peak_shoulder_frame = get_shoulder_er_max_frame(tid, handedness, cur)
+        if peak_shoulder_frame is None:
+            continue
+
+        df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
+
+        df_power_window = df_power[
+            (df_power["frame"] >= peak_shoulder_frame - 50) &
+            (df_power["frame"] < peak_shoulder_frame)
+            ]
+
+        drive_start_frame = df_power_window[df_power_window["x_data"] < -3000]["frame"].min()
         if pd.isna(drive_start_frame):
             continue
 
@@ -444,12 +512,27 @@ with tab1:
         if df_knee.empty:
             continue
 
-        df_knee_pre_drive = df_knee[df_knee["frame"] < drive_start_frame]
-        if df_knee_pre_drive.empty:
+        # --- Rear knee anchor (Pulldown-safe) ---
+        df_knee["x_data"] = pd.to_numeric(df_knee["x_data"], errors="coerce")
+        df_knee = df_knee.dropna(subset=["x_data"])
+
+        if throw_type == "Pulldown":
+            knee_window = df_knee[
+                (df_knee["frame"] >= drive_start_frame - 100) &
+                (df_knee["frame"] < drive_start_frame)
+                ]
+        else:
+            knee_window = df_knee[df_knee["frame"] < drive_start_frame]
+
+        if knee_window.empty:
             continue
 
-        max_knee_frame = df_knee_pre_drive.loc[df_knee_pre_drive["x_data"].idxmin(), "frame"]
+        idx = knee_window["x_data"].idxmin()
+        if pd.isna(idx):
+            continue
 
+        max_knee_frame = int(knee_window.loc[idx, "frame"])
+        
         df_after = df_power[df_power["frame"] > max_knee_frame].copy()
         if df_after.empty:
             continue
@@ -483,14 +566,142 @@ with tab1:
         auc_to_peak = np.trapezoid(df_to_peak["x_data"], df_to_peak["frame"])
         auc_pct = (auc_to_peak / auc_total * 100) if auc_total else 0
 
+        # ---------------- Shoulder STP Elev/Dep AUC ----------------
+        cur.execute("""
+            SELECT frame, x_data
+            FROM time_series_data ts
+            JOIN segments s ON ts.segment_id = s.segment_id
+            JOIN categories c ON ts.category_id = c.category_id
+            WHERE ts.take_id = %s
+              AND c.category_name = 'JCS_STP_ELEV'
+              AND s.segment_name = %s
+            ORDER BY frame
+        """, (tid, shoulder_stp_segment))
+
+        df_stp = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
+
+        if not df_stp.empty:
+            df_stp["x_data"] = pd.to_numeric(df_stp["x_data"], errors="coerce").fillna(0)
+
+            df_stp_seg = df_stp[
+                (df_stp["frame"] >= max_knee_frame) &
+                (df_stp["frame"] <= torso_end_frame)
+            ]
+
+            auc_stp_total = (
+                np.trapezoid(df_stp_seg["x_data"], df_stp_seg["frame"])
+                if not df_stp_seg.empty else np.nan
+            )
+
+            df_stp_to_peak = df_stp[
+                (df_stp["frame"] >= max_knee_frame) &
+                (df_stp["frame"] <= arm_peak_frame)
+            ]
+
+            auc_stp_to_peak = (
+                np.trapezoid(df_stp_to_peak["x_data"], df_stp_to_peak["frame"])
+                if not df_stp_to_peak.empty else np.nan
+            )
+        else:
+            auc_stp_total = np.nan
+            auc_stp_to_peak = np.nan
+
+        # ---------------- Shoulder STP HorizAbd/Add AUC ----------------
+        cur.execute("""
+            SELECT frame, x_data
+            FROM time_series_data ts
+            JOIN segments s ON ts.segment_id = s.segment_id
+            JOIN categories c ON ts.category_id = c.category_id
+            WHERE ts.take_id = %s
+              AND c.category_name = 'JCS_STP_HORIZABD'
+              AND s.segment_name = %s
+            ORDER BY frame
+        """, (tid, shoulder_stp_segment))
+
+        df_stp_habd = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
+
+        if not df_stp_habd.empty:
+            df_stp_habd["x_data"] = pd.to_numeric(df_stp_habd["x_data"], errors="coerce").fillna(0)
+
+            df_habd_seg = df_stp_habd[
+                (df_stp_habd["frame"] >= max_knee_frame) &
+                (df_stp_habd["frame"] <= torso_end_frame)
+            ]
+
+            auc_stp_habd_total = (
+                np.trapezoid(df_habd_seg["x_data"], df_habd_seg["frame"])
+                if not df_habd_seg.empty else np.nan
+            )
+
+            df_habd_to_peak = df_stp_habd[
+                (df_stp_habd["frame"] >= max_knee_frame) &
+                (df_stp_habd["frame"] <= arm_peak_frame)
+            ]
+
+            auc_stp_habd_to_peak = (
+                np.trapezoid(df_habd_to_peak["x_data"], df_habd_to_peak["frame"])
+                if not df_habd_to_peak.empty else np.nan
+            )
+        else:
+            auc_stp_habd_total = np.nan
+            auc_stp_habd_to_peak = np.nan
+
+        # ---------------- Shoulder STP Rotational AUC ----------------
+        cur.execute("""
+            SELECT frame, x_data
+            FROM time_series_data ts
+            JOIN segments s ON ts.segment_id = s.segment_id
+            JOIN categories c ON ts.category_id = c.category_id
+            WHERE ts.take_id = %s
+              AND c.category_name = 'JCS_STP_ROT'
+              AND s.segment_name = %s
+            ORDER BY frame
+        """, (tid, shoulder_stp_segment))
+
+        df_stp_rot = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
+
+        if not df_stp_rot.empty:
+            df_stp_rot["x_data"] = pd.to_numeric(df_stp_rot["x_data"], errors="coerce").fillna(0)
+
+            df_rot_seg = df_stp_rot[
+                (df_stp_rot["frame"] >= max_knee_frame) &
+                (df_stp_rot["frame"] <= torso_end_frame)
+            ]
+
+            auc_stp_rot_total = (
+                np.trapezoid(df_rot_seg["x_data"], df_rot_seg["frame"])
+                if not df_rot_seg.empty else np.nan
+            )
+
+            df_rot_to_peak = df_stp_rot[
+                (df_stp_rot["frame"] >= max_knee_frame) &
+                (df_stp_rot["frame"] <= arm_peak_frame)
+            ]
+
+            auc_stp_rot_to_peak = (
+                np.trapezoid(df_rot_to_peak["x_data"], df_rot_to_peak["frame"])
+                if not df_rot_to_peak.empty else np.nan
+            )
+        else:
+            auc_stp_rot_total = np.nan
+            auc_stp_rot_to_peak = np.nan
+
         rows.append({
             "take_id": tid,
             "Session Date": take_date.strftime("%Y-%m-%d"),
+            "Throw Type": throw_type,
+            "Max Knee Flexion Frame": int(max_knee_frame),
             "Velocity": velo,
             "AUC (Drive → 0)": round(float(auc_total), 2),
             "AUC (Drive → Peak Arm Energy)": round(float(auc_to_peak), 2),
             "Peak Arm Energy": round(float(arm_peak_value), 2),
-            "% Total Energy Into Layback": round(float(auc_pct), 1)
+            "% Total Energy Into Layback": round(float(auc_pct), 1),
+            "STP Elevation AUC (Drive → 0)": round(float(auc_stp_total), 2) if pd.notna(auc_stp_total) else np.nan,
+            "STP Elevation AUC (Drive → Peak Arm Energy)": round(float(auc_stp_to_peak), 2) if pd.notna(auc_stp_to_peak) else np.nan,
+            "STP HorizAbd AUC (Drive → 0)": round(float(auc_stp_habd_total), 2) if pd.notna(auc_stp_habd_total) else np.nan,
+            "STP HorizAbd AUC (Drive → Peak Arm Energy)": round(float(auc_stp_habd_to_peak), 2) if pd.notna(auc_stp_habd_to_peak) else np.nan,
+            "STP Rotational AUC (Drive → 0)": round(float(auc_stp_rot_total), 2) if pd.notna(auc_stp_rot_total) else np.nan,
+            "STP Rotational AUC (Drive → Peak Arm Energy)": round(float(auc_stp_rot_to_peak), 2) if pd.notna(auc_stp_rot_to_peak) else np.nan,
         })
 
     if rows:
@@ -537,6 +748,36 @@ with tab1:
         df_tab1["AUC (Drive → 0)"] = pd.to_numeric(df_tab1["AUC (Drive → 0)"], errors="coerce")
         df_tab1["AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(df_tab1["AUC (Drive → Peak Arm Energy)"], errors="coerce")
         df_tab1 = df_tab1.dropna(subset=["Velocity", "AUC (Drive → 0)", "AUC (Drive → Peak Arm Energy)"])
+        df_tab1["STP Elevation AUC (Drive → 0)"] = pd.to_numeric(df_tab1["STP Elevation AUC (Drive → 0)"], errors="coerce")
+        df_tab1["STP Elevation AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(df_tab1["STP Elevation AUC (Drive → Peak Arm Energy)"], errors="coerce")
+        df_tab1["STP HorizAbd AUC (Drive → 0)"] = pd.to_numeric(
+            df_tab1["STP HorizAbd AUC (Drive → 0)"], errors="coerce"
+        )
+        df_tab1["STP HorizAbd AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(
+            df_tab1["STP HorizAbd AUC (Drive → Peak Arm Energy)"], errors="coerce"
+        )
+        df_tab1["STP Rotational AUC (Drive → 0)"] = pd.to_numeric(
+            df_tab1["STP Rotational AUC (Drive → 0)"], errors="coerce"
+        )
+        df_tab1["STP Rotational AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(
+            df_tab1["STP Rotational AUC (Drive → Peak Arm Energy)"], errors="coerce"
+        )
+
+        # --------- Energy Flow Metric Selector ---------
+        energy_plot_options = st.multiselect(
+            "Select Energy Flow Metrics to Plot",
+            [
+                "Torso Power",
+                "STP Elevation",
+                "STP Horizontal Abduction",
+                "STP Rotational"
+            ],
+            default=["Torso Power"],
+            key="tab1_energy_plot_options"
+        )
+        # Guard: If empty, reset to default
+        if not energy_plot_options:
+            energy_plot_options = ["Torso Power"]
 
         import plotly.express as px
 
@@ -544,72 +785,217 @@ with tab1:
 
         fig = go.Figure()
         color_idx = 0
+        # For marker symbols per metric
+        metric_symbol_map = {
+            "Torso Power": ["circle", "triangle-up"],
+            "STP Elevation": ["diamond"],
+            "STP Horizontal Abduction": ["square"],
+            "STP Rotational": ["pentagon"],
+        }
+        # For regression line dashes per metric
+        metric_dash_map = {
+            "Torso Power": ["dash", "dot"],
+            "STP Elevation": ["longdash"],
+            "STP Horizontal Abduction": [None],
+            "STP Rotational": ["dot"],
+        }
+        # For legend names per metric
+        metric_trace_names = {
+            "Torso Power": ["Torso AUC → 0", "Torso AUC → Peak"],
+            "STP Elevation": ["STP Elev Peak"],
+            "STP Horizontal Abduction": ["STP HABD Peak"],
+            "STP Rotational": ["STP ROT Peak"],
+        }
+        metric_reg_names = {
+            "Torso Power": ["R²", "Peak R²"],
+            "STP Elevation": ["R²"],
+            "STP Horizontal Abduction": ["R²"],
+            "STP Rotational": ["R²"],
+        }
 
         for date, sub in df_tab1.groupby("Session Date"):
-
             if len(sub) < 2:
                 continue
-
             color = color_cycle[color_idx % len(color_cycle)]
             x = sub["Velocity"]
+            for energy_plot_option in energy_plot_options:
+                # Torso Power: plot both AUC → 0 and AUC → Peak
+                if energy_plot_option == "Torso Power":
+                    # --- AUC Drive → 0 ---
+                    y0 = sub["AUC (Drive → 0)"]
+                    if y0.size >= 2:
+                        slope0, intercept0, r0, _, _ = linregress(x, y0)
+                        x_fit = np.linspace(x.min(), x.max(), 100)
+                        y_fit0 = slope0 * x_fit + intercept0
 
-            # ---------------- AUC Drive → 0 ----------------
-            y0 = sub["AUC (Drive → 0)"]
-            slope0, intercept0, r0, _, _ = linregress(x, y0)
-            x_fit = np.linspace(x.min(), x.max(), 100)
-            y_fit0 = slope0 * x_fit + intercept0
+                        fig.add_trace(go.Scatter(
+                            x=x, y=y0, mode="markers",
+                            marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][0]),
+                            name=f"{date} | {metric_trace_names[energy_plot_option][0]}"
+                        ))
+                        fig.add_trace(go.Scatter(
+                            x=x_fit, y=y_fit0, mode="lines",
+                            line=dict(color=color, dash=metric_dash_map[energy_plot_option][0]),
+                            name=f"{date} | {metric_reg_names[energy_plot_option][0]}={r0**2:.2f}"
+                        ))
+                    # --- AUC Drive → Peak Arm Energy ---
+                    y1 = sub["AUC (Drive → Peak Arm Energy)"]
+                    if y1.size >= 2:
+                        slope1, intercept1, r1, _, _ = linregress(x, y1)
+                        y_fit1 = slope1 * x_fit + intercept1
+                        fig.add_trace(go.Scatter(
+                            x=x, y=y1, mode="markers",
+                            marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][1]),
+                            name=f"{date} | {metric_trace_names[energy_plot_option][1]}"
+                        ))
+                        fig.add_trace(go.Scatter(
+                            x=x_fit, y=y_fit1, mode="lines",
+                            line=dict(color=color, dash=metric_dash_map[energy_plot_option][1]),
+                            name=f"{date} | {metric_reg_names[energy_plot_option][1]}={r1**2:.2f}"
+                        ))
+                elif energy_plot_option == "STP Elevation":
+                    # ---- Drive → 0 ----
+                    y0 = sub["STP Elevation AUC (Drive → 0)"].dropna()
+                    if y0.size >= 2:
+                        slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
+                        x_fit = np.linspace(x.min(), x.max(), 100)
+                        y_fit0 = slope0 * x_fit + intercept0
 
-            fig.add_trace(go.Scatter(
-                x=x,
-                y=y0,
-                mode="markers",
-                marker=dict(color=color),
-                name=f"{date} | AUC → 0"
-            ))
+                        fig.add_trace(go.Scatter(
+                            x=x.loc[y0.index],
+                            y=y0,
+                            mode="markers",
+                            marker=dict(color=color, symbol="diamond"),
+                            name=f"{date} | STP Elev → 0"
+                        ))
+                        fig.add_trace(go.Scatter(
+                            x=x_fit,
+                            y=y_fit0,
+                            mode="lines",
+                            line=dict(color=color, dash="dash"),
+                            name=f"{date} | STP Elev → 0 R²={r0**2:.2f}"
+                        ))
 
-            fig.add_trace(go.Scatter(
-                x=x_fit,
-                y=y_fit0,
-                mode="lines",
-                line=dict(color=color, dash="dash"),
-                name=f"{date} | R²={r0 ** 2:.2f}"
-            ))
+                    # ---- Drive → Peak Arm Energy ----
+                    y1 = sub["STP Elevation AUC (Drive → Peak Arm Energy)"].dropna()
+                    if y1.size >= 2:
+                        slope1, intercept1, r1, _, _ = linregress(x.loc[y1.index], y1)
+                        y_fit1 = slope1 * x_fit + intercept1
 
-            # ----------- AUC Drive → Peak Arm Energy --------
-            y1 = sub["AUC (Drive → Peak Arm Energy)"]
-            slope1, intercept1, r1, _, _ = linregress(x, y1)
-            y_fit1 = slope1 * x_fit + intercept1
+                        fig.add_trace(go.Scatter(
+                            x=x.loc[y1.index],
+                            y=y1,
+                            mode="markers",
+                            marker=dict(color=color, symbol="diamond-open"),
+                            name=f"{date} | STP Elev → Peak"
+                        ))
+                        fig.add_trace(go.Scatter(
+                            x=x_fit,
+                            y=y_fit1,
+                            mode="lines",
+                            line=dict(color=color, dash="dot"),
+                            name=f"{date} | STP Elev → Peak R²={r1**2:.2f}"
+                        ))
+                elif energy_plot_option == "STP Horizontal Abduction":
+                    # ---- Drive → 0 ----
+                    y0 = sub["STP HorizAbd AUC (Drive → 0)"].dropna()
+                    if y0.size >= 2:
+                        slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
+                        x_fit = np.linspace(x.min(), x.max(), 100)
+                        y_fit0 = slope0 * x_fit + intercept0
 
-            fig.add_trace(go.Scatter(
-                x=x,
-                y=y1,
-                mode="markers",
-                marker=dict(color=color, symbol="triangle-up"),
-                name=f"{date} | AUC → Peak"
-            ))
+                        fig.add_trace(go.Scatter(
+                            x=x.loc[y0.index],
+                            y=y0,
+                            mode="markers",
+                            marker=dict(color=color, symbol="square"),
+                            name=f"{date} | STP HorizAbd → 0"
+                        ))
+                        fig.add_trace(go.Scatter(
+                            x=x_fit,
+                            y=y_fit0,
+                            mode="lines",
+                            line=dict(color=color, dash="dash"),
+                            name=f"{date} | STP HorizAbd → 0 R²={r0**2:.2f}"
+                        ))
 
-            fig.add_trace(go.Scatter(
-                x=x_fit,
-                y=y_fit1,
-                mode="lines",
-                line=dict(color=color, dash="dot"),
-                name=f"{date} | Peak R²={r1 ** 2:.2f}"
-            ))
+                    # ---- Drive → Peak Arm Energy ----
+                    y1 = sub["STP HorizAbd AUC (Drive → Peak Arm Energy)"].dropna()
+                    if y1.size >= 2:
+                        slope1, intercept1, r1, _, _ = linregress(x.loc[y1.index], y1)
+                        y_fit1 = slope1 * x_fit + intercept1
 
+                        fig.add_trace(go.Scatter(
+                            x=x.loc[y1.index],
+                            y=y1,
+                            mode="markers",
+                            marker=dict(color=color, symbol="square-open"),
+                            name=f"{date} | STP HorizAbd → Peak"
+                        ))
+                        fig.add_trace(go.Scatter(
+                            x=x_fit,
+                            y=y_fit1,
+                            mode="lines",
+                            line=dict(color=color, dash="dot"),
+                            name=f"{date} | STP HorizAbd → Peak R²={r1**2:.2f}"
+                        ))
+                elif energy_plot_option == "STP Rotational":
+                    # ---- Drive → 0 ----
+                    y0 = sub["STP Rotational AUC (Drive → 0)"].dropna()
+                    if y0.size >= 2:
+                        slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
+                        x_fit = np.linspace(x.min(), x.max(), 100)
+                        y_fit0 = slope0 * x_fit + intercept0
+
+                        fig.add_trace(go.Scatter(
+                            x=x.loc[y0.index],
+                            y=y0,
+                            mode="markers",
+                            marker=dict(color=color, symbol="pentagon"),
+                            name=f"{date} | STP Rot → 0"
+                        ))
+                        fig.add_trace(go.Scatter(
+                            x=x_fit,
+                            y=y_fit0,
+                            mode="lines",
+                            line=dict(color=color, dash="dash"),
+                            name=f"{date} | STP Rot → 0 R²={r0**2:.2f}"
+                        ))
+
+                    # ---- Drive → Peak Arm Energy ----
+                    y1 = sub["STP Rotational AUC (Drive → Peak Arm Energy)"].dropna()
+                    if y1.size >= 2:
+                        slope1, intercept1, r1, _, _ = linregress(x.loc[y1.index], y1)
+                        y_fit1 = slope1 * x_fit + intercept1
+
+                        fig.add_trace(go.Scatter(
+                            x=x.loc[y1.index],
+                            y=y1,
+                            mode="markers",
+                            marker=dict(color=color, symbol="pentagon-open"),
+                            name=f"{date} | STP Rot → Peak"
+                        ))
+                        fig.add_trace(go.Scatter(
+                            x=x_fit,
+                            y=y_fit1,
+                            mode="lines",
+                            line=dict(color=color, dash="dot"),
+                            name=f"{date} | STP Rot → Peak R²={r1**2:.2f}"
+                        ))
             color_idx += 1
 
         fig.update_layout(
-        title="Velocity vs Trunk AUC",
-        xaxis_title="Velocity",
-        yaxis_title="Trunk AUC",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1,  # slightly above the plot area
-            xanchor="center",
-            x=0.5
-        ),
-        height=600
+            title="Velocity vs Selected Energy Flow Metrics",
+            xaxis_title="Velocity (mph)",
+            yaxis_title="Energy / AUC",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1,
+                xanchor="center",
+                x=0.5
+            ),
+            height=600
         )
 
         st.plotly_chart(fig, use_container_width=True)
@@ -619,29 +1005,54 @@ with tab1:
         height = estimate_table_height(df_tab1)
         # Display only the columns that were in the original summary (drop take_id, label)
         display_cols = [col for col in df_tab1.columns if col not in ("take_id", "label")]
+        priority_cols = ["Session Date", "Throw Type", "Max Knee Flexion Frame"]
+        display_cols = priority_cols + [c for c in display_cols if c not in priority_cols]
         st.dataframe(df_tab1[display_cols], height=height)
     else:
         st.warning("No valid data found for this pitcher/date.")
 
 @st.cache_data
-def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, comp_col, use_abs):
+def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, comp_col, use_abs, throw_types=None):
     if mode == "Selected Pitcher":
-        cur.execute("""
-            SELECT t.take_id, t.pitch_velo, t.athlete_id, a.athlete_name
-            FROM takes t
-            JOIN athletes a ON t.athlete_id = a.athlete_id
-            WHERE a.athlete_name = %s
-            AND t.pitch_velo BETWEEN %s AND %s
-            ORDER BY t.file_name
-        """, (pitcher_name, velo_min, velo_max))
+        if throw_types:
+            placeholders_tt = ",".join(["%s"] * len(throw_types))
+            cur.execute(f"""
+                SELECT t.take_id, t.pitch_velo, t.athlete_id, a.athlete_name
+                FROM takes t
+                JOIN athletes a ON t.athlete_id = a.athlete_id
+                WHERE a.athlete_name = %s
+                  AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+                  AND t.pitch_velo BETWEEN %s AND %s
+                ORDER BY t.file_name
+            """, (pitcher_name, *throw_types, velo_min, velo_max))
+        else:
+            cur.execute("""
+                SELECT t.take_id, t.pitch_velo, t.athlete_id, a.athlete_name
+                FROM takes t
+                JOIN athletes a ON t.athlete_id = a.athlete_id
+                WHERE a.athlete_name = %s
+                  AND t.pitch_velo BETWEEN %s AND %s
+                ORDER BY t.file_name
+            """, (pitcher_name, velo_min, velo_max))
     else:
-        cur.execute("""
-            SELECT t.take_id, t.pitch_velo, t.athlete_id, a.handedness, a.athlete_name
-            FROM takes t
-            JOIN athletes a ON t.athlete_id = a.athlete_id
-            WHERE t.pitch_velo BETWEEN %s AND %s
-            ORDER BY t.file_name
-        """, (velo_min, velo_max))
+        if throw_types:
+            placeholders_tt = ",".join(["%s"] * len(throw_types))
+            cur.execute(f"""
+                SELECT t.take_id, t.pitch_velo, t.athlete_id, a.handedness, a.athlete_name
+                FROM takes t
+                JOIN athletes a ON t.athlete_id = a.athlete_id
+                WHERE COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+                  AND t.pitch_velo BETWEEN %s AND %s
+                ORDER BY t.file_name
+            """, (*throw_types, velo_min, velo_max))
+        else:
+            cur.execute("""
+                SELECT t.take_id, t.pitch_velo, t.athlete_id, a.handedness, a.athlete_name
+                FROM takes t
+                JOIN athletes a ON t.athlete_id = a.athlete_id
+                WHERE t.pitch_velo BETWEEN %s AND %s
+                ORDER BY t.file_name
+            """, (velo_min, velo_max))
     rows = cur.fetchall()
     if not rows:
         return None, None, []
@@ -674,7 +1085,7 @@ def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, co
         if df_power.empty:
             continue
         df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
-        drive_start_frame = df_power[df_power["x_data"] < -1000]["frame"].min()
+        drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
         if pd.isna(drive_start_frame):
             continue
         cur.execute("""
@@ -753,6 +1164,26 @@ with tab2:
     with left:
         # --- Select pitcher ---
         selected_pitcher_comp = st.selectbox("Select Pitcher", pitchers, key="comp_pitcher")
+        # --- Throw type selection (default = Mound) ---
+        cur.execute("""
+            SELECT DISTINCT COALESCE(t.throw_type, 'Mound') AS throw_type
+            FROM takes t
+            JOIN athletes a ON t.athlete_id = a.athlete_id
+            WHERE a.athlete_name = %s
+            ORDER BY throw_type
+        """, (selected_pitcher_comp,))
+        throw_type_options_comp = [r[0] for r in cur.fetchall()] or ["Mound", "Pulldown"]
+        default_throw_types_comp = ["Mound"] if "Mound" in throw_type_options_comp else [throw_type_options_comp[0]]
+
+        selected_throw_types_comp = st.multiselect(
+            "Throw Type(s)",
+            options=throw_type_options_comp,
+            default=default_throw_types_comp,
+            key="throw_types_comp"
+        )
+
+        if not selected_throw_types_comp:
+            selected_throw_types_comp = default_throw_types_comp
         # --- Get handedness from DB ---
         cur.execute("SELECT handedness FROM athletes WHERE athlete_name = %s", (selected_pitcher_comp,))
         handedness_row_comp = cur.fetchone()
@@ -882,7 +1313,8 @@ with tab2:
             _, _, ref_pitchers = load_reference_curves_player_mean(
                 ref_mode, selected_pitcher_comp,
                 velo_range_ref[0], velo_range_ref[1],
-                comp_col, use_abs
+                comp_col, use_abs,
+                throw_types=["Mound"]
             )
             st.markdown("**Pitchers in Reference Group:**")
             if ref_pitchers:
@@ -896,7 +1328,7 @@ with tab2:
 
 
 
-    def load_and_interpolate_curves(date, velo_min, velo_max, comp_col, use_abs):
+    def load_and_interpolate_curves(date, velo_min, velo_max, comp_col, use_abs, throw_types=None):
         """
         Returns:
             mean_shoulder (np.ndarray of length 100) or None
@@ -904,22 +1336,45 @@ with tab2:
             peak_arm_time_pct_mean (float) or None
         """
         if date is not None:
-            cur.execute("""
-                SELECT t.take_id, t.pitch_velo
-                FROM takes t
-                JOIN athletes a ON t.athlete_id = a.athlete_id
-                WHERE a.athlete_name = %s AND t.take_date = %s
-                AND t.pitch_velo BETWEEN %s AND %s
-                ORDER BY t.file_name
-            """, (selected_pitcher_comp, date, velo_min, velo_max))
+            if throw_types:
+                placeholders_tt = ",".join(["%s"] * len(throw_types))
+                cur.execute(f"""
+                    SELECT t.take_id, t.pitch_velo
+                    FROM takes t
+                    JOIN athletes a ON t.athlete_id = a.athlete_id
+                    WHERE a.athlete_name = %s AND t.take_date = %s
+                      AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+                      AND t.pitch_velo BETWEEN %s AND %s
+                    ORDER BY t.file_name
+                """, (selected_pitcher_comp, date, *throw_types, velo_min, velo_max))
+            else:
+                cur.execute("""
+                    SELECT t.take_id, t.pitch_velo
+                    FROM takes t
+                    JOIN athletes a ON t.athlete_id = a.athlete_id
+                    WHERE a.athlete_name = %s AND t.take_date = %s
+                    AND t.pitch_velo BETWEEN %s AND %s
+                    ORDER BY t.file_name
+                """, (selected_pitcher_comp, date, velo_min, velo_max))
         else:
-            cur.execute("""
-                SELECT t.take_id, t.pitch_velo
-                FROM takes t
-                JOIN athletes a ON t.athlete_id = a.athlete_id
-                WHERE t.pitch_velo BETWEEN %s AND %s
-                ORDER BY t.file_name
-            """, (velo_min, velo_max))
+            if throw_types:
+                placeholders_tt = ",".join(["%s"] * len(throw_types))
+                cur.execute(f"""
+                    SELECT t.take_id, t.pitch_velo
+                    FROM takes t
+                    JOIN athletes a ON t.athlete_id = a.athlete_id
+                    WHERE COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+                      AND t.pitch_velo BETWEEN %s AND %s
+                    ORDER BY t.file_name
+                """, (*throw_types, velo_min, velo_max))
+            else:
+                cur.execute("""
+                    SELECT t.take_id, t.pitch_velo
+                    FROM takes t
+                    JOIN athletes a ON t.athlete_id = a.athlete_id
+                    WHERE t.pitch_velo BETWEEN %s AND %s
+                    ORDER BY t.file_name
+                """, (velo_min, velo_max))
 
         takes = cur.fetchall()
         if not takes:
@@ -941,7 +1396,7 @@ with tab2:
             if df_power.empty:
                 continue
             df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
-            drive_start_frame = df_power[df_power["x_data"] < -1000]["frame"].min()
+            drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
             if pd.isna(drive_start_frame):
                 continue
 
@@ -1050,10 +1505,12 @@ with tab2:
     # ---- Compute curves and render charts ----
     with right:
         mean_shoulder1, mean_torso1, peak_arm_time_pct = load_and_interpolate_curves(
-            session1_date, velo_range1[0], velo_range1[1], comp_col, use_abs
+            session1_date, velo_range1[0], velo_range1[1], comp_col, use_abs,
+            throw_types=selected_throw_types_comp
         )
         mean_shoulder2, mean_torso2, _ = load_and_interpolate_curves(
-            session2_date, velo_range2[0], velo_range2[1], comp_col, use_abs
+            session2_date, velo_range2[0], velo_range2[1], comp_col, use_abs,
+            throw_types=selected_throw_types_comp
         )
 
         mean_ref_shoulder, mean_ref_torso = None, None
@@ -1061,7 +1518,8 @@ with tab2:
             mean_ref_shoulder, mean_ref_torso, _ = load_reference_curves_player_mean(
                 ref_mode, selected_pitcher_comp,
                 velo_range_ref[0], velo_range_ref[1],
-                comp_col, use_abs
+                comp_col, use_abs,
+                throw_types=["Mound"]
             )
 
         if (mean_shoulder1 is not None) and (mean_shoulder2 is not None):
@@ -1197,8 +1655,26 @@ with tab3:
 
     if not selected_pitchers_010:
         st.warning("Select one or more pitchers to view data.")
-        cur.close()
-        st.stop()
+
+    # --- Throw type selection (default = Mound) ---
+    cur.execute("""
+        SELECT DISTINCT COALESCE(t.throw_type, 'Mound') AS throw_type
+        FROM takes t
+        ORDER BY throw_type
+    """)
+    throw_type_options_010 = [row[0] for row in cur.fetchall()] or ["Mound", "Pulldown"]
+
+    default_throw_types_010 = ["Mound"] if "Mound" in throw_type_options_010 else [throw_type_options_010[0]]
+
+    selected_throw_types_010 = st.multiselect(
+        "Throw Type(s)",
+        options=throw_type_options_010,
+        default=default_throw_types_010,
+        key="throw_types_010"
+    )
+
+    if not selected_throw_types_010:
+        selected_throw_types_010 = default_throw_types_010
 
     # --- Per‑pitcher date selection ---
     pitcher_dates_010 = {}
@@ -1262,6 +1738,7 @@ with tab3:
         "Pelvis Arm Side Tilt at Peak Knee Height",
         "Pelvis Counter Rotation at Peak Knee Height",
         "Pelvis Anterior Tilt at Ball Release",
+        "Max Hand Speed",
     ]
 
     group_to_metrics_010 = {
@@ -1278,6 +1755,7 @@ with tab3:
             "Max Shoulder External Rotation Velocity",
             "Max Elbow Extension Velocity",
             "Max Shoulder Horizontal Abduction/Adduction Velocity",
+            "Max Hand Speed",
         ],
 
         "Pelvis and Torso Angular Velocities": [
@@ -1339,25 +1817,29 @@ with tab3:
 
         # Handle All Dates
         if "All Dates" in selected_dates or not selected_dates:
-            cur.execute("""
+            placeholders_tt = ",".join(["%s"] * len(selected_throw_types_010))
+            cur.execute(f"""
                 SELECT t.take_id, t.pitch_velo, a.handedness
                 FROM takes t
                 JOIN athletes a ON t.athlete_id = a.athlete_id
                 WHERE a.athlete_name = %s
+                  AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
                 ORDER BY t.file_name
-            """, (pitcher,))
+            """, (pitcher, *selected_throw_types_010))
             take_rows_010.extend(cur.fetchall())
 
         else:
             placeholders_dates = ",".join(["%s"] * len(selected_dates))
+            placeholders_tt = ",".join(["%s"] * len(selected_throw_types_010))
             cur.execute(f"""
                 SELECT t.take_id, t.pitch_velo, a.handedness
                 FROM takes t
                 JOIN athletes a ON t.athlete_id = a.athlete_id
                 WHERE a.athlete_name = %s
                   AND t.take_date IN ({placeholders_dates})
+                  AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
                 ORDER BY t.file_name
-            """, (pitcher, *selected_dates))
+            """, (pitcher, *selected_dates, *selected_throw_types_010))
             take_rows_010.extend(cur.fetchall())
 
 
@@ -1372,6 +1854,7 @@ with tab3:
             lead_knee_velo_segment = "LT_KNEE_ANGULAR_VELOCITY"
             elbow_velo_segment = "RT_ELBOW_ANGULAR_VELOCITY"
             shank_seg_name = "LSK"
+            hand_segment = "RHA"
         else:
             shoulder_velo_segment = "LT_SHOULDER_ANGULAR_VELOCITY"
             hip_velo_segment   = "LT_HIP_ANGULAR_VELOCITY"
@@ -1380,6 +1863,7 @@ with tab3:
             lead_knee_velo_segment = "RT_KNEE_ANGULAR_VELOCITY"
             elbow_velo_segment = "LT_ELBOW_ANGULAR_VELOCITY"
             shank_seg_name = "RSK"
+            hand_segment = "LHA"
 
         # Get ball release frame for this take
         br_frame_010 = get_ball_release_frame(take_id_010, handedness_local, cur)
@@ -1484,6 +1968,8 @@ with tab3:
             velo_segment = "RT_SHOULDER" if handedness_local == "R" else "LT_SHOULDER"
         elif selected_metric_010 == "Shoulder External Rotation at Max Shoulder Horizontal Abduction":
             velo_segment = "RT_SHOULDER_ANGLE" if handedness_local == "R" else "LT_SHOULDER_ANGLE"
+        elif selected_metric_010 == "Max Hand Speed":
+            velo_segment = hand_segment
         else:
             velo_segment = None
 
@@ -1499,10 +1985,11 @@ with tab3:
               AND c.category_name = CASE
                     WHEN %s = 'CenterOfMass_VELO' THEN 'PROCESSED'
                     WHEN %s IN ('RT_SHOULDER', 'LT_SHOULDER') THEN 'JOINT_ANGLES'
+                    WHEN %s IN ('RHA', 'LHA') THEN 'KINETIC_KINEMATIC_CGVel'
                     ELSE 'ORIGINAL'
                 END
               AND s.segment_name = %s
-        """, (take_id_010, velo_segment, velo_segment, velo_segment))
+        """, (take_id_010, velo_segment, velo_segment, velo_segment, velo_segment))
         data = cur.fetchall()
         if not data:
             continue
@@ -1515,8 +2002,6 @@ with tab3:
         z_vals = arr[:, 2]
         sh_ir_peak_idx = np.nanargmax(np.abs(z_vals))
         sh_ir_peak_frame = frames[sh_ir_peak_idx]
-
-        # Component-specific velocity: (the rest of the per-metric logic remains the same)
         if selected_metric_010 == "Max Shoulder Internal Rotation Velocity":
             z_vals = arr[:, 2]
             # ---------------------------------------------
@@ -1944,6 +2429,14 @@ with tab3:
             # Normalize for UI (absolute)
             vals = np.array([abs(raw_er)])
 
+        elif selected_metric_010 == "Max Hand Speed":
+            # Hand CG speed magnitude (no sign, no windowing)
+            # arr columns: x, y, z CG velocity components
+            x_vals = arr[:, 0]
+            y_vals = arr[:, 1]
+            z_vals = arr[:, 2]
+            speed = np.sqrt(x_vals**2 + y_vals**2 + z_vals**2)
+            vals = np.array([np.nanmax(speed)])
         # Convert vals to a scalar for storage
         raw_value = float(np.nanmax(vals)) if vals.size > 0 else np.nan
 
@@ -2077,4 +2570,296 @@ with tab3:
             )
     else:
         st.warning("No data found for the selected pitchers and date.")
-    cur.close()
+
+with tab4:
+    st.subheader("Time-Series")
+
+    # --- Pitcher selector (local to Time-Series tab) ---
+    cur.execute("""
+        SELECT DISTINCT a.athlete_name
+        FROM athletes a
+        JOIN takes t ON a.athlete_id = t.athlete_id
+        ORDER BY a.athlete_name
+    """)
+    pitchers_ts = [row[0] for row in cur.fetchall()]
+
+    selected_pitcher_ts = st.selectbox(
+        "Select Pitcher",
+        pitchers_ts,
+        key="ts_pitcher"
+    )
+
+    if not selected_pitcher_ts:
+        st.info("Select a pitcher to view time-series data.")
+        st.stop()
+
+    # --- Throw type selection (default = Mound) ---
+    cur.execute("""
+        SELECT DISTINCT COALESCE(t.throw_type, 'Mound') AS throw_type
+        FROM takes t
+        ORDER BY throw_type
+    """)
+    throw_type_options_ts = [row[0] for row in cur.fetchall()] or ["Mound", "Pulldown"]
+
+    default_throw_types_ts = ["Mound"] if "Mound" in throw_type_options_ts else [throw_type_options_ts[0]]
+
+    selected_throw_types_ts = st.multiselect(
+        "Throw Type(s)",
+        options=throw_type_options_ts,
+        default=default_throw_types_ts,
+        key="throw_types_ts"
+    )
+
+    if not selected_throw_types_ts:
+        selected_throw_types_ts = default_throw_types_ts
+
+    # --- Determine handedness for selected pitcher ---
+    cur.execute(
+        "SELECT handedness FROM athletes WHERE athlete_name = %s LIMIT 1",
+        (selected_pitcher_ts,)
+    )
+    handedness_row = cur.fetchone()
+    handedness_ts = handedness_row[0] if handedness_row else "R"
+
+    # Segment selection based on handedness
+    arm_prox_segment = "LAR_PROX" if handedness_ts == "L" else "RAR_PROX"
+
+    # --- Select Date(s) ---
+    cur.execute(
+        """
+        SELECT DISTINCT t.take_date
+        FROM takes t
+        JOIN athletes a ON t.athlete_id = a.athlete_id
+        WHERE a.athlete_name = %s
+        ORDER BY t.take_date
+        """,
+        (selected_pitcher_ts,)
+    )
+    available_dates = [row[0].strftime("%Y-%m-%d") for row in cur.fetchall()]
+    available_dates.insert(0, "All Dates")
+
+    selected_dates_ts = st.multiselect(
+        "Select Date(s)",
+        options=available_dates,
+        default=["All Dates"],
+        key="ts_dates"
+    )
+
+    # Resolve dates for query
+    if "All Dates" in selected_dates_ts or not selected_dates_ts:
+        date_filter_clause = ""
+        date_filter_params = ()
+    else:
+        date_filter_clause = "AND t.take_date IN ({})".format(
+            ",".join(["%s"] * len(selected_dates_ts))
+        )
+        date_filter_params = tuple(selected_dates_ts)
+
+    # --- Metric selector (user-facing label mapped to internal category) ---
+    metric_label_to_category_ts = {
+        "Arm Proximal Energy Transfer": "SEGMENT_POWERS"
+    }
+
+    selected_metric_labels_ts = st.multiselect(
+        "Select Metric(s)",
+        options=list(metric_label_to_category_ts.keys()),
+        default=list(metric_label_to_category_ts.keys()),
+        key="ts_metrics"
+    )
+
+    # Resolve selected categories (future-proofed for multiple metrics)
+    selected_metric_categories_ts = [
+        metric_label_to_category_ts[label] for label in selected_metric_labels_ts
+    ]
+
+    # --- Get all takes for this pitcher (with date filter) ---
+    placeholders_tt = ",".join(["%s"] * len(selected_throw_types_ts))
+    cur.execute(
+        f"""
+        SELECT t.take_id, t.take_date
+        FROM takes t
+        JOIN athletes a ON t.athlete_id = a.athlete_id
+        WHERE a.athlete_name = %s
+          AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+        {date_filter_clause}
+        ORDER BY t.take_date, t.file_name
+        """,
+        (selected_pitcher_ts, *selected_throw_types_ts, *date_filter_params)
+    )
+    takes_ts = cur.fetchall()
+
+    if not takes_ts:
+        st.warning("No takes found for this pitcher.")
+    else:
+        import plotly.graph_objects as go
+        import plotly.express as px
+        color_cycle = px.colors.qualitative.Plotly
+        date_colors = {}
+
+        fig_ts = go.Figure()
+        fp_aligned_frames = []
+        er_aligned_frames = []
+        max_x_aligned = None
+
+        for take_id, take_date in takes_ts:
+            # --- Ball Release frame ---
+            br_frame = get_ball_release_frame(take_id, handedness_ts, cur)
+            if br_frame is None:
+                continue
+
+            # --- Foot Plant frame (same logic as Tab 3) ---
+            sh_er_max_frame = get_shoulder_er_max_frame(take_id, handedness_ts, cur)
+            # Store Shoulder ER aligned to Ball Release
+            if sh_er_max_frame is not None:
+                er_aligned_frames.append(sh_er_max_frame - br_frame)
+            fp_start_candidate = get_lead_ankle_prox_x_peak_frame(take_id, handedness_ts, cur)
+
+            ankle_min_frame = None
+            if fp_start_candidate is not None and sh_er_max_frame is not None:
+                ankle_min_frame = get_ankle_min_frame(
+                    take_id, handedness_ts,
+                    fp_start_candidate,
+                    sh_er_max_frame,
+                    cur
+                )
+
+            zero_cross_frame = None
+            if ankle_min_frame is not None:
+                zero_cross_frame = get_zero_cross_frame(
+                    take_id, handedness_ts,
+                    ankle_min_frame,
+                    sh_er_max_frame,
+                    cur
+                )
+
+            if zero_cross_frame is not None:
+                fp_frame = zero_cross_frame
+            elif ankle_min_frame is not None:
+                fp_frame = ankle_min_frame
+            else:
+                fp_frame = fp_start_candidate
+
+            # Store FP aligned to Ball Release
+            if fp_frame is not None:
+                fp_aligned_frames.append(fp_frame - br_frame)
+
+            cur.execute(
+                """
+                SELECT ts.frame, ts.x_data
+                FROM time_series_data ts
+                JOIN segments s ON ts.segment_id = s.segment_id
+                JOIN categories c ON ts.category_id = c.category_id
+                WHERE ts.take_id = %s
+                  AND c.category_name = %s
+                  AND s.segment_name = %s
+                ORDER BY ts.frame
+                """,
+                (take_id, selected_metric_categories_ts[0], arm_prox_segment)
+            )
+
+            rows = cur.fetchall()
+            if not rows:
+                continue
+
+            df_ts = pd.DataFrame(rows, columns=["frame", "x_data"])
+            df_ts["x_data"] = pd.to_numeric(df_ts["x_data"], errors="coerce")
+
+            frames = df_ts["frame"].values
+            vals   = df_ts["x_data"].values
+
+            # Align time so that Ball Release maps to 0
+            t_aligned = frames - br_frame
+            # Track the max aligned x so we can set a valid upper bound for x-axis range
+            try:
+                cur_max = float(np.nanmax(t_aligned))
+                if max_x_aligned is None or cur_max > max_x_aligned:
+                    max_x_aligned = cur_max
+            except Exception:
+                pass
+
+            date_str = take_date.strftime("%Y-%m-%d")
+
+            # Assign consistent color per date
+            if date_str not in date_colors:
+                date_colors[date_str] = color_cycle[len(date_colors) % len(color_cycle)]
+
+            fig_ts.add_trace(
+                go.Scatter(
+                    x=t_aligned,
+                    y=vals,
+                    mode="lines",
+                    line=dict(color=date_colors[date_str]),
+                    name=date_str,
+                    legendgroup=date_str,
+                    opacity=0.4,
+                    showlegend=(date_str not in [t.name for t in fig_ts.data])
+                )
+            )
+
+        fig_ts.add_vline(
+            x=0,
+            line_dash="dot",
+            line_color="green",
+            annotation_text="BR",
+            annotation_position="top",
+            annotation_font=dict(
+                size=13,
+                color="green",
+                family="Arial"
+            )
+        )
+
+        # --- Median Foot Plant ---
+        if fp_aligned_frames:
+            median_fp = float(np.median(fp_aligned_frames))
+            fig_ts.add_vline(
+                x=median_fp,
+                line_dash="dash",
+                line_color="orange",
+                annotation_text="FP",
+                annotation_position="top",
+                annotation_font=dict(
+                    size=13,
+                    color="orange",
+                    family="Arial"
+                )
+            )
+            x_start = median_fp - 50
+        else:
+            x_start = None
+
+        # --- Median Shoulder ER ---
+        if er_aligned_frames:
+            median_er = float(np.median(er_aligned_frames))
+            fig_ts.add_vline(
+                x=median_er,
+                line_dash="dot",
+                line_color="purple",
+                annotation_text="MER",
+                annotation_position="top",
+                annotation_font=dict(
+                    size=13,
+                    color="purple",
+                    family="Arial"
+                )
+            )
+
+        # End plot 50 frames after Ball Release
+        x_end = 50
+
+        fig_ts.update_layout(
+            title=f"Arm Proximal Energy Transfer — {arm_prox_segment} (Aligned to Ball Release)",
+            xaxis_title="Aligned Time (Ball Release = 0)",
+            yaxis_title="Power",
+            xaxis=dict(range=[x_start, x_end]) if x_start is not None else {},
+            height=600,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5
+            )
+        )
+
+        st.plotly_chart(fig_ts, use_container_width=True)
