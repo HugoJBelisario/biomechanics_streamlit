@@ -1205,25 +1205,24 @@ with tab2:
         session1_date = st.selectbox("Select First Session Date", dates_comp, key="comp_date1")
         session2_date = st.selectbox("Select Second Session Date", dates_comp, key="comp_date2")
 
-        # --- Get min and max velocity for session1
-        cur.execute("""
+        # --- Get min and max velocity for session1 (filtered by throw type) ---
+        placeholders_tt = ",".join(["%s"] * len(selected_throw_types_comp))
+        cur.execute(f"""
             SELECT MIN(t.pitch_velo), MAX(t.pitch_velo)
             FROM takes t
             JOIN athletes a ON t.athlete_id = a.athlete_id
-            WHERE a.athlete_name = %s AND t.take_date = %s
-        """, (selected_pitcher_comp, session1_date))
+            WHERE a.athlete_name = %s
+              AND t.take_date = %s
+              AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+        """, (selected_pitcher_comp, session1_date, *selected_throw_types_comp))
         velo_min1, velo_max1 = cur.fetchone()
-
         if velo_min1 is None or velo_max1 is None:
-            st.warning(f"No velocity data for {session1_date}")
+            st.warning(f"No {', '.join(selected_throw_types_comp)} throws found for {session1_date}")
             st.stop()
-
         velo_min1 = float(f"{velo_min1:.1f}")
         velo_max1 = float(f"{velo_max1:.1f}")
-
         if velo_min1 >= velo_max1:
             velo_max1 = velo_min1 + 0.1
-
         velo_range1 = st.slider(
             f"Velocity Range for {session1_date}",
             min_value=velo_min1,
@@ -1233,25 +1232,24 @@ with tab2:
             key="velo1"
         )
 
-        # --- Get min and max velocity for session2
-        cur.execute("""
+        # --- Get min and max velocity for session2 (filtered by throw type) ---
+        placeholders_tt = ",".join(["%s"] * len(selected_throw_types_comp))
+        cur.execute(f"""
             SELECT MIN(t.pitch_velo), MAX(t.pitch_velo)
             FROM takes t
             JOIN athletes a ON t.athlete_id = a.athlete_id
-            WHERE a.athlete_name = %s AND t.take_date = %s
-        """, (selected_pitcher_comp, session2_date))
+            WHERE a.athlete_name = %s
+              AND t.take_date = %s
+              AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+        """, (selected_pitcher_comp, session2_date, *selected_throw_types_comp))
         velo_min2, velo_max2 = cur.fetchone()
-
         if velo_min2 is None or velo_max2 is None:
-            st.warning(f"No velocity data for {session2_date}")
+            st.warning(f"No {', '.join(selected_throw_types_comp)} throws found for {session2_date}")
             st.stop()
-
         velo_min2 = float(f"{float(velo_min2):.1f}")
         velo_max2 = float(f"{float(velo_max2):.1f}")
-
         if velo_min2 >= velo_max2:
             velo_max2 = velo_min2 + 0.1
-
         velo_range2 = st.slider(
             f"Velocity Range for {session2_date}",
             min_value=velo_min2,
