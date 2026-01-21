@@ -1502,14 +1502,27 @@ with tab2:
 
     # ---- Compute curves and render charts ----
     with right:
-        mean_shoulder1, mean_torso1, peak_arm_time_pct = load_and_interpolate_curves(
-            session1_date, velo_range1[0], velo_range1[1], comp_col, use_abs,
-            throw_types=selected_throw_types_comp
-        )
-        mean_shoulder2, mean_torso2, _ = load_and_interpolate_curves(
-            session2_date, velo_range2[0], velo_range2[1], comp_col, use_abs,
-            throw_types=selected_throw_types_comp
-        )
+        # --- 1) Loop per throw type for session 1 ---
+        curves_s1_by_type = {}
+        peak_arm_time_pct_by_type = {}
+        for tt in selected_throw_types_comp:
+            s1_sh, s1_to, s1_peak_arm_time = load_and_interpolate_curves(
+                session1_date, velo_range1[0], velo_range1[1], comp_col, use_abs,
+                throw_types=[tt]
+            )
+            curves_s1_by_type[tt] = dict(shoulder=s1_sh, torso=s1_to)
+            peak_arm_time_pct_by_type[tt] = s1_peak_arm_time
+
+        # --- 2) Loop per throw type for session 2 ---
+        curves_s2_by_type = {}
+        peak_arm_time_pct_by_type_2 = {}
+        for tt in selected_throw_types_comp:
+            s2_sh, s2_to, s2_peak_arm_time = load_and_interpolate_curves(
+                session2_date, velo_range2[0], velo_range2[1], comp_col, use_abs,
+                throw_types=[tt]
+            )
+            curves_s2_by_type[tt] = dict(shoulder=s2_sh, torso=s2_to)
+            peak_arm_time_pct_by_type_2[tt] = s2_peak_arm_time
 
         mean_ref_shoulder, mean_ref_torso = None, None
         if include_ref:
@@ -1520,19 +1533,55 @@ with tab2:
                 throw_types=["Mound"]
             )
 
-        if (mean_shoulder1 is not None) and (mean_shoulder2 is not None):
+        # Define dash styles for throw types
+        throw_type_dash = {
+            "Mound": "solid",
+            "Pulldown": "dash"
+        }
+
+        # Only plot if at least one session has at least one valid curve
+        has_any_curve = (
+            any(v["shoulder"] is not None for v in curves_s1_by_type.values())
+            and any(v["shoulder"] is not None for v in curves_s2_by_type.values())
+        )
+        if has_any_curve:
             # ===================== SHOULDER =====================
             fig_shoulder = go.Figure()
-            fig_shoulder.add_trace(go.Scatter(
-                x=interp_points, y=mean_shoulder1,
-                mode='lines', name=f"{session1_date}",
-                line=dict(color='blue')
-            ))
-            fig_shoulder.add_trace(go.Scatter(
-                x=interp_points, y=mean_shoulder2,
-                mode='lines', name=f"{session2_date}",
-                line=dict(color='orange')
-            ))
+            session1_color = 'blue'
+            session2_color = 'orange'
+            # Plot session 1 curves
+            for tt, v in curves_s1_by_type.items():
+                curve = v["shoulder"]
+                if curve is None:
+                    continue
+                fig_shoulder.add_trace(go.Scatter(
+                    x=interp_points, y=curve,
+                    mode='lines',
+                    line=dict(
+                        color=session1_color,
+                        dash=throw_type_dash.get(tt, "dot"),
+                        width=3
+                    ),
+                    name=f"{session1_date} | {tt}",
+                    legendgroup=f"s1_{tt}"
+                ))
+            # Plot session 2 curves
+            for tt, v in curves_s2_by_type.items():
+                curve = v["shoulder"]
+                if curve is None:
+                    continue
+                fig_shoulder.add_trace(go.Scatter(
+                    x=interp_points, y=curve,
+                    mode='lines',
+                    line=dict(
+                        color=session2_color,
+                        dash=throw_type_dash.get(tt, "dot"),
+                        width=3
+                    ),
+                    name=f"{session2_date} | {tt}",
+                    legendgroup=f"s2_{tt}"
+                ))
+            # Reference group
             if mean_ref_shoulder is not None:
                 fig_shoulder.add_trace(go.Scatter(
                     x=interp_points, y=mean_ref_shoulder,
@@ -1541,7 +1590,13 @@ with tab2:
                 ))
 
             # y-bounds for vertical markers
-            yvals_sh = list(mean_shoulder1) + list(mean_shoulder2)
+            yvals_sh = []
+            for v in curves_s1_by_type.values():
+                if v["shoulder"] is not None:
+                    yvals_sh.extend(list(v["shoulder"]))
+            for v in curves_s2_by_type.values():
+                if v["shoulder"] is not None:
+                    yvals_sh.extend(list(v["shoulder"]))
             if mean_ref_shoulder is not None:
                 yvals_sh += list(mean_ref_shoulder)
             y0_sh, y1_sh = float(np.nanmin(yvals_sh)), float(np.nanmax(yvals_sh))
@@ -1556,7 +1611,15 @@ with tab2:
                 line=dict(dash='dot', color='green'), name="Peak Arm Energy"
             ))
 
+            # Draw Max Layback (x=50) and Peak Arm Energy for session 1 (use first non-None)
             shapes_list = [dict(type="line", x0=50, x1=50, y0=y0_sh, y1=y1_sh, line=dict(dash="dot", color="gray"))]
+            # For peak arm energy, use the first non-None from session 1
+            peak_arm_time_pct = None
+            for tt in selected_throw_types_comp:
+                val = peak_arm_time_pct_by_type.get(tt)
+                if val is not None:
+                    peak_arm_time_pct = val
+                    break
             if peak_arm_time_pct is not None:
                 shapes_list.append(dict(type="line", x0=peak_arm_time_pct, x1=peak_arm_time_pct,
                                         y0=y0_sh, y1=y1_sh, line=dict(dash="dot", color="green")))
@@ -1571,16 +1634,39 @@ with tab2:
 
             # ===================== TORSO =====================
             fig_torso = go.Figure()
-            fig_torso.add_trace(go.Scatter(
-                x=interp_points, y=mean_torso1,
-                mode='lines', name=f"{session1_date}",
-                line=dict(color='blue')
-            ))
-            fig_torso.add_trace(go.Scatter(
-                x=interp_points, y=mean_torso2,
-                mode='lines', name=f"{session2_date}",
-                line=dict(color='orange')
-            ))
+            # Plot session 1 curves
+            for tt, v in curves_s1_by_type.items():
+                curve = v["torso"]
+                if curve is None:
+                    continue
+                fig_torso.add_trace(go.Scatter(
+                    x=interp_points, y=curve,
+                    mode='lines',
+                    line=dict(
+                        color=session1_color,
+                        dash=throw_type_dash.get(tt, "dot"),
+                        width=3
+                    ),
+                    name=f"{session1_date} | {tt}",
+                    legendgroup=f"s1_{tt}"
+                ))
+            # Plot session 2 curves
+            for tt, v in curves_s2_by_type.items():
+                curve = v["torso"]
+                if curve is None:
+                    continue
+                fig_torso.add_trace(go.Scatter(
+                    x=interp_points, y=curve,
+                    mode='lines',
+                    line=dict(
+                        color=session2_color,
+                        dash=throw_type_dash.get(tt, "dot"),
+                        width=3
+                    ),
+                    name=f"{session2_date} | {tt}",
+                    legendgroup=f"s2_{tt}"
+                ))
+            # Reference group
             if mean_ref_torso is not None:
                 fig_torso.add_trace(go.Scatter(
                     x=interp_points, y=mean_ref_torso,
@@ -1588,7 +1674,13 @@ with tab2:
                     line=dict(color='red')
                 ))
 
-            yvals_to = list(mean_torso1) + list(mean_torso2)
+            yvals_to = []
+            for v in curves_s1_by_type.values():
+                if v["torso"] is not None:
+                    yvals_to.extend(list(v["torso"]))
+            for v in curves_s2_by_type.values():
+                if v["torso"] is not None:
+                    yvals_to.extend(list(v["torso"]))
             if mean_ref_torso is not None:
                 yvals_to += list(mean_ref_torso)
             y0_to, y1_to = float(np.nanmin(yvals_to)), float(np.nanmax(yvals_to))
@@ -1603,8 +1695,15 @@ with tab2:
             ))
 
             shapes_list_torso = [dict(type="line", x0=50, x1=50, y0=y0_to, y1=y1_to, line=dict(dash="dot", color="gray"))]
-            if peak_arm_time_pct is not None:
-                shapes_list_torso.append(dict(type="line", x0=peak_arm_time_pct, x1=peak_arm_time_pct,
+            # For peak arm energy, use the first non-None from session 1
+            peak_arm_time_pct_to = None
+            for tt in selected_throw_types_comp:
+                val = peak_arm_time_pct_by_type.get(tt)
+                if val is not None:
+                    peak_arm_time_pct_to = val
+                    break
+            if peak_arm_time_pct_to is not None:
+                shapes_list_torso.append(dict(type="line", x0=peak_arm_time_pct_to, x1=peak_arm_time_pct_to,
                                               y0=y0_to, y1=y1_to, line=dict(dash="dot", color="green")))
             fig_torso.update_layout(
                 title="Torso Power",
