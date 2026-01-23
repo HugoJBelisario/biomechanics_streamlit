@@ -1615,59 +1615,6 @@ with tab2:
                     line=dict(color='red')
                 ))
 
-            # --- Regression lines per throw type (shoulder) ---
-            if display_mode_tab2 == "Grouped Average":
-                # Session 1
-                for tt, v in curves_s1_by_type.items():
-                    curves = v["shoulder"] if comp_col == "shoulder" else v["torso"]
-                    if not curves:
-                        continue
-                    x_all, y_all = [], []
-                    for c in curves:
-                        for xi, yi in zip(interp_points, c):
-                            if not np.isnan(yi):
-                                x_all.append(xi)
-                                y_all.append(yi)
-                    if len(x_all) < 5:
-                        continue
-                    slope, intercept = np.polyfit(x_all, y_all, 1)
-                    fig_shoulder.add_trace(go.Scatter(
-                        x=interp_points,
-                        y=slope * interp_points + intercept,
-                        mode="lines",
-                        line=dict(
-                            color=throw_type_color.get(tt, "#444"),
-                            width=4
-                        ),
-                        name=f"{session1_date} | {tt} Regression",
-                        legendgroup=f"s1_reg_{tt}"
-                    ))
-                # Session 2
-                for tt, v in curves_s2_by_type.items():
-                    curves = v["shoulder"] if comp_col == "shoulder" else v["torso"]
-                    if not curves:
-                        continue
-                    x_all, y_all = [], []
-                    for c in curves:
-                        for xi, yi in zip(interp_points, c):
-                            if not np.isnan(yi):
-                                x_all.append(xi)
-                                y_all.append(yi)
-                    if len(x_all) < 5:
-                        continue
-                    slope, intercept = np.polyfit(x_all, y_all, 1)
-                    fig_shoulder.add_trace(go.Scatter(
-                        x=interp_points,
-                        y=slope * interp_points + intercept,
-                        mode="lines",
-                        line=dict(
-                            color=throw_type_color.get(tt, "#444"),
-                            width=4
-                        ),
-                        name=f"{session2_date} | {tt} Regression",
-                        legendgroup=f"s2_reg_{tt}"
-                    ))
-
             # y-bounds for vertical markers
             yvals_sh = []
             for v in curves_s1_by_type.values():
@@ -1781,59 +1728,6 @@ with tab2:
                     mode='lines', name="Reference (mean)",
                     line=dict(color='red')
                 ))
-
-            # --- Regression lines per throw type (torso) ---
-            if display_mode_tab2 == "Grouped Average":
-                # Session 1
-                for tt, v in curves_s1_by_type.items():
-                    curves = v["torso"]
-                    if not curves:
-                        continue
-                    x_all, y_all = [], []
-                    for c in curves:
-                        for xi, yi in zip(interp_points, c):
-                            if not np.isnan(yi):
-                                x_all.append(xi)
-                                y_all.append(yi)
-                    if len(x_all) < 5:
-                        continue
-                    slope, intercept = np.polyfit(x_all, y_all, 1)
-                    fig_torso.add_trace(go.Scatter(
-                        x=interp_points,
-                        y=slope * interp_points + intercept,
-                        mode="lines",
-                        line=dict(
-                            color=throw_type_color.get(tt, "#444"),
-                            width=4
-                        ),
-                        name=f"{session1_date} | {tt} Regression",
-                        legendgroup=f"s1_reg_{tt}"
-                    ))
-                # Session 2
-                for tt, v in curves_s2_by_type.items():
-                    curves = v["torso"]
-                    if not curves:
-                        continue
-                    x_all, y_all = [], []
-                    for c in curves:
-                        for xi, yi in zip(interp_points, c):
-                            if not np.isnan(yi):
-                                x_all.append(xi)
-                                y_all.append(yi)
-                    if len(x_all) < 5:
-                        continue
-                    slope, intercept = np.polyfit(x_all, y_all, 1)
-                    fig_torso.add_trace(go.Scatter(
-                        x=interp_points,
-                        y=slope * interp_points + intercept,
-                        mode="lines",
-                        line=dict(
-                            color=throw_type_color.get(tt, "#444"),
-                            width=4
-                        ),
-                        name=f"{session2_date} | {tt} Regression",
-                        legendgroup=f"s2_reg_{tt}"
-                    ))
 
             yvals_to = []
             for v in curves_s1_by_type.values():
