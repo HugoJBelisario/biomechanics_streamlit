@@ -833,13 +833,15 @@ with tab1:
                             x=x, y=y0, mode="markers",
                             marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][0]),
                             name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}",
-                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}"
+                            hovertext=[f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}"] * len(x),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit, y=y_fit0, mode="lines",
                             line=dict(color=color, dash=metric_dash_map[energy_plot_option][0]),
-                            name=f"R²={r0**2:.2f}"
+                            name=f"R²={r0**2:.2f}",
+                            hovertext=[f"{date} | {throw_type} | R²={r0**2:.2f}"] * len(x_fit),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
                         ))
                     # --- AUC Drive → Peak Arm Energy ---
                     y1 = sub["AUC (Drive → Peak Arm Energy)"]
@@ -850,13 +852,15 @@ with tab1:
                             x=x, y=y1, mode="markers",
                             marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][1]),
                             name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}",
-                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}"
+                            hovertext=[f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}"] * len(x),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit, y=y_fit1, mode="lines",
                             line=dict(color=color, dash=metric_dash_map[energy_plot_option][1]),
-                            name=f"R²={r1**2:.2f}"
+                            name=f"R²={r1**2:.2f}",
+                            hovertext=[f"{date} | {throw_type} | R²={r1**2:.2f}"] * len(x_fit),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
                         ))
                 elif energy_plot_option == "STP Elevation":
                     # ---- Drive → 0 ----
@@ -871,15 +875,17 @@ with tab1:
                             mode="markers",
                             marker=dict(color=color, symbol="diamond"),
                             name=f"{date} | {throw_type} | STP Elev → 0",
-                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP Elev → 0"
+                            hovertext=[f"{date} | {throw_type} | STP Elev → 0"] * len(y0),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"R²={r0**2:.2f}"
+                            name=f"R²={r0**2:.2f}",
+                            hovertext=[f"{date} | {throw_type} | R²={r0**2:.2f}"] * len(x_fit),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -893,15 +899,17 @@ with tab1:
                             mode="markers",
                             marker=dict(color=color, symbol="diamond-open"),
                             name=f"{date} | {throw_type} | STP Elev → Peak",
-                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP Elev → Peak"
+                            hovertext=[f"{date} | {throw_type} | STP Elev → Peak"] * len(y1),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"R²={r1**2:.2f}"
+                            name=f"R²={r1**2:.2f}",
+                            hovertext=[f"{date} | {throw_type} | R²={r1**2:.2f}"] * len(x_fit),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
                         ))
                 elif energy_plot_option == "STP Horizontal Abduction":
                     # ---- Drive → 0 ----
@@ -916,15 +924,17 @@ with tab1:
                             mode="markers",
                             marker=dict(color=color, symbol="square"),
                             name=f"{date} | {throw_type} | STP HorizAbd → 0",
-                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP HorizAbd → 0"
+                            hovertext=[f"{date} | {throw_type} | STP HorizAbd → 0"] * len(y0),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"R²={r0**2:.2f}"
+                            name=f"R²={r0**2:.2f}",
+                            hovertext=[f"{date} | {throw_type} | R²={r0**2:.2f}"] * len(x_fit),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -938,15 +948,17 @@ with tab1:
                             mode="markers",
                             marker=dict(color=color, symbol="square-open"),
                             name=f"{date} | {throw_type} | STP HorizAbd → Peak",
-                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP HorizAbd → Peak"
+                            hovertext=[f"{date} | {throw_type} | STP HorizAbd → Peak"] * len(y1),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"R²={r1**2:.2f}"
+                            name=f"R²={r1**2:.2f}",
+                            hovertext=[f"{date} | {throw_type} | R²={r1**2:.2f}"] * len(x_fit),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
                         ))
                 elif energy_plot_option == "STP Rotational":
                     # ---- Drive → 0 ----
@@ -961,15 +973,17 @@ with tab1:
                             mode="markers",
                             marker=dict(color=color, symbol="pentagon"),
                             name=f"{date} | {throw_type} | STP Rot → 0",
-                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP Rot → 0"
+                            hovertext=[f"{date} | {throw_type} | STP Rot → 0"] * len(y0),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"R²={r0**2:.2f}"
+                            name=f"R²={r0**2:.2f}",
+                            hovertext=[f"{date} | {throw_type} | R²={r0**2:.2f}"] * len(x_fit),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -983,15 +997,17 @@ with tab1:
                             mode="markers",
                             marker=dict(color=color, symbol="pentagon-open"),
                             name=f"{date} | {throw_type} | STP Rot → Peak",
-                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP Rot → Peak"
+                            hovertext=[f"{date} | {throw_type} | STP Rot → Peak"] * len(y1),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"R²={r1**2:.2f}"
+                            name=f"R²={r1**2:.2f}",
+                            hovertext=[f"{date} | {throw_type} | R²={r1**2:.2f}"] * len(x_fit),
+                            hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
                         ))
 
         # Build dynamic title from energy_plot_options
