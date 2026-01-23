@@ -762,6 +762,8 @@ with tab1:
         df_tab1["STP Rotational AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(
             df_tab1["STP Rotational AUC (Drive → Peak Arm Energy)"], errors="coerce"
         )
+        # --- Normalize Throw Type: ensure always present and filled ---
+        df_tab1["Throw Type"] = df_tab1["Throw Type"].fillna("Mound")
 
         # --------- Energy Flow Metric Selector ---------
         energy_plot_options = st.multiselect(
@@ -781,10 +783,15 @@ with tab1:
 
         import plotly.express as px
 
+        # --- Fixed color map by throw type ---
+        throw_type_colors = {
+            "Mound": "#1f77b4",     # blue
+            "Pulldown": "#d62728"   # red
+        }
+
         color_cycle = px.colors.qualitative.Plotly
 
         fig = go.Figure()
-        color_idx = 0
         # For marker symbols per metric
         metric_symbol_map = {
             "Torso Power": ["circle", "triangle-up"],
@@ -813,10 +820,11 @@ with tab1:
             "STP Rotational": ["R²"],
         }
 
-        for date, sub in df_tab1.groupby("Session Date"):
+        # --- Group by Session Date and Throw Type ---
+        for (date, throw_type), sub in df_tab1.groupby(["Session Date", "Throw Type"]):
             if len(sub) < 2:
                 continue
-            color = color_cycle[color_idx % len(color_cycle)]
+            color = throw_type_colors.get(throw_type, "#444")
             x = sub["Velocity"]
             for energy_plot_option in energy_plot_options:
                 # Torso Power: plot both AUC → 0 and AUC → Peak
@@ -831,12 +839,12 @@ with tab1:
                         fig.add_trace(go.Scatter(
                             x=x, y=y0, mode="markers",
                             marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][0]),
-                            name=f"{date} | {metric_trace_names[energy_plot_option][0]}"
+                            name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit, y=y_fit0, mode="lines",
                             line=dict(color=color, dash=metric_dash_map[energy_plot_option][0]),
-                            name=f"{date} | {metric_reg_names[energy_plot_option][0]}={r0**2:.2f}"
+                            name=f"{date} | {throw_type} | {metric_reg_names[energy_plot_option][0]}={r0**2:.2f}"
                         ))
                     # --- AUC Drive → Peak Arm Energy ---
                     y1 = sub["AUC (Drive → Peak Arm Energy)"]
@@ -846,12 +854,12 @@ with tab1:
                         fig.add_trace(go.Scatter(
                             x=x, y=y1, mode="markers",
                             marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][1]),
-                            name=f"{date} | {metric_trace_names[energy_plot_option][1]}"
+                            name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit, y=y_fit1, mode="lines",
                             line=dict(color=color, dash=metric_dash_map[energy_plot_option][1]),
-                            name=f"{date} | {metric_reg_names[energy_plot_option][1]}={r1**2:.2f}"
+                            name=f"{date} | {throw_type} | {metric_reg_names[energy_plot_option][1]}={r1**2:.2f}"
                         ))
                 elif energy_plot_option == "STP Elevation":
                     # ---- Drive → 0 ----
@@ -866,14 +874,14 @@ with tab1:
                             y=y0,
                             mode="markers",
                             marker=dict(color=color, symbol="diamond"),
-                            name=f"{date} | STP Elev → 0"
+                            name=f"{date} | {throw_type} | STP Elev → 0"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"{date} | STP Elev → 0 R²={r0**2:.2f}"
+                            name=f"{date} | {throw_type} | STP Elev → 0 R²={r0**2:.2f}"
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -887,14 +895,14 @@ with tab1:
                             y=y1,
                             mode="markers",
                             marker=dict(color=color, symbol="diamond-open"),
-                            name=f"{date} | STP Elev → Peak"
+                            name=f"{date} | {throw_type} | STP Elev → Peak"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"{date} | STP Elev → Peak R²={r1**2:.2f}"
+                            name=f"{date} | {throw_type} | STP Elev → Peak R²={r1**2:.2f}"
                         ))
                 elif energy_plot_option == "STP Horizontal Abduction":
                     # ---- Drive → 0 ----
@@ -909,14 +917,14 @@ with tab1:
                             y=y0,
                             mode="markers",
                             marker=dict(color=color, symbol="square"),
-                            name=f"{date} | STP HorizAbd → 0"
+                            name=f"{date} | {throw_type} | STP HorizAbd → 0"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"{date} | STP HorizAbd → 0 R²={r0**2:.2f}"
+                            name=f"{date} | {throw_type} | STP HorizAbd → 0 R²={r0**2:.2f}"
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -930,14 +938,14 @@ with tab1:
                             y=y1,
                             mode="markers",
                             marker=dict(color=color, symbol="square-open"),
-                            name=f"{date} | STP HorizAbd → Peak"
+                            name=f"{date} | {throw_type} | STP HorizAbd → Peak"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"{date} | STP HorizAbd → Peak R²={r1**2:.2f}"
+                            name=f"{date} | {throw_type} | STP HorizAbd → Peak R²={r1**2:.2f}"
                         ))
                 elif energy_plot_option == "STP Rotational":
                     # ---- Drive → 0 ----
@@ -952,14 +960,14 @@ with tab1:
                             y=y0,
                             mode="markers",
                             marker=dict(color=color, symbol="pentagon"),
-                            name=f"{date} | STP Rot → 0"
+                            name=f"{date} | {throw_type} | STP Rot → 0"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"{date} | STP Rot → 0 R²={r0**2:.2f}"
+                            name=f"{date} | {throw_type} | STP Rot → 0 R²={r0**2:.2f}"
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -973,16 +981,15 @@ with tab1:
                             y=y1,
                             mode="markers",
                             marker=dict(color=color, symbol="pentagon-open"),
-                            name=f"{date} | STP Rot → Peak"
+                            name=f"{date} | {throw_type} | STP Rot → Peak"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"{date} | STP Rot → Peak R²={r1**2:.2f}"
+                            name=f"{date} | {throw_type} | STP Rot → Peak R²={r1**2:.2f}"
                         ))
-            color_idx += 1
 
         fig.update_layout(
             title="Velocity vs Selected Energy Flow Metrics",
@@ -995,7 +1002,8 @@ with tab1:
                 xanchor="center",
                 x=0.5
             ),
-            height=600
+            height=600,
+            legend_title_text="Session | Throw Type | Metric"
         )
 
         st.plotly_chart(fig, use_container_width=True)
