@@ -375,10 +375,7 @@ with tab1:
         ORDER BY a.athlete_name
     """)
     pitchers = [row[0] for row in cur.fetchall()]
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        selected_pitcher = st.selectbox("Pitcher", pitchers)
+    selected_pitcher = st.selectbox("Pitcher", pitchers)
 
     # --- Get handedness from DB ---
     cur.execute("SELECT handedness FROM athletes WHERE athlete_name = %s", (selected_pitcher,))
@@ -400,13 +397,12 @@ with tab1:
     throw_type_options = [r[0] for r in cur.fetchall()] or ["Mound", "Pulldown"]
     default_throw_types = ["Mound"] if "Mound" in throw_type_options else [throw_type_options[0]]
 
-    with col2:
-        selected_throw_types = st.multiselect(
-            "Throw Type",
-            options=throw_type_options,
-            default=default_throw_types,
-            key="throw_types"
-        )
+    selected_throw_types = st.multiselect(
+        "Throw Type",
+        options=throw_type_options,
+        default=default_throw_types,
+        key="throw_types"
+    )
 
     # --- Session date options ---
     cur.execute("""
@@ -419,26 +415,24 @@ with tab1:
     dates = [row[0].strftime("%Y-%m-%d") for row in cur.fetchall()]
     dates.insert(0, "All Dates")
 
-    with col3:
-        selected_dates = st.multiselect(
-            "Session Date",
-            options=dates,
-            default=["All Dates"],
-            key="tab1_dates"
-        )
+    selected_dates = st.multiselect(
+        "Session Date",
+        options=dates,
+        default=["All Dates"],
+        key="tab1_dates"
+    )
 
-    with col4:
-        energy_plot_options = st.multiselect(
-            "Energy Flow Type",
-            [
-                "Torso Power",
-                "STP Elevation",
-                "STP Horizontal Abduction",
-                "STP Rotational"
-            ],
-            default=["Torso Power"],
-            key="tab1_energy_plot_options"
-        )
+    energy_plot_options = st.multiselect(
+        "Energy Flow Type",
+        [
+            "Torso Power",
+            "STP Elevation",
+            "STP Horizontal Abduction",
+            "STP Rotational"
+        ],
+        default=["Torso Power"],
+        key="tab1_energy_plot_options"
+    )
 
     # --- Ensure empty selections are still guarded ---
     if not selected_throw_types:
