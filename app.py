@@ -94,56 +94,40 @@ def get_shoulder_er_max_frame(take_id, handedness, cur):
     frames = np.array([r[0] for r in rows], dtype=int)
     energy = np.array([r[1] for r in rows], dtype=float)
 
-    # -----------------------------------------------------------
-    # Find FIRST relevant arm-energy peak (>100) that then drops
-    # -----------------------------------------------------------
-    peak_arm_energy_frame = None
+    # ------------------------------------
+    # Compute Foot Plant (zero-cross)
+    # ------------------------------------
+    prox_x_peak_frame = get_lead_ankle_prox_x_peak_frame(take_id, handedness, cur)
+    if prox_x_peak_frame is None:
+        return None
 
-    # Mild smoothing to reduce jitter without shifting timing
-    try:
-        import pandas as pd
-        energy_s = pd.Series(energy).rolling(window=5, center=True, min_periods=1).median().to_numpy()
-    except Exception:
-        energy_s = energy
+    ankle_min_frame = get_ankle_min_frame(
+        take_id, handedness, prox_x_peak_frame, frames[-1], cur
+    )
+    if ankle_min_frame is None:
+        return None
 
-    # First crossing above threshold
-    idx0_candidates = np.where(energy_s > 100)[0]
-    if idx0_candidates.size > 0:
-        idx0 = int(idx0_candidates[0])
+    fp_frame = get_zero_cross_frame(
+        take_id, handedness, ankle_min_frame, frames[-1], cur
+    )
+    if fp_frame is None:
+        return None
 
-        lookahead = 6      # frames to confirm drop
-        min_drop = 10.0    # require real decrease
+    # ------------------------------------
+    # MER search window: Foot Plant → Ball Release
+    # ------------------------------------
+    start_frame = int(fp_frame)
 
-        for i in range(idx0 + 1, len(energy_s) - lookahead - 1):
-            prev_v = energy_s[i - 1]
-            v      = energy_s[i]
-            next_v = energy_s[i + 1]
-
-            # Turning point: rising into i, then flat/down
-            if (v > 100) and (prev_v < v) and (v >= next_v):
-                future = energy_s[i + 1:i + 1 + lookahead]
-                if future.size > 0 and (v - np.nanmin(future) >= min_drop):
-                    peak_arm_energy_frame = int(frames[i])
-                    break
-
-    # -----------------------------------------------
-    # 3) Fallback: global arm-energy max
-    # -----------------------------------------------
-    if peak_arm_energy_frame is None:
-        idx = int(np.nanargmax(energy))
-        peak_arm_energy_frame = int(frames[idx])
+    br_frame = get_ball_release_frame(take_id, handedness, cur)
+    if br_frame is not None:
+        end_frame = int(br_frame)
+    else:
+        end_frame = int(start_frame + 200)  # safe fallback
 
     # ------------------------------------
     # 4) Query shoulder ER angle (z_data)
     # ------------------------------------
     shoulder_segment = "RT_SHOULDER" if handedness == "R" else "LT_SHOULDER"
-    start_frame = peak_arm_energy_frame - 15
-    end_frame   = peak_arm_energy_frame + 15
-
-    # Constrain MER search so it cannot occur after Ball Release
-    br_frame = get_ball_release_frame(take_id, handedness, cur)
-    if br_frame is not None:
-        end_frame = min(int(end_frame), int(br_frame))
 
     cur.execute("""
         SELECT ts.frame, ts.z_data
@@ -232,7 +216,7 @@ def get_zero_cross_frame(take_id, handedness, ankle_min_frame, sh_er_max_frame, 
         WHERE ts.take_id = %s
           AND c.category_name = 'KINETIC_KINEMATIC_DistEndVel'
           AND s.segment_name = %s
-          AND ts.z_data >= -0.13
+          AND ts.z_data >= -0.05
           AND ts.frame >= %s
           AND ts.frame <= %s
         ORDER BY ts.frame ASC
