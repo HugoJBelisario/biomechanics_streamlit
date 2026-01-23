@@ -839,7 +839,7 @@ with tab1:
                         fig.add_trace(go.Scatter(
                             x=x_fit, y=y_fit0, mode="lines",
                             line=dict(color=color, dash=metric_dash_map[energy_plot_option][0]),
-                            name=f"{date} | {throw_type} | {metric_reg_names[energy_plot_option][0]}={r0**2:.2f}"
+                            name=f"R²={r0**2:.2f}"
                         ))
                     # --- AUC Drive → Peak Arm Energy ---
                     y1 = sub["AUC (Drive → Peak Arm Energy)"]
@@ -856,7 +856,7 @@ with tab1:
                         fig.add_trace(go.Scatter(
                             x=x_fit, y=y_fit1, mode="lines",
                             line=dict(color=color, dash=metric_dash_map[energy_plot_option][1]),
-                            name=f"{date} | {throw_type} | {metric_reg_names[energy_plot_option][1]}={r1**2:.2f}"
+                            name=f"R²={r1**2:.2f}"
                         ))
                 elif energy_plot_option == "STP Elevation":
                     # ---- Drive → 0 ----
@@ -879,7 +879,7 @@ with tab1:
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"{date} | {throw_type} | STP Elev → 0 R²={r0**2:.2f}"
+                            name=f"R²={r0**2:.2f}"
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -901,7 +901,7 @@ with tab1:
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"{date} | {throw_type} | STP Elev → Peak R²={r1**2:.2f}"
+                            name=f"R²={r1**2:.2f}"
                         ))
                 elif energy_plot_option == "STP Horizontal Abduction":
                     # ---- Drive → 0 ----
@@ -924,7 +924,7 @@ with tab1:
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"{date} | {throw_type} | STP HorizAbd → 0 R²={r0**2:.2f}"
+                            name=f"R²={r0**2:.2f}"
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -946,7 +946,7 @@ with tab1:
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"{date} | {throw_type} | STP HorizAbd → Peak R²={r1**2:.2f}"
+                            name=f"R²={r1**2:.2f}"
                         ))
                 elif energy_plot_option == "STP Rotational":
                     # ---- Drive → 0 ----
@@ -969,7 +969,7 @@ with tab1:
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"{date} | {throw_type} | STP Rot → 0 R²={r0**2:.2f}"
+                            name=f"R²={r0**2:.2f}"
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -991,22 +991,24 @@ with tab1:
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"{date} | {throw_type} | STP Rot → Peak R²={r1**2:.2f}"
+                            name=f"R²={r1**2:.2f}"
                         ))
 
+        # Build dynamic title from energy_plot_options
+        title_metric = ", ".join(energy_plot_options)
+        dynamic_title = f"Velocity vs. {title_metric}"
         fig.update_layout(
-            title="Velocity vs Selected Energy Flow Metrics",
+            title=dynamic_title,
             xaxis_title="Velocity (mph)",
             yaxis_title="Energy / AUC",
             legend=dict(
                 orientation="h",
-                yanchor="bottom",
-                y=1,
+                yanchor="top",
+                y=-0.25,
                 xanchor="center",
                 x=0.5
             ),
-            height=600,
-            legend_title_text="Session | Throw Type | Metric"
+            height=600
         )
         fig.update_layout(
             hoverlabel=dict(
