@@ -367,7 +367,7 @@ def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment,
     }
 
 with tab1:
-    # --- Four-column controls ---
+    # --- Five-column controls ---
     cur.execute("""
         SELECT DISTINCT a.athlete_name
         FROM athletes a
@@ -375,7 +375,7 @@ with tab1:
         ORDER BY a.athlete_name
     """)
     pitchers = [row[0] for row in cur.fetchall()]
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
         selected_pitcher = st.selectbox("Pitcher", pitchers)
@@ -438,6 +438,18 @@ with tab1:
             ],
             default=["Torso Power"],
             key="tab1_energy_plot_options"
+        )
+
+    # --- Available take labels for Exclude Takes ---
+    with col5:
+        # Build available_take_labels in the same style as elsewhere (e.g., "Pitch 3 (92.1 mph)")
+        # We'll build it after take_rows are fetched, so here just placeholder for now
+        available_take_labels = []
+        exclude_takes = st.multiselect(
+            "Exclude Takes",
+            options=available_take_labels,
+            default=[],
+            key="tab1_exclude_takes"
         )
 
     # --- Ensure empty selections are still guarded ---
@@ -730,33 +742,31 @@ with tab1:
             df_tab1 = df_tab1.rename(columns={"pitch_velo": "Velocity"})
 
         if not df_tab1.empty:
-            # Build readable labels identical in style to Tab 3
-            def make_label_tab1(row):
-                try:
-                    auc0 = float(row["AUC (Drive → 0)"])
-                except Exception:
-                    auc0 = float("nan")
-                try:
-                    auc_peak = float(row["AUC (Drive → Peak Arm Energy)"])
-                except Exception:
-                    auc_peak = float("nan")
-                return f"{row['Session Date']} | {row['Velocity']} mph | {auc0:.2f} → {auc_peak:.2f}"
-
-            df_tab1["label"] = df_tab1.apply(make_label_tab1, axis=1)
-
-            exclude_labels_tab1 = st.multiselect(
+            # Build available_take_labels: "Pitch X (velocity mph)"
+            def make_available_label(row):
+                # Use 1-based index for pitch number
+                # We'll enumerate them after DataFrame is built
+                return None  # placeholder, filled below
+            # Actually, enumerate after DataFrame is built
+            available_take_labels = [
+                f"Pitch {i+1} ({row['Velocity']:.1f} mph)"
+                for i, (_, row) in enumerate(df_tab1.iterrows())
+            ]
+            # Add to session state for proper defaulting
+            st.session_state["tab1_available_take_labels"] = available_take_labels
+            # Re-render multiselect with correct options
+            exclude_takes = st.multiselect(
                 "Exclude Takes",
-                options=df_tab1["label"].tolist(),
-                key="exclude_takes_tab1"
+                options=available_take_labels,
+                default=exclude_takes if exclude_takes else [],
+                key="tab1_exclude_takes"
             )
+            # Assign to DataFrame for filtering: add "Take Label" col
+            df_tab1["Take Label"] = available_take_labels
 
-            # Map labels back to take_ids
-            exclude_take_ids_tab1 = df_tab1[
-                df_tab1["label"].isin(exclude_labels_tab1)
-            ]["take_id"].tolist()
-
-            # Filter out excluded takes
-            df_tab1 = df_tab1[~df_tab1["take_id"].isin(exclude_take_ids_tab1)]
+        # Filter out excluded takes
+        if exclude_takes:
+            df_tab1 = df_tab1[~df_tab1["Take Label"].isin(exclude_takes)]
 
         # Prepare regressions
         df_tab1["Velocity"] = pd.to_numeric(df_tab1["Velocity"], errors="coerce")
@@ -838,14 +848,14 @@ with tab1:
                         fig.add_trace(go.Scatter(
                             x=x, y=y0, mode="markers",
                             marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][0]),
-                            name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}",
+                            name=metric_trace_names[energy_plot_option][0],
                             hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}"
+                            text=metric_trace_names[energy_plot_option][0]
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit, y=y_fit0, mode="lines",
                             line=dict(color=color, dash=metric_dash_map[energy_plot_option][0]),
-                            name=f"{date} | {throw_type} | {metric_reg_names[energy_plot_option][0]}={r0**2:.2f}"
+                            name=f"R² = {r0**2:.2f}"
                         ))
                     # --- AUC Drive → Peak Arm Energy ---
                     y1 = sub["AUC (Drive → Peak Arm Energy)"]
@@ -855,14 +865,14 @@ with tab1:
                         fig.add_trace(go.Scatter(
                             x=x, y=y1, mode="markers",
                             marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][1]),
-                            name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}",
+                            name=metric_trace_names[energy_plot_option][1],
                             hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}"
+                            text=metric_trace_names[energy_plot_option][1]
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit, y=y_fit1, mode="lines",
                             line=dict(color=color, dash=metric_dash_map[energy_plot_option][1]),
-                            name=f"{date} | {throw_type} | {metric_reg_names[energy_plot_option][1]}={r1**2:.2f}"
+                            name=f"R² = {r1**2:.2f}"
                         ))
                 elif energy_plot_option == "STP Elevation":
                     # ---- Drive → 0 ----
@@ -876,16 +886,16 @@ with tab1:
                             y=y0,
                             mode="markers",
                             marker=dict(color=color, symbol="diamond"),
-                            name=f"{date} | {throw_type} | STP Elev → 0",
+                            name=metric_trace_names[energy_plot_option][0],
                             hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP Elev → 0"
+                            text=metric_trace_names[energy_plot_option][0]
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"{date} | {throw_type} | STP Elev → 0 R²={r0**2:.2f}"
+                            name=f"R² = {r0**2:.2f}"
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -898,16 +908,16 @@ with tab1:
                             y=y1,
                             mode="markers",
                             marker=dict(color=color, symbol="diamond-open"),
-                            name=f"{date} | {throw_type} | STP Elev → Peak",
+                            name="STP Elev Peak",
                             hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP Elev → Peak"
+                            text="STP Elev Peak"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"{date} | {throw_type} | STP Elev → Peak R²={r1**2:.2f}"
+                            name=f"R² = {r1**2:.2f}"
                         ))
                 elif energy_plot_option == "STP Horizontal Abduction":
                     # ---- Drive → 0 ----
@@ -921,16 +931,16 @@ with tab1:
                             y=y0,
                             mode="markers",
                             marker=dict(color=color, symbol="square"),
-                            name=f"{date} | {throw_type} | STP HorizAbd → 0",
+                            name=metric_trace_names[energy_plot_option][0],
                             hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP HorizAbd → 0"
+                            text=metric_trace_names[energy_plot_option][0]
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"{date} | {throw_type} | STP HorizAbd → 0 R²={r0**2:.2f}"
+                            name=f"R² = {r0**2:.2f}"
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -943,16 +953,16 @@ with tab1:
                             y=y1,
                             mode="markers",
                             marker=dict(color=color, symbol="square-open"),
-                            name=f"{date} | {throw_type} | STP HorizAbd → Peak",
+                            name="STP HABD Peak",
                             hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP HorizAbd → Peak"
+                            text="STP HABD Peak"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"{date} | {throw_type} | STP HorizAbd → Peak R²={r1**2:.2f}"
+                            name=f"R² = {r1**2:.2f}"
                         ))
                 elif energy_plot_option == "STP Rotational":
                     # ---- Drive → 0 ----
@@ -966,16 +976,16 @@ with tab1:
                             y=y0,
                             mode="markers",
                             marker=dict(color=color, symbol="pentagon"),
-                            name=f"{date} | {throw_type} | STP Rot → 0",
+                            name=metric_trace_names[energy_plot_option][0],
                             hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP Rot → 0"
+                            text=metric_trace_names[energy_plot_option][0]
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit0,
                             mode="lines",
                             line=dict(color=color, dash="dash"),
-                            name=f"{date} | {throw_type} | STP Rot → 0 R²={r0**2:.2f}"
+                            name=f"R² = {r0**2:.2f}"
                         ))
 
                     # ---- Drive → Peak Arm Energy ----
@@ -988,20 +998,25 @@ with tab1:
                             y=y1,
                             mode="markers",
                             marker=dict(color=color, symbol="pentagon-open"),
-                            name=f"{date} | {throw_type} | STP Rot → Peak",
+                            name="STP ROT Peak",
                             hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
-                            text=f"{date} | {throw_type} | STP Rot → Peak"
+                            text="STP ROT Peak"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
                             y=y_fit1,
                             mode="lines",
                             line=dict(color=color, dash="dot"),
-                            name=f"{date} | {throw_type} | STP Rot → Peak R²={r1**2:.2f}"
+                            name=f"R² = {r1**2:.2f}"
                         ))
 
+        # ---- Dynamic plot title based on Energy Flow Type selection ----
+        if len(energy_plot_options) == 1:
+            title_metric = energy_plot_options[0]
+        else:
+            title_metric = " & ".join(energy_plot_options)
         fig.update_layout(
-            title="Velocity vs Selected Energy Flow Metrics",
+            title=f"Velocity vs. {title_metric}",
             xaxis_title="Velocity (mph)",
             yaxis_title="Energy / AUC",
             legend=dict(
@@ -1012,7 +1027,7 @@ with tab1:
                 x=0.5
             ),
             height=600,
-            legend_title_text="Session | Throw Type | Metric"
+            legend_title_text="Metric"
         )
         fig.update_layout(
             hoverlabel=dict(
