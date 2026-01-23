@@ -367,7 +367,7 @@ def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment,
     }
 
 with tab1:
-    # --- Pitcher selection ---
+    # --- Four-column controls ---
     cur.execute("""
         SELECT DISTINCT a.athlete_name
         FROM athletes a
@@ -375,7 +375,10 @@ with tab1:
         ORDER BY a.athlete_name
     """)
     pitchers = [row[0] for row in cur.fetchall()]
-    selected_pitcher = st.selectbox("Select Pitcher", pitchers)
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        selected_pitcher = st.selectbox("Pitcher", pitchers)
 
     # --- Get handedness from DB ---
     cur.execute("SELECT handedness FROM athletes WHERE athlete_name = %s", (selected_pitcher,))
@@ -386,7 +389,7 @@ with tab1:
     arm_segment = "RAR" if handedness == "R" else "LAR"
     shoulder_stp_segment = "RTA_RAR" if handedness == "R" else "RTA_LAR"
 
-    # --- Throw type selection (default = Mound) ---
+    # --- Throw type options ---
     cur.execute("""
         SELECT DISTINCT COALESCE(t.throw_type, 'Mound') AS throw_type
         FROM takes t
@@ -395,43 +398,55 @@ with tab1:
         ORDER BY throw_type
     """, (selected_pitcher,))
     throw_type_options = [r[0] for r in cur.fetchall()] or ["Mound", "Pulldown"]
-
-    # Default to Mound if available, otherwise first option
     default_throw_types = ["Mound"] if "Mound" in throw_type_options else [throw_type_options[0]]
 
-    selected_throw_types = st.multiselect(
-        "Throw Type(s)",
-        options=throw_type_options,
-        default=default_throw_types,
-        key="throw_types"
-    )
+    with col2:
+        selected_throw_types = st.multiselect(
+            "Throw Type",
+            options=throw_type_options,
+            default=default_throw_types,
+            key="throw_types"
+        )
 
-    # Safety: if user clears selection, treat as Mound
-    if not selected_throw_types:
-        selected_throw_types = default_throw_types
-
-
-    # --- Session date selection ---
-    # --- Session date selection (multi + All Dates) ---
+    # --- Session date options ---
     cur.execute("""
-                SELECT DISTINCT t.take_date
-                FROM takes t
-                         JOIN athletes a ON a.athlete_id = t.athlete_id
-                WHERE a.athlete_name = %s
-                ORDER BY t.take_date
-                """, (selected_pitcher,))
+        SELECT DISTINCT t.take_date
+        FROM takes t
+        JOIN athletes a ON a.athlete_id = t.athlete_id
+        WHERE a.athlete_name = %s
+        ORDER BY t.take_date
+    """, (selected_pitcher,))
     dates = [row[0].strftime("%Y-%m-%d") for row in cur.fetchall()]
     dates.insert(0, "All Dates")
 
-    selected_dates = st.multiselect(
-        "Select Session Date(s)",
-        options=dates,
-        default=["All Dates"],
-        key="tab1_dates"
-    )
+    with col3:
+        selected_dates = st.multiselect(
+            "Session Date",
+            options=dates,
+            default=["All Dates"],
+            key="tab1_dates"
+        )
+
+    with col4:
+        energy_plot_options = st.multiselect(
+            "Energy Flow Type",
+            [
+                "Torso Power",
+                "STP Elevation",
+                "STP Horizontal Abduction",
+                "STP Rotational"
+            ],
+            default=["Torso Power"],
+            key="tab1_energy_plot_options"
+        )
+
+    # --- Ensure empty selections are still guarded ---
+    if not selected_throw_types:
+        selected_throw_types = default_throw_types
+    if not energy_plot_options:
+        energy_plot_options = ["Torso Power"]
 
     # --- Get takes for selected pitcher/date ---
-    # --- Get takes for selected pitcher / dates ---
     if "All Dates" in selected_dates or not selected_dates:
         placeholders_tt = ",".join(["%s"] * len(selected_throw_types))
         cur.execute(f"""
@@ -532,7 +547,7 @@ with tab1:
             continue
 
         max_knee_frame = int(knee_window.loc[idx, "frame"])
-        
+
         df_after = df_power[df_power["frame"] > max_knee_frame].copy()
         if df_after.empty:
             continue
@@ -765,21 +780,6 @@ with tab1:
         # --- Normalize Throw Type: ensure always present and filled ---
         df_tab1["Throw Type"] = df_tab1["Throw Type"].fillna("Mound")
 
-        # --------- Energy Flow Metric Selector ---------
-        energy_plot_options = st.multiselect(
-            "Select Energy Flow Metrics to Plot",
-            [
-                "Torso Power",
-                "STP Elevation",
-                "STP Horizontal Abduction",
-                "STP Rotational"
-            ],
-            default=["Torso Power"],
-            key="tab1_energy_plot_options"
-        )
-        # Guard: If empty, reset to default
-        if not energy_plot_options:
-            energy_plot_options = ["Torso Power"]
 
         import plotly.express as px
 
@@ -835,11 +835,12 @@ with tab1:
                         slope0, intercept0, r0, _, _ = linregress(x, y0)
                         x_fit = np.linspace(x.min(), x.max(), 100)
                         y_fit0 = slope0 * x_fit + intercept0
-
                         fig.add_trace(go.Scatter(
                             x=x, y=y0, mode="markers",
                             marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][0]),
-                            name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}"
+                            name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}",
+                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                            text=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit, y=y_fit0, mode="lines",
@@ -854,7 +855,9 @@ with tab1:
                         fig.add_trace(go.Scatter(
                             x=x, y=y1, mode="markers",
                             marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][1]),
-                            name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}"
+                            name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}",
+                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                            text=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit, y=y_fit1, mode="lines",
@@ -868,13 +871,14 @@ with tab1:
                         slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
                         x_fit = np.linspace(x.min(), x.max(), 100)
                         y_fit0 = slope0 * x_fit + intercept0
-
                         fig.add_trace(go.Scatter(
                             x=x.loc[y0.index],
                             y=y0,
                             mode="markers",
                             marker=dict(color=color, symbol="diamond"),
-                            name=f"{date} | {throw_type} | STP Elev → 0"
+                            name=f"{date} | {throw_type} | STP Elev → 0",
+                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                            text=f"{date} | {throw_type} | STP Elev → 0"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
@@ -889,13 +893,14 @@ with tab1:
                     if y1.size >= 2:
                         slope1, intercept1, r1, _, _ = linregress(x.loc[y1.index], y1)
                         y_fit1 = slope1 * x_fit + intercept1
-
                         fig.add_trace(go.Scatter(
                             x=x.loc[y1.index],
                             y=y1,
                             mode="markers",
                             marker=dict(color=color, symbol="diamond-open"),
-                            name=f"{date} | {throw_type} | STP Elev → Peak"
+                            name=f"{date} | {throw_type} | STP Elev → Peak",
+                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                            text=f"{date} | {throw_type} | STP Elev → Peak"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
@@ -911,13 +916,14 @@ with tab1:
                         slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
                         x_fit = np.linspace(x.min(), x.max(), 100)
                         y_fit0 = slope0 * x_fit + intercept0
-
                         fig.add_trace(go.Scatter(
                             x=x.loc[y0.index],
                             y=y0,
                             mode="markers",
                             marker=dict(color=color, symbol="square"),
-                            name=f"{date} | {throw_type} | STP HorizAbd → 0"
+                            name=f"{date} | {throw_type} | STP HorizAbd → 0",
+                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                            text=f"{date} | {throw_type} | STP HorizAbd → 0"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
@@ -932,13 +938,14 @@ with tab1:
                     if y1.size >= 2:
                         slope1, intercept1, r1, _, _ = linregress(x.loc[y1.index], y1)
                         y_fit1 = slope1 * x_fit + intercept1
-
                         fig.add_trace(go.Scatter(
                             x=x.loc[y1.index],
                             y=y1,
                             mode="markers",
                             marker=dict(color=color, symbol="square-open"),
-                            name=f"{date} | {throw_type} | STP HorizAbd → Peak"
+                            name=f"{date} | {throw_type} | STP HorizAbd → Peak",
+                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                            text=f"{date} | {throw_type} | STP HorizAbd → Peak"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
@@ -954,13 +961,14 @@ with tab1:
                         slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
                         x_fit = np.linspace(x.min(), x.max(), 100)
                         y_fit0 = slope0 * x_fit + intercept0
-
                         fig.add_trace(go.Scatter(
                             x=x.loc[y0.index],
                             y=y0,
                             mode="markers",
                             marker=dict(color=color, symbol="pentagon"),
-                            name=f"{date} | {throw_type} | STP Rot → 0"
+                            name=f"{date} | {throw_type} | STP Rot → 0",
+                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                            text=f"{date} | {throw_type} | STP Rot → 0"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
@@ -975,13 +983,14 @@ with tab1:
                     if y1.size >= 2:
                         slope1, intercept1, r1, _, _ = linregress(x.loc[y1.index], y1)
                         y_fit1 = slope1 * x_fit + intercept1
-
                         fig.add_trace(go.Scatter(
                             x=x.loc[y1.index],
                             y=y1,
                             mode="markers",
                             marker=dict(color=color, symbol="pentagon-open"),
-                            name=f"{date} | {throw_type} | STP Rot → Peak"
+                            name=f"{date} | {throw_type} | STP Rot → Peak",
+                            hovertemplate="%{text}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                            text=f"{date} | {throw_type} | STP Rot → Peak"
                         ))
                         fig.add_trace(go.Scatter(
                             x=x_fit,
@@ -1004,6 +1013,12 @@ with tab1:
             ),
             height=600,
             legend_title_text="Session | Throw Type | Metric"
+        )
+        fig.update_layout(
+            hoverlabel=dict(
+                namelength=-1,
+                font=dict(size=13)
+            )
         )
 
         st.plotly_chart(fig, use_container_width=True)
