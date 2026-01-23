@@ -1184,6 +1184,14 @@ with tab2:
 
         if not selected_throw_types_comp:
             selected_throw_types_comp = default_throw_types_comp
+
+        display_mode_tab2 = st.radio(
+            "Display Mode",
+            ["Grouped Average", "Individual Throws"],
+            index=0,
+            horizontal=True,
+            key="tab2_display_mode"
+        )
         # --- Get handedness from DB ---
         cur.execute("SELECT handedness FROM athletes WHERE athlete_name = %s", (selected_pitcher_comp,))
         handedness_row_comp = cur.fetchone()
@@ -1329,9 +1337,9 @@ with tab2:
     def load_and_interpolate_curves(date, velo_min, velo_max, comp_col, use_abs, throw_types=None):
         """
         Returns:
-            mean_shoulder (np.ndarray of length 100) or None
-            mean_torso    (np.ndarray of length 100) or None
-            peak_arm_time_pct_mean (float) or None
+            shoulder_curves (list[np.ndarray])  # one per take, length 100
+            torso_curves    (list[np.ndarray])  # one per take, length 100
+            peak_arm_time_pcts (list[float])    # one per take
         """
         if date is not None:
             if throw_types:
@@ -1495,10 +1503,7 @@ with tab2:
         if not shoulder_curves or not torso_curves:
             return None, None, None
 
-        mean_shoulder = np.nanmean(np.vstack(shoulder_curves), axis=0)
-        mean_torso    = np.nanmean(np.vstack(torso_curves), axis=0)
-        peak_arm_time_pct_mean = float(np.nanmean(peak_arm_time_pcts)) if peak_arm_time_pcts else None
-        return mean_shoulder, mean_torso, peak_arm_time_pct_mean
+        return shoulder_curves, torso_curves, peak_arm_time_pcts
 
     # ---- Compute curves and render charts ----
     with right:
@@ -1506,26 +1511,26 @@ with tab2:
         curves_s1_by_type = {}
         peak_arm_time_pct_by_type = {}
         for tt in selected_throw_types_comp:
-            s1_sh, s1_to, s1_peak_arm_time = load_and_interpolate_curves(
+            s1_sh_curves, s1_to_curves, s1_peak_arm_times = load_and_interpolate_curves(
                 session1_date, velo_range1[0], velo_range1[1], comp_col, use_abs,
                 throw_types=[tt]
             )
-            curves_s1_by_type[tt] = dict(shoulder=s1_sh, torso=s1_to)
-            peak_arm_time_pct_by_type[tt] = s1_peak_arm_time
+            curves_s1_by_type[tt] = dict(shoulder=s1_sh_curves, torso=s1_to_curves)
+            peak_arm_time_pct_by_type[tt] = s1_peak_arm_times
 
         # --- 2) Loop per throw type for session 2 ---
         curves_s2_by_type = {}
         peak_arm_time_pct_by_type_2 = {}
         for tt in selected_throw_types_comp:
-            s2_sh, s2_to, s2_peak_arm_time = load_and_interpolate_curves(
+            s2_sh_curves, s2_to_curves, s2_peak_arm_times = load_and_interpolate_curves(
                 session2_date, velo_range2[0], velo_range2[1], comp_col, use_abs,
                 throw_types=[tt]
             )
-            curves_s2_by_type[tt] = dict(shoulder=s2_sh, torso=s2_to)
-            peak_arm_time_pct_by_type_2[tt] = s2_peak_arm_time
+            curves_s2_by_type[tt] = dict(shoulder=s2_sh_curves, torso=s2_to_curves)
+            peak_arm_time_pct_by_type_2[tt] = s2_peak_arm_times
 
         mean_ref_shoulder, mean_ref_torso = None, None
-        if include_ref:
+        if include_ref and display_mode_tab2 == "Grouped Average":
             mean_ref_shoulder, mean_ref_torso, _ = load_reference_curves_player_mean(
                 ref_mode, selected_pitcher_comp,
                 velo_range_ref[0], velo_range_ref[1],
@@ -1533,54 +1538,75 @@ with tab2:
                 throw_types=["Mound"]
             )
 
-        # Define dash styles for throw types
-        throw_type_dash = {
-            "Mound": "solid",
-            "Pulldown": "dash"
+        # Color encodes throw type (solid lines)
+        throw_type_color = {
+            "Mound": "#1f77b4",     # blue
+            "Pulldown": "#d62728"   # red
         }
 
         # Only plot if at least one session has at least one valid curve
         has_any_curve = (
-            any(v["shoulder"] is not None for v in curves_s1_by_type.values())
-            and any(v["shoulder"] is not None for v in curves_s2_by_type.values())
+            any(v["shoulder"] not in (None, []) for v in curves_s1_by_type.values())
+            and any(v["shoulder"] not in (None, []) for v in curves_s2_by_type.values())
         )
         if has_any_curve:
             # ===================== SHOULDER =====================
             fig_shoulder = go.Figure()
-            session1_color = 'blue'
-            session2_color = 'orange'
-            # Plot session 1 curves
+            # Plot session 1
             for tt, v in curves_s1_by_type.items():
-                curve = v["shoulder"]
-                if curve is None:
+                curves = v["shoulder"]
+                if not curves:
                     continue
-                fig_shoulder.add_trace(go.Scatter(
-                    x=interp_points, y=curve,
-                    mode='lines',
-                    line=dict(
-                        color=session1_color,
-                        dash=throw_type_dash.get(tt, "dot"),
-                        width=3
-                    ),
-                    name=f"{session1_date} | {tt}",
-                    legendgroup=f"s1_{tt}"
-                ))
-            # Plot session 2 curves
+
+                color_tt = throw_type_color.get(tt, "#444")
+
+                if display_mode_tab2 == "Grouped Average":
+                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                    fig_shoulder.add_trace(go.Scatter(
+                        x=interp_points, y=mean_curve,
+                        mode="lines",
+                        line=dict(color=color_tt, width=3),
+                        name=f"{session1_date} | {tt}",
+                        legendgroup=f"s1_{tt}"
+                    ))
+                else:
+                    for i, c in enumerate(curves):
+                        fig_shoulder.add_trace(go.Scatter(
+                            x=interp_points, y=c,
+                            mode="lines",
+                            line=dict(color=color_tt, width=2),
+                            opacity=0.35,
+                            name=f"{session1_date} | {tt} | Pitch {i+1}",
+                            legendgroup=f"s1_{tt}"
+                        ))
+
+            # Plot session 2
             for tt, v in curves_s2_by_type.items():
-                curve = v["shoulder"]
-                if curve is None:
+                curves = v["shoulder"]
+                if not curves:
                     continue
-                fig_shoulder.add_trace(go.Scatter(
-                    x=interp_points, y=curve,
-                    mode='lines',
-                    line=dict(
-                        color=session2_color,
-                        dash=throw_type_dash.get(tt, "dot"),
-                        width=3
-                    ),
-                    name=f"{session2_date} | {tt}",
-                    legendgroup=f"s2_{tt}"
-                ))
+
+                color_tt = throw_type_color.get(tt, "#444")
+
+                if display_mode_tab2 == "Grouped Average":
+                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                    fig_shoulder.add_trace(go.Scatter(
+                        x=interp_points, y=mean_curve,
+                        mode="lines",
+                        line=dict(color=color_tt, width=3),
+                        name=f"{session2_date} | {tt}",
+                        legendgroup=f"s2_{tt}"
+                    ))
+                else:
+                    for i, c in enumerate(curves):
+                        fig_shoulder.add_trace(go.Scatter(
+                            x=interp_points, y=c,
+                            mode="lines",
+                            line=dict(color=color_tt, width=2),
+                            opacity=0.35,
+                            name=f"{session2_date} | {tt} | Pitch {i+1}",
+                            legendgroup=f"s2_{tt}"
+                        ))
             # Reference group
             if mean_ref_shoulder is not None:
                 fig_shoulder.add_trace(go.Scatter(
@@ -1589,14 +1615,71 @@ with tab2:
                     line=dict(color='red')
                 ))
 
+            # --- Regression lines per throw type (shoulder) ---
+            if display_mode_tab2 == "Grouped Average":
+                # Session 1
+                for tt, v in curves_s1_by_type.items():
+                    curves = v["shoulder"] if comp_col == "shoulder" else v["torso"]
+                    if not curves:
+                        continue
+                    x_all, y_all = [], []
+                    for c in curves:
+                        for xi, yi in zip(interp_points, c):
+                            if not np.isnan(yi):
+                                x_all.append(xi)
+                                y_all.append(yi)
+                    if len(x_all) < 5:
+                        continue
+                    slope, intercept = np.polyfit(x_all, y_all, 1)
+                    fig_shoulder.add_trace(go.Scatter(
+                        x=interp_points,
+                        y=slope * interp_points + intercept,
+                        mode="lines",
+                        line=dict(
+                            color=throw_type_color.get(tt, "#444"),
+                            width=4
+                        ),
+                        name=f"{session1_date} | {tt} Regression",
+                        legendgroup=f"s1_reg_{tt}"
+                    ))
+                # Session 2
+                for tt, v in curves_s2_by_type.items():
+                    curves = v["shoulder"] if comp_col == "shoulder" else v["torso"]
+                    if not curves:
+                        continue
+                    x_all, y_all = [], []
+                    for c in curves:
+                        for xi, yi in zip(interp_points, c):
+                            if not np.isnan(yi):
+                                x_all.append(xi)
+                                y_all.append(yi)
+                    if len(x_all) < 5:
+                        continue
+                    slope, intercept = np.polyfit(x_all, y_all, 1)
+                    fig_shoulder.add_trace(go.Scatter(
+                        x=interp_points,
+                        y=slope * interp_points + intercept,
+                        mode="lines",
+                        line=dict(
+                            color=throw_type_color.get(tt, "#444"),
+                            width=4
+                        ),
+                        name=f"{session2_date} | {tt} Regression",
+                        legendgroup=f"s2_reg_{tt}"
+                    ))
+
             # y-bounds for vertical markers
             yvals_sh = []
             for v in curves_s1_by_type.values():
-                if v["shoulder"] is not None:
-                    yvals_sh.extend(list(v["shoulder"]))
+                curves = v["shoulder"]
+                if curves:
+                    for c in curves:
+                        yvals_sh.extend(list(c))
             for v in curves_s2_by_type.values():
-                if v["shoulder"] is not None:
-                    yvals_sh.extend(list(v["shoulder"]))
+                curves = v["shoulder"]
+                if curves:
+                    for c in curves:
+                        yvals_sh.extend(list(c))
             if mean_ref_shoulder is not None:
                 yvals_sh += list(mean_ref_shoulder)
             y0_sh, y1_sh = float(np.nanmin(yvals_sh)), float(np.nanmax(yvals_sh))
@@ -1611,15 +1694,17 @@ with tab2:
                 line=dict(dash='dot', color='green'), name="Peak Arm Energy"
             ))
 
-            # Draw Max Layback (x=50) and Peak Arm Energy for session 1 (use first non-None)
+            # Draw Max Layback (x=50) and Peak Arm Energy for session 1 (use mean across all session1 curves)
             shapes_list = [dict(type="line", x0=50, x1=50, y0=y0_sh, y1=y1_sh, line=dict(dash="dot", color="gray"))]
-            # For peak arm energy, use the first non-None from session 1
+            # For peak arm energy, use mean across all session1 curves
             peak_arm_time_pct = None
+            all_peak = []
             for tt in selected_throw_types_comp:
-                val = peak_arm_time_pct_by_type.get(tt)
-                if val is not None:
-                    peak_arm_time_pct = val
-                    break
+                vals = peak_arm_time_pct_by_type.get(tt)
+                if vals:
+                    all_peak.extend([v for v in vals if v is not None])
+            if all_peak:
+                peak_arm_time_pct = float(np.nanmean(all_peak))
             if peak_arm_time_pct is not None:
                 shapes_list.append(dict(type="line", x0=peak_arm_time_pct, x1=peak_arm_time_pct,
                                         y0=y0_sh, y1=y1_sh, line=dict(dash="dot", color="green")))
@@ -1634,38 +1719,61 @@ with tab2:
 
             # ===================== TORSO =====================
             fig_torso = go.Figure()
-            # Plot session 1 curves
+            # Plot session 1
             for tt, v in curves_s1_by_type.items():
-                curve = v["torso"]
-                if curve is None:
+                curves = v["torso"]
+                if not curves:
                     continue
-                fig_torso.add_trace(go.Scatter(
-                    x=interp_points, y=curve,
-                    mode='lines',
-                    line=dict(
-                        color=session1_color,
-                        dash=throw_type_dash.get(tt, "dot"),
-                        width=3
-                    ),
-                    name=f"{session1_date} | {tt}",
-                    legendgroup=f"s1_{tt}"
-                ))
-            # Plot session 2 curves
+
+                color_tt = throw_type_color.get(tt, "#444")
+
+                if display_mode_tab2 == "Grouped Average":
+                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                    fig_torso.add_trace(go.Scatter(
+                        x=interp_points, y=mean_curve,
+                        mode="lines",
+                        line=dict(color=color_tt, width=3),
+                        name=f"{session1_date} | {tt}",
+                        legendgroup=f"s1_{tt}"
+                    ))
+                else:
+                    for i, c in enumerate(curves):
+                        fig_torso.add_trace(go.Scatter(
+                            x=interp_points, y=c,
+                            mode="lines",
+                            line=dict(color=color_tt, width=2),
+                            opacity=0.35,
+                            name=f"{session1_date} | {tt} | Pitch {i+1}",
+                            legendgroup=f"s1_{tt}"
+                        ))
+
+            # Plot session 2
             for tt, v in curves_s2_by_type.items():
-                curve = v["torso"]
-                if curve is None:
+                curves = v["torso"]
+                if not curves:
                     continue
-                fig_torso.add_trace(go.Scatter(
-                    x=interp_points, y=curve,
-                    mode='lines',
-                    line=dict(
-                        color=session2_color,
-                        dash=throw_type_dash.get(tt, "dot"),
-                        width=3
-                    ),
-                    name=f"{session2_date} | {tt}",
-                    legendgroup=f"s2_{tt}"
-                ))
+
+                color_tt = throw_type_color.get(tt, "#444")
+
+                if display_mode_tab2 == "Grouped Average":
+                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                    fig_torso.add_trace(go.Scatter(
+                        x=interp_points, y=mean_curve,
+                        mode="lines",
+                        line=dict(color=color_tt, width=3),
+                        name=f"{session2_date} | {tt}",
+                        legendgroup=f"s2_{tt}"
+                    ))
+                else:
+                    for i, c in enumerate(curves):
+                        fig_torso.add_trace(go.Scatter(
+                            x=interp_points, y=c,
+                            mode="lines",
+                            line=dict(color=color_tt, width=2),
+                            opacity=0.35,
+                            name=f"{session2_date} | {tt} | Pitch {i+1}",
+                            legendgroup=f"s2_{tt}"
+                        ))
             # Reference group
             if mean_ref_torso is not None:
                 fig_torso.add_trace(go.Scatter(
@@ -1674,13 +1782,70 @@ with tab2:
                     line=dict(color='red')
                 ))
 
+            # --- Regression lines per throw type (torso) ---
+            if display_mode_tab2 == "Grouped Average":
+                # Session 1
+                for tt, v in curves_s1_by_type.items():
+                    curves = v["torso"]
+                    if not curves:
+                        continue
+                    x_all, y_all = [], []
+                    for c in curves:
+                        for xi, yi in zip(interp_points, c):
+                            if not np.isnan(yi):
+                                x_all.append(xi)
+                                y_all.append(yi)
+                    if len(x_all) < 5:
+                        continue
+                    slope, intercept = np.polyfit(x_all, y_all, 1)
+                    fig_torso.add_trace(go.Scatter(
+                        x=interp_points,
+                        y=slope * interp_points + intercept,
+                        mode="lines",
+                        line=dict(
+                            color=throw_type_color.get(tt, "#444"),
+                            width=4
+                        ),
+                        name=f"{session1_date} | {tt} Regression",
+                        legendgroup=f"s1_reg_{tt}"
+                    ))
+                # Session 2
+                for tt, v in curves_s2_by_type.items():
+                    curves = v["torso"]
+                    if not curves:
+                        continue
+                    x_all, y_all = [], []
+                    for c in curves:
+                        for xi, yi in zip(interp_points, c):
+                            if not np.isnan(yi):
+                                x_all.append(xi)
+                                y_all.append(yi)
+                    if len(x_all) < 5:
+                        continue
+                    slope, intercept = np.polyfit(x_all, y_all, 1)
+                    fig_torso.add_trace(go.Scatter(
+                        x=interp_points,
+                        y=slope * interp_points + intercept,
+                        mode="lines",
+                        line=dict(
+                            color=throw_type_color.get(tt, "#444"),
+                            width=4
+                        ),
+                        name=f"{session2_date} | {tt} Regression",
+                        legendgroup=f"s2_reg_{tt}"
+                    ))
+
             yvals_to = []
             for v in curves_s1_by_type.values():
-                if v["torso"] is not None:
-                    yvals_to.extend(list(v["torso"]))
+                curves = v["torso"]
+                if curves:
+                    for c in curves:
+                        yvals_to.extend(list(c))
             for v in curves_s2_by_type.values():
-                if v["torso"] is not None:
-                    yvals_to.extend(list(v["torso"]))
+                curves = v["torso"]
+                if curves:
+                    for c in curves:
+                        yvals_to.extend(list(c))
             if mean_ref_torso is not None:
                 yvals_to += list(mean_ref_torso)
             y0_to, y1_to = float(np.nanmin(yvals_to)), float(np.nanmax(yvals_to))
@@ -1695,13 +1860,15 @@ with tab2:
             ))
 
             shapes_list_torso = [dict(type="line", x0=50, x1=50, y0=y0_to, y1=y1_to, line=dict(dash="dot", color="gray"))]
-            # For peak arm energy, use the first non-None from session 1
+            # For peak arm energy, use mean across all session1 curves
             peak_arm_time_pct_to = None
+            all_peak_to = []
             for tt in selected_throw_types_comp:
-                val = peak_arm_time_pct_by_type.get(tt)
-                if val is not None:
-                    peak_arm_time_pct_to = val
-                    break
+                vals = peak_arm_time_pct_by_type.get(tt)
+                if vals:
+                    all_peak_to.extend([v for v in vals if v is not None])
+            if all_peak_to:
+                peak_arm_time_pct_to = float(np.nanmean(all_peak_to))
             if peak_arm_time_pct_to is not None:
                 shapes_list_torso.append(dict(type="line", x0=peak_arm_time_pct_to, x1=peak_arm_time_pct_to,
                                               y0=y0_to, y1=y1_to, line=dict(dash="dot", color="green")))
