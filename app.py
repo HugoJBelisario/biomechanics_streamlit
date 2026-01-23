@@ -555,7 +555,7 @@ with tab1:
         df_segment = df_power[(df_power["frame"] >= max_knee_frame) & (df_power["frame"] <= torso_end_frame)]
         auc_total = np.trapezoid(df_segment["x_data"], df_segment["frame"])
 
-        # Peak Arm Energy
+        # Peak Arm Energy (MER-windowed max: ±20 frames around MER)
         cur.execute("""
             SELECT frame, x_data FROM time_series_data ts
             JOIN segments s ON ts.segment_id = s.segment_id
@@ -567,9 +567,23 @@ with tab1:
         if df_arm.empty:
             continue
 
-        arm_peak_idx = df_arm["x_data"].idxmax()
-        arm_peak_frame = df_arm.loc[arm_peak_idx, "frame"]
-        arm_peak_value = df_arm.loc[arm_peak_idx, "x_data"]
+        # Find MER (shoulder layback) frame already computed as peak_shoulder_frame
+        mer_frame = int(peak_shoulder_frame)
+        MER_WINDOW = 20
+        start_idx = max(0, df_arm["frame"].sub(mer_frame).abs().idxmin() - MER_WINDOW)
+        end_idx = min(len(df_arm) - 1, df_arm["frame"].sub(mer_frame).abs().idxmin() + MER_WINDOW)
+        # Use frame indices, not just row indices, for correct slicing
+        # Find the row index closest to mer_frame
+        mer_row_idx = df_arm["frame"].sub(mer_frame).abs().idxmin()
+        start_idx = max(0, mer_row_idx - MER_WINDOW)
+        end_idx = min(len(df_arm) - 1, mer_row_idx + MER_WINDOW)
+        windowed_energy = df_arm.iloc[start_idx:end_idx+1]["x_data"]
+        if windowed_energy.isna().all():
+            peak_idx = mer_row_idx
+        else:
+            peak_idx = windowed_energy.idxmax()
+        arm_peak_frame = int(df_arm.loc[peak_idx, "frame"])
+        arm_peak_value = float(df_arm.loc[peak_idx, "x_data"])
 
         df_to_peak = df_power[(df_power["frame"] >= max_knee_frame) & (df_power["frame"] <= arm_peak_frame)]
         auc_to_peak = np.trapezoid(df_to_peak["x_data"], df_to_peak["frame"])
@@ -1483,8 +1497,19 @@ with tab2:
             df_arm["x_data"] = pd.to_numeric(df_arm["x_data"], errors="coerce")
             end_frame = int(df_arm.loc[df_arm["x_data"].idxmax(), "frame"]) + 50
 
-            # Peak arm energy frame (used for normalized timing marker)
-            peak_arm_frame = int(df_arm.loc[df_arm["x_data"].idxmax(), "frame"])
+            # Peak arm energy frame (MER-windowed max: ±20 frames around MER)
+            mer_frame = int(peak_shoulder_frame)
+            MER_WINDOW = 20
+            # Find row index in df_arm closest to mer_frame
+            mer_row_idx = df_arm["frame"].sub(mer_frame).abs().idxmin()
+            start_idx = max(0, mer_row_idx - MER_WINDOW)
+            end_idx = min(len(df_arm) - 1, mer_row_idx + MER_WINDOW)
+            windowed_energy = df_arm.iloc[start_idx:end_idx+1]["x_data"]
+            if windowed_energy.isna().all():
+                peak_idx = mer_row_idx
+            else:
+                peak_idx = windowed_energy.idxmax()
+            peak_arm_frame = int(df_arm.loc[peak_idx, "frame"])
 
             # Build normalized time_pct for shoulder and torso segments:
             # 0..50: max_knee_frame -> peak_shoulder_frame
