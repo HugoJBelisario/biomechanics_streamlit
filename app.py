@@ -140,6 +140,11 @@ def get_shoulder_er_max_frame(take_id, handedness, cur):
     start_frame = peak_arm_energy_frame - 15
     end_frame   = peak_arm_energy_frame + 15
 
+    # Constrain MER search so it cannot occur after Ball Release
+    br_frame = get_ball_release_frame(take_id, handedness, cur)
+    if br_frame is not None:
+        end_frame = min(int(end_frame), int(br_frame))
+
     cur.execute("""
         SELECT ts.frame, ts.z_data
         FROM time_series_data ts
@@ -570,18 +575,31 @@ with tab1:
         # Find MER (shoulder layback) frame already computed as peak_shoulder_frame
         mer_frame = int(peak_shoulder_frame)
         MER_WINDOW = 20
-        start_idx = max(0, df_arm["frame"].sub(mer_frame).abs().idxmin() - MER_WINDOW)
-        end_idx = min(len(df_arm) - 1, df_arm["frame"].sub(mer_frame).abs().idxmin() + MER_WINDOW)
-        # Use frame indices, not just row indices, for correct slicing
-        # Find the row index closest to mer_frame
+
+        # Ball Release frame (hard right-bound)
+        br_frame = get_ball_release_frame(tid, handedness, cur)
+
+        # Find row index in df_arm closest to MER
         mer_row_idx = df_arm["frame"].sub(mer_frame).abs().idxmin()
         start_idx = max(0, mer_row_idx - MER_WINDOW)
         end_idx = min(len(df_arm) - 1, mer_row_idx + MER_WINDOW)
-        windowed_energy = df_arm.iloc[start_idx:end_idx+1]["x_data"]
+
+        # Windowed energy (MER ± window), additionally constrained to <= Ball Release
+        df_arm_window = df_arm.iloc[start_idx:end_idx + 1].copy()
+        if br_frame is not None:
+            df_arm_window = df_arm_window[df_arm_window["frame"] <= br_frame]
+
+        if df_arm_window.empty:
+            continue
+
+        windowed_energy = df_arm_window["x_data"]
+
+        # Peak within constrained window
         if windowed_energy.isna().all():
-            peak_idx = mer_row_idx
+            peak_idx = int(df_arm_window["frame"].sub(mer_frame).abs().idxmin())
         else:
-            peak_idx = windowed_energy.idxmax()
+            peak_idx = int(windowed_energy.idxmax())
+
         arm_peak_frame = int(df_arm.loc[peak_idx, "frame"])
         arm_peak_value = float(df_arm.loc[peak_idx, "x_data"])
 
@@ -1497,18 +1515,32 @@ with tab2:
             df_arm["x_data"] = pd.to_numeric(df_arm["x_data"], errors="coerce")
             end_frame = int(df_arm.loc[df_arm["x_data"].idxmax(), "frame"]) + 50
 
-            # Peak arm energy frame (MER-windowed max: ±20 frames around MER)
+            # Peak arm energy frame (MER-windowed max, constrained by Ball Release)
             mer_frame = int(peak_shoulder_frame)
             MER_WINDOW = 20
-            # Find row index in df_arm closest to mer_frame
+
+            br_frame = get_ball_release_frame(tid, handedness_comp, cur)
+
+            # Find row index in df_arm closest to MER
             mer_row_idx = df_arm["frame"].sub(mer_frame).abs().idxmin()
             start_idx = max(0, mer_row_idx - MER_WINDOW)
             end_idx = min(len(df_arm) - 1, mer_row_idx + MER_WINDOW)
-            windowed_energy = df_arm.iloc[start_idx:end_idx+1]["x_data"]
+
+            # Windowed energy (MER ± window), additionally constrained to <= Ball Release
+            df_arm_window = df_arm.iloc[start_idx:end_idx + 1].copy()
+            if br_frame is not None:
+                df_arm_window = df_arm_window[df_arm_window["frame"] <= br_frame]
+
+            if df_arm_window.empty:
+                continue
+
+            windowed_energy = df_arm_window["x_data"]
+
             if windowed_energy.isna().all():
-                peak_idx = mer_row_idx
+                peak_idx = int(df_arm_window["frame"].sub(mer_frame).abs().idxmin())
             else:
-                peak_idx = windowed_energy.idxmax()
+                peak_idx = int(windowed_energy.idxmax())
+
             peak_arm_frame = int(df_arm.loc[peak_idx, "frame"])
 
             # Build normalized time_pct for shoulder and torso segments:
