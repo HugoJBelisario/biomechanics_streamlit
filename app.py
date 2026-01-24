@@ -481,11 +481,20 @@ with tab1:
     )
 
     # ---- Exclude Takes (Tab 1) ----
-    # Build stable labels from take_rows (ordered by date, filename)
+    # Build stable labels from take_rows (ordered by date, filename), with pitch numbers restarting per session date
+    from collections import defaultdict
+
     exclude_pairs = []
-    for i, (tid, file_name, velo, take_date, throw_type) in enumerate(take_rows, start=1):
-        lbl = f"{take_date.strftime('%Y-%m-%d')} | {throw_type} | Pitch {i} ({velo:.1f} mph)"
-        exclude_pairs.append((lbl, int(tid)))
+    takes_by_date = defaultdict(list)
+
+    for tid, file_name, velo, take_date, throw_type in take_rows:
+        takes_by_date[take_date].append((tid, file_name, velo, throw_type))
+
+    for take_date in sorted(takes_by_date.keys()):
+        day_rows = sorted(takes_by_date[take_date], key=lambda x: x[1])  # file_name order
+        for pitch_idx, (tid, file_name, velo, throw_type) in enumerate(day_rows, start=1):
+            lbl = f"{take_date.strftime('%Y-%m-%d')} | {throw_type} | Pitch {pitch_idx} ({velo:.1f} mph)"
+            exclude_pairs.append((lbl, int(tid)))
 
     exclude_label_options = [l for l, _ in exclude_pairs]
 
@@ -911,8 +920,8 @@ with tab1:
                         customdata=sub_customdata,
                         hovertemplate=(
                             "%{customdata[0]} | %{customdata[1]} | Pitch %{customdata[2]}<br>"
-                            "Velocity: %{y:.1f} mph<br>"
-                            "%{xaxis.title.text}: %{x:.2f}<br>"
+                            "Value: %{y:.2f}<br>"
+                            "Velocity: %{x:.1f} mph<br>"
                             "<extra></extra>"
                         ),
                     ))
@@ -935,8 +944,8 @@ with tab1:
                         customdata=sub_customdata,
                         hovertemplate=(
                             "%{customdata[0]} | %{customdata[1]} | Pitch %{customdata[2]}<br>"
-                            "Velocity: %{y:.1f} mph<br>"
-                            "%{xaxis.title.text}: %{x:.2f}<br>"
+                            "Value: %{y:.2f}<br>"
+                            "Velocity: %{x:.1f} mph<br>"
                             "<extra></extra>"
                         ),
                     ))
