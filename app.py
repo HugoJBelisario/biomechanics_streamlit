@@ -569,6 +569,22 @@ with tab1:
             continue
         pitch_number = pitch_number_map[int(tid)]
         label = f"{take_date.strftime('%Y-%m-%d')} | {throw_type} | Pitch {pitch_number} ({velo:.1f} mph)"
+        # ---- Defaults: always include take; metrics may be NaN if detection fails ----
+        max_knee_frame = np.nan
+        drive_start_frame = np.nan
+        torso_end_frame = np.nan
+        auc_total = np.nan
+        arm_peak_frame = np.nan
+        arm_peak_value = np.nan
+        auc_to_peak = np.nan
+        auc_pct = np.nan
+        auc_stp_total = np.nan
+        auc_stp_to_peak = np.nan
+        auc_stp_habd_total = np.nan
+        auc_stp_habd_to_peak = np.nan
+        auc_stp_rot_total = np.nan
+        auc_stp_rot_to_peak = np.nan
+
         # Query torso power
         cur.execute("""
             SELECT frame, x_data FROM time_series_data ts
@@ -583,18 +599,18 @@ with tab1:
         # --- Drive start: within 50 frames BEFORE MER ---
         peak_shoulder_frame = get_shoulder_er_max_frame(tid, handedness, cur)
         if peak_shoulder_frame is None:
-            continue
+            peak_shoulder_frame = np.nan
 
-        df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
-
-        df_power_window = df_power[
-            (df_power["frame"] >= peak_shoulder_frame - 50) &
-            (df_power["frame"] < peak_shoulder_frame)
+        # Only attempt drive start detection if peak_shoulder_frame is valid
+        if not np.isnan(peak_shoulder_frame):
+            df_power_window = df_power[
+                (df_power["frame"] >= peak_shoulder_frame - 50) &
+                (df_power["frame"] < peak_shoulder_frame)
             ]
+            drive_start_frame = df_power_window[df_power_window["x_data"] < -3000]["frame"].min()
 
-        drive_start_frame = df_power_window[df_power_window["x_data"] < -3000]["frame"].min()
         if pd.isna(drive_start_frame):
-            continue
+            drive_start_frame = np.nan
 
         # Query rear knee
         cur.execute("""
@@ -605,42 +621,45 @@ with tab1:
             ORDER BY frame
         """, (tid, rear_knee))
         df_knee = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
-        if df_knee.empty:
-            continue
 
-        # --- Rear knee anchor (Pulldown-safe) ---
-        df_knee["x_data"] = pd.to_numeric(df_knee["x_data"], errors="coerce")
-        df_knee = df_knee.dropna(subset=["x_data"])
+        # Only compute max_knee_frame if knee and drive_start_frame are valid
+        if not df_knee.empty and not np.isnan(drive_start_frame):
+            df_knee["x_data"] = pd.to_numeric(df_knee["x_data"], errors="coerce")
+            df_knee = df_knee.dropna(subset=["x_data"])
 
-        if throw_type == "Pulldown":
-            knee_window = df_knee[
-                (df_knee["frame"] >= drive_start_frame - 100) &
-                (df_knee["frame"] < drive_start_frame)
+            if throw_type == "Pulldown":
+                knee_window = df_knee[
+                    (df_knee["frame"] >= drive_start_frame - 100) &
+                    (df_knee["frame"] < drive_start_frame)
                 ]
-        else:
-            knee_window = df_knee[df_knee["frame"] < drive_start_frame]
+            else:
+                knee_window = df_knee[df_knee["frame"] < drive_start_frame]
 
-        if knee_window.empty:
-            continue
+            if not knee_window.empty:
+                idx = knee_window["x_data"].idxmin()
+                if pd.notna(idx):
+                    max_knee_frame = float(int(knee_window.loc[idx, "frame"]))
 
-        idx = knee_window["x_data"].idxmin()
-        if pd.isna(idx):
-            continue
+        # Only compute torso_end_frame and auc_total if max_knee_frame valid and df_power not empty
+        if not np.isnan(max_knee_frame) and not df_power.empty:
+            df_after = df_power[df_power["frame"] > max_knee_frame].copy()
+            if not df_after.empty:
+                neg_peak_idx = df_after["x_data"].idxmin()
+                neg_peak_frame = df_after.loc[neg_peak_idx, "frame"]
+                df_after_peak = df_after[df_after["frame"] > neg_peak_frame]
+                zero_cross = df_after_peak[df_after_peak["x_data"] >= 0]
 
-        max_knee_frame = int(knee_window.loc[idx, "frame"])
+                torso_end_frame = (
+                    float(int(zero_cross.iloc[0]["frame"]) - 1)
+                    if not zero_cross.empty else float(int(df_after["frame"].iloc[-1]))
+                )
 
-        df_after = df_power[df_power["frame"] > max_knee_frame].copy()
-        if df_after.empty:
-            continue
-
-        neg_peak_idx = df_after["x_data"].idxmin()
-        neg_peak_frame = df_after.loc[neg_peak_idx, "frame"]
-        df_after_peak = df_after[df_after["frame"] > neg_peak_frame]
-        zero_cross = df_after_peak[df_after_peak["x_data"] >= 0]
-
-        torso_end_frame = (int(zero_cross.iloc[0]["frame"]) - 1) if not zero_cross.empty else int(df_after["frame"].iloc[-1])
-        df_segment = df_power[(df_power["frame"] >= max_knee_frame) & (df_power["frame"] <= torso_end_frame)]
-        auc_total = np.trapezoid(df_segment["x_data"], df_segment["frame"])
+                df_segment = df_power[
+                    (df_power["frame"] >= max_knee_frame) &
+                    (df_power["frame"] <= torso_end_frame)
+                ]
+                if not df_segment.empty:
+                    auc_total = float(np.trapezoid(df_segment["x_data"], df_segment["frame"]))
 
         # Peak Arm Energy (MER-windowed max: ±20 frames around MER)
         cur.execute("""
@@ -651,43 +670,41 @@ with tab1:
             ORDER BY frame
         """, (tid, arm_segment))
         df_arm = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
-        if df_arm.empty:
-            continue
 
-        # Find MER (shoulder layback) frame already computed as peak_shoulder_frame
-        mer_frame = int(peak_shoulder_frame)
-        MER_WINDOW = 20
+        if not df_arm.empty and not np.isnan(max_knee_frame):
+            mer_frame = int(peak_shoulder_frame) if not np.isnan(peak_shoulder_frame) else None
+            br_frame = get_ball_release_frame(tid, handedness, cur)
 
-        # Ball Release frame (hard right-bound)
-        br_frame = get_ball_release_frame(tid, handedness, cur)
+            df_arm["x_data"] = pd.to_numeric(df_arm["x_data"], errors="coerce")
 
-        # Find row index in df_arm closest to MER
-        mer_row_idx = df_arm["frame"].sub(mer_frame).abs().idxmin()
-        start_idx = max(0, mer_row_idx - MER_WINDOW)
-        end_idx = min(len(df_arm) - 1, mer_row_idx + MER_WINDOW)
+            if mer_frame is not None:
+                mer_row_idx = df_arm["frame"].sub(mer_frame).abs().idxmin()
+                start_idx = max(0, mer_row_idx - 20)
+                end_idx = min(len(df_arm) - 1, mer_row_idx + 20)
+                df_arm_window = df_arm.iloc[start_idx:end_idx + 1].copy()
+            else:
+                df_arm_window = df_arm.copy()
 
-        # Windowed energy (MER ± window), additionally constrained to <= Ball Release
-        df_arm_window = df_arm.iloc[start_idx:end_idx + 1].copy()
-        if br_frame is not None:
-            df_arm_window = df_arm_window[df_arm_window["frame"] <= br_frame]
+            if br_frame is not None:
+                df_arm_window = df_arm_window[df_arm_window["frame"] <= br_frame]
 
-        if df_arm_window.empty:
-            continue
+            if not df_arm_window.empty:
+                windowed_energy = df_arm_window["x_data"]
+                if not windowed_energy.isna().all():
+                    peak_idx = int(windowed_energy.idxmax())
+                    arm_peak_frame = float(int(df_arm.loc[peak_idx, "frame"]))
+                    arm_peak_value = float(df_arm.loc[peak_idx, "x_data"])
 
-        windowed_energy = df_arm_window["x_data"]
-
-        # Peak within constrained window
-        if windowed_energy.isna().all():
-            peak_idx = int(df_arm_window["frame"].sub(mer_frame).abs().idxmin())
-        else:
-            peak_idx = int(windowed_energy.idxmax())
-
-        arm_peak_frame = int(df_arm.loc[peak_idx, "frame"])
-        arm_peak_value = float(df_arm.loc[peak_idx, "x_data"])
-
-        df_to_peak = df_power[(df_power["frame"] >= max_knee_frame) & (df_power["frame"] <= arm_peak_frame)]
-        auc_to_peak = np.trapezoid(df_to_peak["x_data"], df_to_peak["frame"])
-        auc_pct = (auc_to_peak / auc_total * 100) if auc_total else 0
+                    # AUC to peak only if torso_end_frame and auc_total exist
+                    if not np.isnan(torso_end_frame) and not np.isnan(auc_total):
+                        df_to_peak = df_power[
+                            (df_power["frame"] >= max_knee_frame) &
+                            (df_power["frame"] <= arm_peak_frame)
+                        ]
+                        if not df_to_peak.empty:
+                            auc_to_peak = float(np.trapezoid(df_to_peak["x_data"], df_to_peak["frame"]))
+                            if auc_total != 0:
+                                auc_pct = float(auc_to_peak / auc_total * 100.0)
 
         # ---------------- Shoulder STP Elev/Dep AUC ----------------
         cur.execute("""
@@ -700,34 +717,22 @@ with tab1:
               AND s.segment_name = %s
             ORDER BY frame
         """, (tid, shoulder_stp_segment))
-
         df_stp = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
-
-        if not df_stp.empty:
+        if not df_stp.empty and not np.isnan(max_knee_frame) and not np.isnan(torso_end_frame):
             df_stp["x_data"] = pd.to_numeric(df_stp["x_data"], errors="coerce").fillna(0)
-
             df_stp_seg = df_stp[
                 (df_stp["frame"] >= max_knee_frame) &
                 (df_stp["frame"] <= torso_end_frame)
             ]
-
-            auc_stp_total = (
-                np.trapezoid(df_stp_seg["x_data"], df_stp_seg["frame"])
-                if not df_stp_seg.empty else np.nan
-            )
-
-            df_stp_to_peak = df_stp[
-                (df_stp["frame"] >= max_knee_frame) &
-                (df_stp["frame"] <= arm_peak_frame)
-            ]
-
-            auc_stp_to_peak = (
-                np.trapezoid(df_stp_to_peak["x_data"], df_stp_to_peak["frame"])
-                if not df_stp_to_peak.empty else np.nan
-            )
-        else:
-            auc_stp_total = np.nan
-            auc_stp_to_peak = np.nan
+            if not df_stp_seg.empty:
+                auc_stp_total = float(np.trapezoid(df_stp_seg["x_data"], df_stp_seg["frame"]))
+            if not np.isnan(arm_peak_frame):
+                df_stp_to_peak = df_stp[
+                    (df_stp["frame"] >= max_knee_frame) &
+                    (df_stp["frame"] <= arm_peak_frame)
+                ]
+                if not df_stp_to_peak.empty:
+                    auc_stp_to_peak = float(np.trapezoid(df_stp_to_peak["x_data"], df_stp_to_peak["frame"]))
 
         # ---------------- Shoulder STP HorizAbd/Add AUC ----------------
         cur.execute("""
@@ -740,34 +745,22 @@ with tab1:
               AND s.segment_name = %s
             ORDER BY frame
         """, (tid, shoulder_stp_segment))
-
         df_stp_habd = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
-
-        if not df_stp_habd.empty:
+        if not df_stp_habd.empty and not np.isnan(max_knee_frame) and not np.isnan(torso_end_frame):
             df_stp_habd["x_data"] = pd.to_numeric(df_stp_habd["x_data"], errors="coerce").fillna(0)
-
             df_habd_seg = df_stp_habd[
                 (df_stp_habd["frame"] >= max_knee_frame) &
                 (df_stp_habd["frame"] <= torso_end_frame)
             ]
-
-            auc_stp_habd_total = (
-                np.trapezoid(df_habd_seg["x_data"], df_habd_seg["frame"])
-                if not df_habd_seg.empty else np.nan
-            )
-
-            df_habd_to_peak = df_stp_habd[
-                (df_stp_habd["frame"] >= max_knee_frame) &
-                (df_stp_habd["frame"] <= arm_peak_frame)
-            ]
-
-            auc_stp_habd_to_peak = (
-                np.trapezoid(df_habd_to_peak["x_data"], df_habd_to_peak["frame"])
-                if not df_habd_to_peak.empty else np.nan
-            )
-        else:
-            auc_stp_habd_total = np.nan
-            auc_stp_habd_to_peak = np.nan
+            if not df_habd_seg.empty:
+                auc_stp_habd_total = float(np.trapezoid(df_habd_seg["x_data"], df_habd_seg["frame"]))
+            if not np.isnan(arm_peak_frame):
+                df_habd_to_peak = df_stp_habd[
+                    (df_stp_habd["frame"] >= max_knee_frame) &
+                    (df_stp_habd["frame"] <= arm_peak_frame)
+                ]
+                if not df_habd_to_peak.empty:
+                    auc_stp_habd_to_peak = float(np.trapezoid(df_habd_to_peak["x_data"], df_habd_to_peak["frame"]))
 
         # ---------------- Shoulder STP Rotational AUC ----------------
         cur.execute("""
@@ -780,34 +773,22 @@ with tab1:
               AND s.segment_name = %s
             ORDER BY frame
         """, (tid, shoulder_stp_segment))
-
         df_stp_rot = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
-
-        if not df_stp_rot.empty:
+        if not df_stp_rot.empty and not np.isnan(max_knee_frame) and not np.isnan(torso_end_frame):
             df_stp_rot["x_data"] = pd.to_numeric(df_stp_rot["x_data"], errors="coerce").fillna(0)
-
             df_rot_seg = df_stp_rot[
                 (df_stp_rot["frame"] >= max_knee_frame) &
                 (df_stp_rot["frame"] <= torso_end_frame)
             ]
-
-            auc_stp_rot_total = (
-                np.trapezoid(df_rot_seg["x_data"], df_rot_seg["frame"])
-                if not df_rot_seg.empty else np.nan
-            )
-
-            df_rot_to_peak = df_stp_rot[
-                (df_stp_rot["frame"] >= max_knee_frame) &
-                (df_stp_rot["frame"] <= arm_peak_frame)
-            ]
-
-            auc_stp_rot_to_peak = (
-                np.trapezoid(df_rot_to_peak["x_data"], df_rot_to_peak["frame"])
-                if not df_rot_to_peak.empty else np.nan
-            )
-        else:
-            auc_stp_rot_total = np.nan
-            auc_stp_rot_to_peak = np.nan
+            if not df_rot_seg.empty:
+                auc_stp_rot_total = float(np.trapezoid(df_rot_seg["x_data"], df_rot_seg["frame"]))
+            if not np.isnan(arm_peak_frame):
+                df_rot_to_peak = df_stp_rot[
+                    (df_stp_rot["frame"] >= max_knee_frame) &
+                    (df_stp_rot["frame"] <= arm_peak_frame)
+                ]
+                if not df_rot_to_peak.empty:
+                    auc_stp_rot_to_peak = float(np.trapezoid(df_rot_to_peak["x_data"], df_rot_to_peak["frame"]))
 
         rows.append({
             "take_id": tid,
@@ -817,16 +798,16 @@ with tab1:
             "Max Rear Knee Flexion Frame": max_knee_frame,
             "Throw Type": throw_type,
             "Velocity": velo,
-            "AUC (Drive → 0)": round(float(auc_total), 2),
-            "AUC (Drive → Peak Arm Energy)": round(float(auc_to_peak), 2),
-            "Peak Arm Energy": round(float(arm_peak_value), 2),
-            "% Total Energy Into Layback": round(float(auc_pct), 1),
-            "STP Elevation AUC (Drive → 0)": round(float(auc_stp_total), 2) if pd.notna(auc_stp_total) else np.nan,
-            "STP Elevation AUC (Drive → Peak Arm Energy)": round(float(auc_stp_to_peak), 2) if pd.notna(auc_stp_to_peak) else np.nan,
-            "STP HorizAbd AUC (Drive → 0)": round(float(auc_stp_habd_total), 2) if pd.notna(auc_stp_habd_total) else np.nan,
-            "STP HorizAbd AUC (Drive → Peak Arm Energy)": round(float(auc_stp_habd_to_peak), 2) if pd.notna(auc_stp_habd_to_peak) else np.nan,
-            "STP Rotational AUC (Drive → 0)": round(float(auc_stp_rot_total), 2) if pd.notna(auc_stp_rot_total) else np.nan,
-            "STP Rotational AUC (Drive → Peak Arm Energy)": round(float(auc_stp_rot_to_peak), 2) if pd.notna(auc_stp_rot_to_peak) else np.nan,
+            "AUC (Drive → 0)": (round(auc_total, 2) if pd.notna(auc_total) else np.nan),
+            "AUC (Drive → Peak Arm Energy)": (round(auc_to_peak, 2) if pd.notna(auc_to_peak) else np.nan),
+            "Peak Arm Energy": (round(arm_peak_value, 2) if pd.notna(arm_peak_value) else np.nan),
+            "% Total Energy Into Layback": (round(auc_pct, 1) if pd.notna(auc_pct) else np.nan),
+            "STP Elevation AUC (Drive → 0)": (round(auc_stp_total, 2) if pd.notna(auc_stp_total) else np.nan),
+            "STP Elevation AUC (Drive → Peak Arm Energy)": (round(auc_stp_to_peak, 2) if pd.notna(auc_stp_to_peak) else np.nan),
+            "STP HorizAbd AUC (Drive → 0)": (round(auc_stp_habd_total, 2) if pd.notna(auc_stp_habd_total) else np.nan),
+            "STP HorizAbd AUC (Drive → Peak Arm Energy)": (round(auc_stp_habd_to_peak, 2) if pd.notna(auc_stp_habd_to_peak) else np.nan),
+            "STP Rotational AUC (Drive → 0)": (round(auc_stp_rot_total, 2) if pd.notna(auc_stp_rot_total) else np.nan),
+            "STP Rotational AUC (Drive → Peak Arm Energy)": (round(auc_stp_rot_to_peak, 2) if pd.notna(auc_stp_rot_to_peak) else np.nan),
         })
 
 # Guard for empty rows
@@ -841,7 +822,8 @@ if rows:
     df_tab1["Velocity"] = pd.to_numeric(df_tab1["Velocity"], errors="coerce")
     df_tab1["AUC (Drive → 0)"] = pd.to_numeric(df_tab1["AUC (Drive → 0)"], errors="coerce")
     df_tab1["AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(df_tab1["AUC (Drive → Peak Arm Energy)"], errors="coerce")
-    df_tab1 = df_tab1.dropna(subset=["Velocity", "AUC (Drive → 0)", "AUC (Drive → Peak Arm Energy)"])
+    # Keep ALL takes; regressions will use valid subsets later
+    df_tab1_all = df_tab1.copy()
     df_tab1["STP Elevation AUC (Drive → 0)"] = pd.to_numeric(df_tab1["STP Elevation AUC (Drive → 0)"], errors="coerce")
     df_tab1["STP Elevation AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(df_tab1["STP Elevation AUC (Drive → Peak Arm Energy)"], errors="coerce")
     df_tab1["STP HorizAbd AUC (Drive → 0)"] = pd.to_numeric(
@@ -906,7 +888,9 @@ with tab1:
 
     # --- Group by Session Date and Throw Type ---
     for i, ((date, throw_type), sub) in enumerate(df_tab1.groupby(["Session Date", "Throw Type"])):
-        if len(sub) < 2:
+        # Only use valid rows for regression/plotting
+        sub_valid = sub.dropna(subset=["Velocity", "AUC (Drive → 0)", "AUC (Drive → Peak Arm Energy)"])
+        if len(sub_valid) < 2:
             continue
         color = date_color_cycle[i % len(date_color_cycle)]
         x = sub["Velocity"]
@@ -916,17 +900,17 @@ with tab1:
             # Torso Power: plot both AUC → 0 and AUC → Peak
             if energy_plot_option == "Torso Power":
                 # --- AUC Drive → 0 ---
-                y0 = sub["AUC (Drive → 0)"]
+                y0 = sub["AUC (Drive → 0)"].dropna()
                 if y0.size >= 2:
-                    slope0, intercept0, r0, _, _ = linregress(x, y0)
+                    slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
                     x_fit = np.linspace(x.min(), x.max(), 100)
                     y_fit0 = slope0 * x_fit + intercept0
                     fig.add_trace(go.Scatter(
-                        x=x, y=y0, mode="markers",
+                        x=x.loc[y0.index], y=y0, mode="markers",
                         marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][0]),
                         name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}",
                         # POINTS hover: customdata includes Pitch Number after Throw Type
-                        customdata=sub_customdata,
+                        customdata=sub_customdata[y0.index],
                         hovertemplate=(
                             "%{customdata[0]} | %{customdata[1]} | Pitch %{customdata[2]}<br>"
                             "Value: %{y:.2f}<br>"
@@ -942,15 +926,15 @@ with tab1:
                         hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
                     ))
                 # --- AUC Drive → Peak Arm Energy ---
-                y1 = sub["AUC (Drive → Peak Arm Energy)"]
+                y1 = sub["AUC (Drive → Peak Arm Energy)"].dropna()
                 if y1.size >= 2:
-                    slope1, intercept1, r1, _, _ = linregress(x, y1)
+                    slope1, intercept1, r1, _, _ = linregress(x.loc[y1.index], y1)
                     y_fit1 = slope1 * x_fit + intercept1
                     fig.add_trace(go.Scatter(
-                        x=x, y=y1, mode="markers",
+                        x=x.loc[y1.index], y=y1, mode="markers",
                         marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][1]),
                         name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}",
-                        customdata=sub_customdata,
+                        customdata=sub_customdata[y1.index],
                         hovertemplate=(
                             "%{customdata[0]} | %{customdata[1]} | Pitch %{customdata[2]}<br>"
                             "Value: %{y:.2f}<br>"
