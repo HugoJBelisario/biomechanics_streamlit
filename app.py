@@ -1142,8 +1142,20 @@ with tab1:
 
     height = estimate_table_height(df_tab1)
     display_cols = [col for col in df_tab1.columns if col not in ("take_id", "label")]
-    priority_cols = ["Session Date", "Throw Type", "Max Knee Flexion Frame"]
+
+    priority_cols = [
+        "Session Date",
+        "Throw Type",
+        "Pitch Number",
+        "Velocity"
+    ]
+
+    # Keep only priority columns that exist
+    priority_cols = [c for c in priority_cols if c in display_cols]
+
+    # Final ordered columns
     display_cols = priority_cols + [c for c in display_cols if c not in priority_cols]
+
     st.dataframe(df_tab1[display_cols], height=height)
 
 @st.cache_data
