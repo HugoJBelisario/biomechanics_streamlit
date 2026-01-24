@@ -5,6 +5,7 @@ import psycopg2
 import numpy as np
 from scipy.stats import linregress
 import plotly.graph_objects as go
+import plotly.express as px
 
 interp_points = np.linspace(0, 100, 100)
 
