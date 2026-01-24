@@ -1220,6 +1220,7 @@ def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, co
     return ref_shoulder, ref_torso, sorted(pitcher_names)
 
 with tab2:
+    # --- Tab 2 intentionally does NOT include Velocity vs Energy plots or tables ---
     # Two columns: controls (left), charts (right)
     left, right = st.columns([0.4, 1.4], vertical_alignment="top")
 
@@ -1411,9 +1412,6 @@ with tab2:
                     st.code("\n".join(ref_pitchers), language="text")  # Show pitchers in a code box
             else:
                 st.info("No pitchers found in reference group for the selected settings.")
-
-
-
 
     def load_and_interpolate_curves(date, velo_min, velo_max, comp_col, use_abs, throw_types=None):
         """
