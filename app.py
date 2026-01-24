@@ -440,6 +440,19 @@ with tab1:
         key="tab1_energy_plot_options"
     )
 
+    # ---- Exclude Takes (Tab 1) ----
+    exclude_take_labels = []
+    exclude_take_ids = []
+
+    # Build labels once take_rows exists
+    # Placeholder – populated later after rows are built
+    excluded_labels = st.multiselect(
+        "Exclude Takes",
+        options=[],
+        default=[],
+        key="tab1_exclude_takes"
+    )
+
 
 
     # --- Ensure empty selections are still guarded ---
@@ -490,6 +503,8 @@ with tab1:
 
     rows = []
     for tid, file_name, velo, take_date, throw_type in take_rows:
+        pitch_number = len(rows) + 1
+        label = f"{take_date.strftime('%Y-%m-%d')} | {throw_type} | Pitch {pitch_number} ({velo:.1f} mph)"
         # Query torso power
         cur.execute("""
             SELECT frame, x_data FROM time_series_data ts
@@ -732,9 +747,10 @@ with tab1:
 
         rows.append({
             "take_id": tid,
+            "label": label,
+            "Pitch Number": pitch_number,
             "Session Date": take_date.strftime("%Y-%m-%d"),
             "Throw Type": throw_type,
-            "Max Knee Flexion Frame": int(max_knee_frame),
             "Velocity": velo,
             "AUC (Drive → 0)": round(float(auc_total), 2),
             "AUC (Drive → Peak Arm Energy)": round(float(auc_to_peak), 2),
@@ -752,8 +768,21 @@ with tab1:
 if rows:
     df_tab1 = pd.DataFrame(rows)
 
+    # ---- Populate Exclude Takes options (Tab 1) ----
+    exclude_options = df_tab1["label"].tolist()
+
+    excluded_labels = st.multiselect(
+        "Exclude Takes",
+        options=exclude_options,
+        default=st.session_state.get("tab1_exclude_takes", []),
+        key="tab1_exclude_takes"
+    )
 
     df_tab1 = df_tab1.copy()
+
+    # ---- Apply Exclude Takes filter ----
+    if excluded_labels:
+        df_tab1 = df_tab1[~df_tab1["label"].isin(excluded_labels)]
 
     # Normalize Velocity column name if pitch_velo is used
     if "pitch_velo" in df_tab1.columns and "Velocity" not in df_tab1.columns:
