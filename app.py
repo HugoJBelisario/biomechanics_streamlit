@@ -1224,7 +1224,18 @@ with tab2:
     left, right = st.columns([0.4, 1.4], vertical_alignment="top")
 
     # --- Session-date color map (Tab 2) ---
-    session_colors = px.colors.qualitative.Set1 + px.colors.qualitative.Dark24
+    session_colors = [
+        "#1f77b4",  # blue
+        "#2ca02c",  # green
+        "#9467bd",  # purple
+        "#17becf",  # teal
+        "#8c564b",  # brown
+        "#e377c2",  # pink (non-red)
+        "#7f7f7f",  # gray
+        "#bcbd22",  # olive
+        "#aec7e8",  # light blue
+        "#98df8a",  # light green
+    ]
     _session_color_idx = {}
 
     def get_session_color(date_str):
