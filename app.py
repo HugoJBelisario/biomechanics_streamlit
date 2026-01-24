@@ -1222,6 +1222,15 @@ def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, co
 with tab2:
     # Two columns: controls (left), charts (right)
     left, right = st.columns([0.4, 1.4], vertical_alignment="top")
+
+    # --- Session-date color map (Tab 2) ---
+    session_colors = px.colors.qualitative.Set1 + px.colors.qualitative.Dark24
+    _session_color_idx = {}
+
+    def get_session_color(date_str):
+        if date_str not in _session_color_idx:
+            _session_color_idx[date_str] = len(_session_color_idx)
+        return session_colors[_session_color_idx[date_str] % len(session_colors)]
     with left:
         # --- Select pitcher ---
         selected_pitcher_comp = st.selectbox("Select Pitcher", pitchers, key="comp_pitcher")
@@ -1644,7 +1653,7 @@ with tab2:
                 if not curves:
                     continue
 
-                color_tt = throw_type_color.get(tt, "#444")
+                color_tt = get_session_color(session1_date)
 
                 if display_mode_tab2 == "Grouped Average":
                     mean_curve = np.nanmean(np.vstack(curves), axis=0)
@@ -1672,7 +1681,7 @@ with tab2:
                 if not curves:
                     continue
 
-                color_tt = throw_type_color.get(tt, "#444")
+                color_tt = get_session_color(session2_date)
 
                 if display_mode_tab2 == "Grouped Average":
                     mean_curve = np.nanmean(np.vstack(curves), axis=0)
@@ -1758,7 +1767,7 @@ with tab2:
                 if not curves:
                     continue
 
-                color_tt = throw_type_color.get(tt, "#444")
+                color_tt = get_session_color(session1_date)
 
                 if display_mode_tab2 == "Grouped Average":
                     mean_curve = np.nanmean(np.vstack(curves), axis=0)
@@ -1786,7 +1795,7 @@ with tab2:
                 if not curves:
                     continue
 
-                color_tt = throw_type_color.get(tt, "#444")
+                color_tt = get_session_color(session2_date)
 
                 if display_mode_tab2 == "Grouped Average":
                     mean_curve = np.nanmean(np.vstack(curves), axis=0)
