@@ -440,26 +440,30 @@ with tab1:
         key="tab1_energy_plot_options"
     )
 
-    # ---- Exclude Takes (Tab 1 – rich labels) ----
+    # ---- Exclude Takes (Tab 1) ----
     exclude_labels_tab1 = []
 
-    if "df_tab1" in locals() and not df_tab1.empty:
-        df_tab1_tmp = df_tab1.copy()
+    if "df_tab1" in locals():
+        try:
+            if not df_tab1.empty:
+                df_tab1_tmp = df_tab1.copy()
 
-        def make_label_tab1(row):
-            date = row.get("Session Date", "Unknown Date")
-            pitch = row.get("Pitch", "NA")
-            velo = row.get("Velocity", "NA")
-            metric = row.get("Metric", "Energy")
-            return f"{date} | {metric} | Pitch {pitch} ({velo} mph)"
+                def make_label_tab1(row):
+                    date = row.get("Session Date", "Unknown Date")
+                    pitch = row.get("Pitch", "NA")
+                    velo = row.get("Velocity", "NA")
+                    metric = row.get("Metric", "Energy")
+                    return f"{date} | {metric} | Pitch {pitch} ({velo} mph)"
 
-        df_tab1_tmp["exclude_label"] = df_tab1_tmp.apply(make_label_tab1, axis=1)
+                df_tab1_tmp["exclude_label"] = df_tab1_tmp.apply(make_label_tab1, axis=1)
 
-        exclude_labels_tab1 = st.multiselect(
-            "Exclude Takes",
-            options=df_tab1_tmp["exclude_label"].tolist(),
-            key="exclude_takes_tab1"
-        )
+                exclude_labels_tab1 = st.multiselect(
+                    "Exclude Takes",
+                    options=df_tab1_tmp["exclude_label"].tolist(),
+                    key="exclude_takes_tab1"
+                )
+        except Exception:
+            pass
 
 
     # --- Ensure empty selections are still guarded ---
@@ -780,16 +784,6 @@ if rows:
 
     # ---- Exclude Takes (Tab 1) filter only ----
     if exclude_labels_tab1:
-        # Build exclusion labels using the same rich label logic
-        def make_label_tab1(row):
-            date = row.get("Session Date", "Unknown Date")
-            pitch = row.get("Pitch", "NA")
-            velo = row.get("Velocity", "NA")
-            metric = row.get("Metric", "Energy")
-            return f"{date} | {metric} | Pitch {pitch} ({velo} mph)"
-
-        df_tab1 = df_tab1.copy()
-        df_tab1["exclude_label"] = df_tab1.apply(make_label_tab1, axis=1)
         exclude_take_ids_tab1 = df_tab1[
             df_tab1["exclude_label"].isin(exclude_labels_tab1)
         ]["take_id"].tolist()
