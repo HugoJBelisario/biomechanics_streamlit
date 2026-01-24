@@ -440,28 +440,6 @@ with tab1:
         key="tab1_energy_plot_options"
     )
 
-    # ---- Exclude Takes (Tab 1) ----
-    if not df_tab1.empty:
-        df_tab1_tmp = df_tab1.copy()
-
-        def make_label_tab1(row):
-            try:
-                auc0 = float(row["AUC (Drive → 0)"])
-            except Exception:
-                auc0 = float("nan")
-            try:
-                auc_peak = float(row["AUC (Drive → Peak Arm Energy)"])
-            except Exception:
-                auc_peak = float("nan")
-            return f"{row['Session Date']} | {row['Velocity']} mph | {auc0:.2f} → {auc_peak:.2f}"
-
-        df_tab1_tmp["label"] = df_tab1_tmp.apply(make_label_tab1, axis=1)
-
-        exclude_labels_tab1 = st.multiselect(
-            "Exclude Takes",
-            options=df_tab1_tmp["label"].tolist(),
-            key="exclude_takes_tab1"
-        )
 
     # --- Ensure empty selections are still guarded ---
     if not selected_throw_types:
@@ -779,10 +757,30 @@ if rows:
     if "pitch_velo" in df_tab1.columns and "Velocity" not in df_tab1.columns:
         df_tab1 = df_tab1.rename(columns={"pitch_velo": "Velocity"})
 
+    # ---- Exclude Takes (Tab 1) ----
+    if "df_tab1" in locals() and not df_tab1.empty:
+        df_tab1_tmp = df_tab1.copy()
+
+        def make_label_tab1(row):
+            date = row.get("Session Date", "Unknown Date")
+            pitch = row.get("Pitch", "NA")
+            velo = row.get("Velocity", "NA")
+            return f"{date} | Pitch {pitch} ({velo} mph)"
+
+        df_tab1_tmp["label"] = df_tab1_tmp.apply(make_label_tab1, axis=1)
+
+        exclude_labels_tab1 = st.multiselect(
+            "Exclude Takes",
+            options=df_tab1_tmp["label"].tolist(),
+            key="exclude_takes_tab1"
+        )
+    else:
+        exclude_labels_tab1 = []
+
     # ---- Exclude Takes (Tab 1) filter only ----
-    if "exclude_labels_tab1" in st.session_state and st.session_state["exclude_labels_tab1"]:
+    if exclude_labels_tab1:
         exclude_take_ids_tab1 = df_tab1[
-            df_tab1["label"].isin(st.session_state["exclude_labels_tab1"])
+            df_tab1["label"].isin(exclude_labels_tab1)
         ]["take_id"].tolist()
         df_tab1 = df_tab1[~df_tab1["take_id"].isin(exclude_take_ids_tab1)]
 
