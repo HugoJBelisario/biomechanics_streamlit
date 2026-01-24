@@ -892,13 +892,22 @@ with tab1:
                     slope0, intercept0, r0, _, _ = linregress(x, y0)
                     x_fit = np.linspace(x.min(), x.max(), 100)
                     y_fit0 = slope0 * x_fit + intercept0
+                    # POINTS: Add pitch number to hover label and customdata
                     fig.add_trace(go.Scatter(
-                        x=x, y=y0, mode="markers",
+                        x=x,
+                        y=y0,
+                        mode="markers",
                         marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][0]),
                         name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}",
-                        hovertext=[f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}"] * len(x),
-                        hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                        customdata=sub[["Pitch Number"]],
+                        hovertemplate=(
+                            "Pitch %{customdata[0]}<br>"
+                            "Velocity: %{y:.1f} mph<br>"
+                            "%{xaxis.title.text}: %{x:.2f}<br>"
+                            "<extra></extra>"
+                        ),
                     ))
+                    # LINE: do not change
                     fig.add_trace(go.Scatter(
                         x=x_fit, y=y_fit0, mode="lines",
                         line=dict(color=color, dash=metric_dash_map[energy_plot_option][0]),
@@ -911,13 +920,22 @@ with tab1:
                 if y1.size >= 2:
                     slope1, intercept1, r1, _, _ = linregress(x, y1)
                     y_fit1 = slope1 * x_fit + intercept1
+                    # POINTS: Add pitch number to hover label and customdata
                     fig.add_trace(go.Scatter(
-                        x=x, y=y1, mode="markers",
+                        x=x,
+                        y=y1,
+                        mode="markers",
                         marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][1]),
                         name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}",
-                        hovertext=[f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}"] * len(x),
-                        hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                        customdata=sub[["Pitch Number"]],
+                        hovertemplate=(
+                            "Pitch %{customdata[0]}<br>"
+                            "Velocity: %{y:.1f} mph<br>"
+                            "%{xaxis.title.text}: %{x:.2f}<br>"
+                            "<extra></extra>"
+                        ),
                     ))
+                    # LINE: do not change
                     fig.add_trace(go.Scatter(
                         x=x_fit, y=y_fit1, mode="lines",
                         line=dict(color=color, dash=metric_dash_map[energy_plot_option][1]),
@@ -1102,9 +1120,26 @@ with tab1:
         return len(df) * row_px + header_px + buffer_px
 
     height = estimate_table_height(df_tab1)
-    display_cols = [col for col in df_tab1.columns if col not in ("take_id", "label")]
-    priority_cols = ["Session Date", "Throw Type", "Max Knee Flexion Frame"]
-    display_cols = priority_cols + [c for c in display_cols if c not in priority_cols]
+
+    # ---- Safe display columns (Tab 1) ----
+    preferred_cols = [
+        "Session Date",
+        "Throw Type",
+        "Pitch Number",
+        "Velocity",
+    ]
+
+    # Add metric-specific columns if they exist
+    for col in df_tab1.columns:
+        if col not in preferred_cols and col not in ("take_id", "label"):
+            preferred_cols.append(col)
+
+    display_cols = [c for c in preferred_cols if c in df_tab1.columns]
+
+    if df_tab1.empty:
+        st.warning("No data to display after exclusions.")
+        st.stop()
+
     st.dataframe(df_tab1[display_cols], height=height)
 
 @st.cache_data
