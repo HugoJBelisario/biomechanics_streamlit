@@ -367,7 +367,7 @@ def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment,
     df_torso_all = pd.concat(dfs_torso).groupby("time_pct").mean().reset_index()
 
     return {
-        "take_ids": [srow[0] for row in take_rows],
+        "take_ids": [row[0] for row in take_rows],
         "df_shoulder": df_shoulder_all,
         "df_torso": df_torso_all
     }
