@@ -480,21 +480,29 @@ with tab1:
         key="tab1_energy_plot_options"
     )
 
-    # ---- Exclude Takes (Tab 1) ----
-    # Build stable labels from take_rows (ordered by date, filename), with pitch numbers restarting per session date
+    # ---- Build session-scoped pitch numbers (reset per session date) ----
     from collections import defaultdict
 
-    exclude_pairs = []
+    pitch_number_map = {}  # take_id -> pitch_number (per session date)
     takes_by_date = defaultdict(list)
 
     for tid, file_name, velo, take_date, throw_type in take_rows:
-        takes_by_date[take_date].append((tid, file_name, velo, throw_type))
+        takes_by_date[take_date].append((tid, file_name))
 
     for take_date in sorted(takes_by_date.keys()):
-        day_rows = sorted(takes_by_date[take_date], key=lambda x: x[1])  # file_name order
-        for pitch_idx, (tid, file_name, velo, throw_type) in enumerate(day_rows, start=1):
-            lbl = f"{take_date.strftime('%Y-%m-%d')} | {throw_type} | Pitch {pitch_idx} ({velo:.1f} mph)"
-            exclude_pairs.append((lbl, int(tid)))
+        ordered = sorted(takes_by_date[take_date], key=lambda x: x[1])  # file_name order
+        for idx, (tid, _fname) in enumerate(ordered, start=1):
+            pitch_number_map[int(tid)] = idx
+
+    # ---- Exclude Takes (Tab 1) ----
+    # Build stable labels from take_rows (ordered by date, filename), with pitch numbers from pitch_number_map
+    exclude_pairs = []
+    for tid, file_name, velo, take_date, throw_type in take_rows:
+        lbl = (
+            f"{take_date.strftime('%Y-%m-%d')} | {throw_type} | "
+            f"Pitch {pitch_number_map[int(tid)]} ({velo:.1f} mph)"
+        )
+        exclude_pairs.append((lbl, int(tid)))
 
     exclude_label_options = [l for l, _ in exclude_pairs]
 
@@ -559,7 +567,7 @@ with tab1:
     for tid, file_name, velo, take_date, throw_type in take_rows:
         if int(tid) in exclude_take_ids:
             continue
-        pitch_number = next((idx for idx, (_lbl, _tid) in enumerate(exclude_pairs, start=1) if _tid == int(tid)), len(rows) + 1)
+        pitch_number = pitch_number_map[int(tid)]
         label = f"{take_date.strftime('%Y-%m-%d')} | {throw_type} | Pitch {pitch_number} ({velo:.1f} mph)"
         # Query torso power
         cur.execute("""
