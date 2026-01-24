@@ -428,6 +428,46 @@ with tab1:
         key="tab1_dates"
     )
 
+    # --- Get takes for selected pitcher/date ---
+    if "All Dates" in selected_dates or not selected_dates:
+        placeholders_tt = ",".join(["%s"] * len(selected_throw_types))
+        cur.execute(f"""
+                    SELECT
+                        t.take_id,
+                        t.file_name,
+                        t.pitch_velo,
+                        t.take_date,
+                        COALESCE(t.throw_type, 'Mound') AS throw_type
+                    FROM takes t
+                             JOIN athletes a ON t.athlete_id = a.athlete_id
+                    WHERE a.athlete_name = %s
+                      AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+                    ORDER BY t.take_date, t.file_name
+                    """, (selected_pitcher, *selected_throw_types))
+        take_rows = cur.fetchall()
+    else:
+        placeholders = ",".join(["%s"] * len(selected_dates))
+        placeholders_tt = ",".join(["%s"] * len(selected_throw_types))
+        cur.execute(f"""
+            SELECT
+                t.take_id,
+                t.file_name,
+                t.pitch_velo,
+                t.take_date,
+                COALESCE(t.throw_type, 'Mound') AS throw_type
+            FROM takes t
+            JOIN athletes a ON t.athlete_id = a.athlete_id
+            WHERE a.athlete_name = %s
+              AND t.take_date IN ({placeholders})
+              AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+            ORDER BY t.take_date, t.file_name
+        """, (selected_pitcher, *selected_dates, *selected_throw_types))
+        take_rows = cur.fetchall()
+
+    if not take_rows:
+        st.warning("No takes found for this pitcher and date.")
+        st.stop()
+
     energy_plot_options = st.multiselect(
         "Energy Flow Type",
         [
@@ -441,17 +481,22 @@ with tab1:
     )
 
     # ---- Exclude Takes (Tab 1) ----
-    exclude_take_labels = []
-    exclude_take_ids = []
+    # Build stable labels from take_rows (ordered by date, filename)
+    exclude_pairs = []
+    for i, (tid, file_name, velo, take_date, throw_type) in enumerate(take_rows, start=1):
+        lbl = f"{take_date.strftime('%Y-%m-%d')} | {throw_type} | Pitch {i} ({velo:.1f} mph)"
+        exclude_pairs.append((lbl, int(tid)))
 
-    # Build labels once take_rows exists
-    # Placeholder – populated later after rows are built
+    exclude_label_options = [l for l, _ in exclude_pairs]
+
     excluded_labels = st.multiselect(
         "Exclude Takes",
-        options=[],
+        options=exclude_label_options,
         default=[],
         key="tab1_exclude_takes"
     )
+
+    exclude_take_ids = {tid for (lbl, tid) in exclude_pairs if lbl in excluded_labels}
 
 
 
@@ -503,7 +548,9 @@ with tab1:
 
     rows = []
     for tid, file_name, velo, take_date, throw_type in take_rows:
-        pitch_number = len(rows) + 1
+        if int(tid) in exclude_take_ids:
+            continue
+        pitch_number = next((idx for idx, (_lbl, _tid) in enumerate(exclude_pairs, start=1) if _tid == int(tid)), len(rows) + 1)
         label = f"{take_date.strftime('%Y-%m-%d')} | {throw_type} | Pitch {pitch_number} ({velo:.1f} mph)"
         # Query torso power
         cur.execute("""
@@ -767,22 +814,6 @@ with tab1:
 # Guard for empty rows
 if rows:
     df_tab1 = pd.DataFrame(rows)
-
-    # ---- Populate Exclude Takes options (Tab 1) ----
-    exclude_options = df_tab1["label"].tolist()
-
-    excluded_labels = st.multiselect(
-        "Exclude Takes",
-        options=exclude_options,
-        default=st.session_state.get("tab1_exclude_takes", []),
-        key="tab1_exclude_takes"
-    )
-
-    df_tab1 = df_tab1.copy()
-
-    # ---- Apply Exclude Takes filter ----
-    if excluded_labels:
-        df_tab1 = df_tab1[~df_tab1["label"].isin(excluded_labels)]
 
     # Normalize Velocity column name if pitch_velo is used
     if "pitch_velo" in df_tab1.columns and "Velocity" not in df_tab1.columns:
