@@ -807,15 +807,9 @@ with tab1:
         df_tab1["Throw Type"] = df_tab1["Throw Type"].fillna("Mound")
 
 
-        import plotly.express as px
-
-        # --- Fixed color map by throw type ---
-        throw_type_colors = {
-            "Mound": "#1f77b4",     # blue
-            "Pulldown": "#d62728"   # red
-        }
-
-        color_cycle = px.colors.qualitative.Plotly
+import plotly.express as px
+# --- Date-based color map for Tab 1 ---
+date_color_cycle = px.colors.qualitative.Bold
 
         fig = go.Figure()
         # For marker symbols per metric
@@ -847,10 +841,10 @@ with tab1:
         }
 
         # --- Group by Session Date and Throw Type ---
-        for (date, throw_type), sub in df_tab1.groupby(["Session Date", "Throw Type"]):
+        for i, ((date, throw_type), sub) in enumerate(df_tab1.groupby(["Session Date", "Throw Type"])):
             if len(sub) < 2:
                 continue
-            color = throw_type_colors.get(throw_type, "#444")
+            color = date_color_cycle[i % len(date_color_cycle)]
             x = sub["Velocity"]
             for energy_plot_option in energy_plot_options:
                 # Torso Power: plot both AUC → 0 and AUC → Peak
