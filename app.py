@@ -441,8 +441,8 @@ with tab1:
     )
 
     # ---- Exclude Takes (Tab 1) ----
-    if rows:
-        df_tab1_tmp = pd.DataFrame(rows)
+    if not df_tab1.empty:
+        df_tab1_tmp = df_tab1.copy()
 
         def make_label_tab1(row):
             try:
