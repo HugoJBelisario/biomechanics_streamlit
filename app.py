@@ -745,69 +745,70 @@ with tab1:
             "STP Rotational AUC (Drive → Peak Arm Energy)": round(float(auc_stp_rot_to_peak), 2) if pd.notna(auc_stp_rot_to_peak) else np.nan,
         })
 
-    if rows:
-        df_tab1 = pd.DataFrame(rows)
+# Guard for empty rows
+if rows:
+    df_tab1 = pd.DataFrame(rows)
 
-        # ---- Exclude Takes (Tab 1) ----
-        df_tab1 = df_tab1.copy()
+    # ---- Exclude Takes (Tab 1) ----
+    df_tab1 = df_tab1.copy()
 
-        # Normalize Velocity column name if pitch_velo is used
-        if "pitch_velo" in df_tab1.columns and "Velocity" not in df_tab1.columns:
-            df_tab1 = df_tab1.rename(columns={"pitch_velo": "Velocity"})
+    # Normalize Velocity column name if pitch_velo is used
+    if "pitch_velo" in df_tab1.columns and "Velocity" not in df_tab1.columns:
+        df_tab1 = df_tab1.rename(columns={"pitch_velo": "Velocity"})
 
-        if not df_tab1.empty:
-            # Build readable labels identical in style to Tab 3
-            def make_label_tab1(row):
-                try:
-                    auc0 = float(row["AUC (Drive → 0)"])
-                except Exception:
-                    auc0 = float("nan")
-                try:
-                    auc_peak = float(row["AUC (Drive → Peak Arm Energy)"])
-                except Exception:
-                    auc_peak = float("nan")
-                return f"{row['Session Date']} | {row['Velocity']} mph | {auc0:.2f} → {auc_peak:.2f}"
+    if not df_tab1.empty:
+        # Build readable labels identical in style to Tab 3
+        def make_label_tab1(row):
+            try:
+                auc0 = float(row["AUC (Drive → 0)"])
+            except Exception:
+                auc0 = float("nan")
+            try:
+                auc_peak = float(row["AUC (Drive → Peak Arm Energy)"])
+            except Exception:
+                auc_peak = float("nan")
+            return f"{row['Session Date']} | {row['Velocity']} mph | {auc0:.2f} → {auc_peak:.2f}"
 
-            df_tab1["label"] = df_tab1.apply(make_label_tab1, axis=1)
+        df_tab1["label"] = df_tab1.apply(make_label_tab1, axis=1)
 
-            exclude_labels_tab1 = st.multiselect(
-                "Exclude Takes",
-                options=df_tab1["label"].tolist(),
-                key="exclude_takes_tab1"
-            )
-
-            # Map labels back to take_ids
-            exclude_take_ids_tab1 = df_tab1[
-                df_tab1["label"].isin(exclude_labels_tab1)
-            ]["take_id"].tolist()
-
-            # Filter out excluded takes
-            df_tab1 = df_tab1[~df_tab1["take_id"].isin(exclude_take_ids_tab1)]
-
-        # Prepare regressions
-        df_tab1["Velocity"] = pd.to_numeric(df_tab1["Velocity"], errors="coerce")
-        df_tab1["AUC (Drive → 0)"] = pd.to_numeric(df_tab1["AUC (Drive → 0)"], errors="coerce")
-        df_tab1["AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(df_tab1["AUC (Drive → Peak Arm Energy)"], errors="coerce")
-        df_tab1 = df_tab1.dropna(subset=["Velocity", "AUC (Drive → 0)", "AUC (Drive → Peak Arm Energy)"])
-        df_tab1["STP Elevation AUC (Drive → 0)"] = pd.to_numeric(df_tab1["STP Elevation AUC (Drive → 0)"], errors="coerce")
-        df_tab1["STP Elevation AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(df_tab1["STP Elevation AUC (Drive → Peak Arm Energy)"], errors="coerce")
-        df_tab1["STP HorizAbd AUC (Drive → 0)"] = pd.to_numeric(
-            df_tab1["STP HorizAbd AUC (Drive → 0)"], errors="coerce"
+        exclude_labels_tab1 = st.multiselect(
+            "Exclude Takes",
+            options=df_tab1["label"].tolist(),
+            key="exclude_takes_tab1"
         )
-        df_tab1["STP HorizAbd AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(
-            df_tab1["STP HorizAbd AUC (Drive → Peak Arm Energy)"], errors="coerce"
-        )
-        df_tab1["STP Rotational AUC (Drive → 0)"] = pd.to_numeric(
-            df_tab1["STP Rotational AUC (Drive → 0)"], errors="coerce"
-        )
-        df_tab1["STP Rotational AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(
-            df_tab1["STP Rotational AUC (Drive → Peak Arm Energy)"], errors="coerce"
-        )
-        # --- Normalize Throw Type: ensure always present and filled ---
-        df_tab1["Throw Type"] = df_tab1["Throw Type"].fillna("Mound")
 
+        # Map labels back to take_ids
+        exclude_take_ids_tab1 = df_tab1[
+            df_tab1["label"].isin(exclude_labels_tab1)
+        ]["take_id"].tolist()
 
-import plotly.express as px
+        # Filter out excluded takes
+        df_tab1 = df_tab1[~df_tab1["take_id"].isin(exclude_take_ids_tab1)]
+
+    # Prepare regressions
+    df_tab1["Velocity"] = pd.to_numeric(df_tab1["Velocity"], errors="coerce")
+    df_tab1["AUC (Drive → 0)"] = pd.to_numeric(df_tab1["AUC (Drive → 0)"], errors="coerce")
+    df_tab1["AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(df_tab1["AUC (Drive → Peak Arm Energy)"], errors="coerce")
+    df_tab1 = df_tab1.dropna(subset=["Velocity", "AUC (Drive → 0)", "AUC (Drive → Peak Arm Energy)"])
+    df_tab1["STP Elevation AUC (Drive → 0)"] = pd.to_numeric(df_tab1["STP Elevation AUC (Drive → 0)"], errors="coerce")
+    df_tab1["STP Elevation AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(df_tab1["STP Elevation AUC (Drive → Peak Arm Energy)"], errors="coerce")
+    df_tab1["STP HorizAbd AUC (Drive → 0)"] = pd.to_numeric(
+        df_tab1["STP HorizAbd AUC (Drive → 0)"], errors="coerce"
+    )
+    df_tab1["STP HorizAbd AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(
+        df_tab1["STP HorizAbd AUC (Drive → Peak Arm Energy)"], errors="coerce"
+    )
+    df_tab1["STP Rotational AUC (Drive → 0)"] = pd.to_numeric(
+        df_tab1["STP Rotational AUC (Drive → 0)"], errors="coerce"
+    )
+    df_tab1["STP Rotational AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(
+        df_tab1["STP Rotational AUC (Drive → Peak Arm Energy)"], errors="coerce"
+    )
+    # --- Normalize Throw Type: ensure always present and filled ---
+    df_tab1["Throw Type"] = df_tab1["Throw Type"].fillna("Mound")
+else:
+    st.warning("No valid data found for this pitcher/date.")
+    st.stop()
 # --- Date-based color map for Tab 1 ---
 date_color_cycle = px.colors.qualitative.Bold
 
@@ -1060,17 +1061,15 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
 def estimate_table_height(df, row_px=35, header_px=35, buffer_px=2):
     return len(df) * row_px + header_px + buffer_px
 
 height = estimate_table_height(df_tab1)
-# Display only the columns that were in the original summary (drop take_id, label)
 display_cols = [col for col in df_tab1.columns if col not in ("take_id", "label")]
 priority_cols = ["Session Date", "Throw Type", "Max Knee Flexion Frame"]
 display_cols = priority_cols + [c for c in display_cols if c not in priority_cols]
 st.dataframe(df_tab1[display_cols], height=height)
-    else:
-        st.warning("No valid data found for this pitcher/date.")
 
 @st.cache_data
 def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, comp_col, use_abs, throw_types=None):
