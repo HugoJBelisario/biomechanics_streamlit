@@ -810,6 +810,267 @@ if rows:
 else:
     st.warning("No valid data found for this pitcher/date.")
     st.stop()
+# --- Date-based color map for Tab 1 ---
+date_color_cycle = px.colors.qualitative.Bold
+
+fig = go.Figure()
+# For marker symbols per metric
+metric_symbol_map = {
+    "Torso Power": ["circle", "triangle-up"],
+    "STP Elevation": ["diamond"],
+    "STP Horizontal Abduction": ["square"],
+    "STP Rotational": ["pentagon"],
+}
+# For regression line dashes per metric
+metric_dash_map = {
+    "Torso Power": ["dash", "dot"],
+    "STP Elevation": ["longdash"],
+    "STP Horizontal Abduction": [None],
+    "STP Rotational": ["dot"],
+}
+# For legend names per metric
+metric_trace_names = {
+    "Torso Power": ["Torso AUC → 0", "Torso AUC → Peak"],
+    "STP Elevation": ["STP Elev Peak"],
+    "STP Horizontal Abduction": ["STP HABD Peak"],
+    "STP Rotational": ["STP ROT Peak"],
+}
+metric_reg_names = {
+    "Torso Power": ["R²", "Peak R²"],
+    "STP Elevation": ["R²"],
+    "STP Horizontal Abduction": ["R²"],
+    "STP Rotational": ["R²"],
+}
+
+# --- Group by Session Date and Throw Type ---
+for i, ((date, throw_type), sub) in enumerate(df_tab1.groupby(["Session Date", "Throw Type"])):
+    if len(sub) < 2:
+        continue
+    color = date_color_cycle[i % len(date_color_cycle)]
+    x = sub["Velocity"]
+    for energy_plot_option in energy_plot_options:
+        # Torso Power: plot both AUC → 0 and AUC → Peak
+        if energy_plot_option == "Torso Power":
+            # --- AUC Drive → 0 ---
+            y0 = sub["AUC (Drive → 0)"]
+            if y0.size >= 2:
+                slope0, intercept0, r0, _, _ = linregress(x, y0)
+                x_fit = np.linspace(x.min(), x.max(), 100)
+                y_fit0 = slope0 * x_fit + intercept0
+                fig.add_trace(go.Scatter(
+                    x=x, y=y0, mode="markers",
+                    marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][0]),
+                    name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}",
+                    hovertext=[f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}"] * len(x),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                ))
+                fig.add_trace(go.Scatter(
+                    x=x_fit, y=y_fit0, mode="lines",
+                    line=dict(color=color, dash=metric_dash_map[energy_plot_option][0]),
+                    name=f"R²={r0**2:.2f}",
+                    hovertext=[f"{date} | {throw_type} | R²={r0**2:.2f}"] * len(x_fit),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
+                ))
+            # --- AUC Drive → Peak Arm Energy ---
+            y1 = sub["AUC (Drive → Peak Arm Energy)"]
+            if y1.size >= 2:
+                slope1, intercept1, r1, _, _ = linregress(x, y1)
+                y_fit1 = slope1 * x_fit + intercept1
+                fig.add_trace(go.Scatter(
+                    x=x, y=y1, mode="markers",
+                    marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][1]),
+                    name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}",
+                    hovertext=[f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}"] * len(x),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                ))
+                fig.add_trace(go.Scatter(
+                    x=x_fit, y=y_fit1, mode="lines",
+                    line=dict(color=color, dash=metric_dash_map[energy_plot_option][1]),
+                    name=f"R²={r1**2:.2f}",
+                    hovertext=[f"{date} | {throw_type} | R²={r1**2:.2f}"] * len(x_fit),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
+                ))
+        elif energy_plot_option == "STP Elevation":
+            # ---- Drive → 0 ----
+            y0 = sub["STP Elevation AUC (Drive → 0)"].dropna()
+            if y0.size >= 2:
+                slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
+                x_fit = np.linspace(x.min(), x.max(), 100)
+                y_fit0 = slope0 * x_fit + intercept0
+                fig.add_trace(go.Scatter(
+                    x=x.loc[y0.index],
+                    y=y0,
+                    mode="markers",
+                    marker=dict(color=color, symbol="diamond"),
+                    name=f"{date} | {throw_type} | STP Elev → 0",
+                    hovertext=[f"{date} | {throw_type} | STP Elev → 0"] * len(y0),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                ))
+                fig.add_trace(go.Scatter(
+                    x=x_fit,
+                    y=y_fit0,
+                    mode="lines",
+                    line=dict(color=color, dash="dash"),
+                    name=f"R²={r0**2:.2f}",
+                    hovertext=[f"{date} | {throw_type} | R²={r0**2:.2f}"] * len(x_fit),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
+                ))
+
+            # ---- Drive → Peak Arm Energy ----
+            y1 = sub["STP Elevation AUC (Drive → Peak Arm Energy)"].dropna()
+            if y1.size >= 2:
+                slope1, intercept1, r1, _, _ = linregress(x.loc[y1.index], y1)
+                y_fit1 = slope1 * x_fit + intercept1
+                fig.add_trace(go.Scatter(
+                    x=x.loc[y1.index],
+                    y=y1,
+                    mode="markers",
+                    marker=dict(color=color, symbol="diamond-open"),
+                    name=f"{date} | {throw_type} | STP Elev → Peak",
+                    hovertext=[f"{date} | {throw_type} | STP Elev → Peak"] * len(y1),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                ))
+                fig.add_trace(go.Scatter(
+                    x=x_fit,
+                    y=y_fit1,
+                    mode="lines",
+                    line=dict(color=color, dash="dot"),
+                    name=f"R²={r1**2:.2f}",
+                    hovertext=[f"{date} | {throw_type} | R²={r1**2:.2f}"] * len(x_fit),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
+                ))
+        elif energy_plot_option == "STP Horizontal Abduction":
+            # ---- Drive → 0 ----
+            y0 = sub["STP HorizAbd AUC (Drive → 0)"].dropna()
+            if y0.size >= 2:
+                slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
+                x_fit = np.linspace(x.min(), x.max(), 100)
+                y_fit0 = slope0 * x_fit + intercept0
+                fig.add_trace(go.Scatter(
+                    x=x.loc[y0.index],
+                    y=y0,
+                    mode="markers",
+                    marker=dict(color=color, symbol="square"),
+                    name=f"{date} | {throw_type} | STP HorizAbd → 0",
+                    hovertext=[f"{date} | {throw_type} | STP HorizAbd → 0"] * len(y0),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                ))
+                fig.add_trace(go.Scatter(
+                    x=x_fit,
+                    y=y_fit0,
+                    mode="lines",
+                    line=dict(color=color, dash="dash"),
+                    name=f"R²={r0**2:.2f}",
+                    hovertext=[f"{date} | {throw_type} | R²={r0**2:.2f}"] * len(x_fit),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
+                ))
+
+            # ---- Drive → Peak Arm Energy ----
+            y1 = sub["STP HorizAbd AUC (Drive → Peak Arm Energy)"].dropna()
+            if y1.size >= 2:
+                slope1, intercept1, r1, _, _ = linregress(x.loc[y1.index], y1)
+                y_fit1 = slope1 * x_fit + intercept1
+                fig.add_trace(go.Scatter(
+                    x=x.loc[y1.index],
+                    y=y1,
+                    mode="markers",
+                    marker=dict(color=color, symbol="square-open"),
+                    name=f"{date} | {throw_type} | STP HorizAbd → Peak",
+                    hovertext=[f"{date} | {throw_type} | STP HorizAbd → Peak"] * len(y1),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                ))
+                fig.add_trace(go.Scatter(
+                    x=x_fit,
+                    y=y_fit1,
+                    mode="lines",
+                    line=dict(color=color, dash="dot"),
+                    name=f"R²={r1**2:.2f}",
+                    hovertext=[f"{date} | {throw_type} | R²={r1**2:.2f}"] * len(x_fit),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
+                ))
+        elif energy_plot_option == "STP Rotational":
+            # ---- Drive → 0 ----
+            y0 = sub["STP Rotational AUC (Drive → 0)"].dropna()
+            if y0.size >= 2:
+                slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
+                x_fit = np.linspace(x.min(), x.max(), 100)
+                y_fit0 = slope0 * x_fit + intercept0
+                fig.add_trace(go.Scatter(
+                    x=x.loc[y0.index],
+                    y=y0,
+                    mode="markers",
+                    marker=dict(color=color, symbol="pentagon"),
+                    name=f"{date} | {throw_type} | STP Rot → 0",
+                    hovertext=[f"{date} | {throw_type} | STP Rot → 0"] * len(y0),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                ))
+                fig.add_trace(go.Scatter(
+                    x=x_fit,
+                    y=y_fit0,
+                    mode="lines",
+                    line=dict(color=color, dash="dash"),
+                    name=f"R²={r0**2:.2f}",
+                    hovertext=[f"{date} | {throw_type} | R²={r0**2:.2f}"] * len(x_fit),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
+                ))
+
+            # ---- Drive → Peak Arm Energy ----
+            y1 = sub["STP Rotational AUC (Drive → Peak Arm Energy)"].dropna()
+            if y1.size >= 2:
+                slope1, intercept1, r1, _, _ = linregress(x.loc[y1.index], y1)
+                y_fit1 = slope1 * x_fit + intercept1
+                fig.add_trace(go.Scatter(
+                    x=x.loc[y1.index],
+                    y=y1,
+                    mode="markers",
+                    marker=dict(color=color, symbol="pentagon-open"),
+                    name=f"{date} | {throw_type} | STP Rot → Peak",
+                    hovertext=[f"{date} | {throw_type} | STP Rot → Peak"] * len(y1),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                ))
+                fig.add_trace(go.Scatter(
+                    x=x_fit,
+                    y=y_fit1,
+                    mode="lines",
+                    line=dict(color=color, dash="dot"),
+                    name=f"R²={r1**2:.2f}",
+                    hovertext=[f"{date} | {throw_type} | R²={r1**2:.2f}"] * len(x_fit),
+                    hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
+                ))
+
+# Build dynamic title from energy_plot_options
+title_metric = ", ".join(energy_plot_options)
+dynamic_title = f"Velocity vs. {title_metric}"
+fig.update_layout(
+    title=dynamic_title,
+    xaxis_title="Velocity (mph)",
+    yaxis_title="Energy / AUC",
+    legend=dict(
+        orientation="h",
+        yanchor="top",
+        y=-0.25,
+        xanchor="center",
+        x=0.5
+    ),
+    height=600
+)
+fig.update_layout(
+    hoverlabel=dict(
+        namelength=-1,
+        font=dict(size=13)
+    )
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+def estimate_table_height(df, row_px=35, header_px=35, buffer_px=2):
+    return len(df) * row_px + header_px + buffer_px
+
+height = estimate_table_height(df_tab1)
+display_cols = [col for col in df_tab1.columns if col not in ("take_id", "label")]
+priority_cols = ["Session Date", "Throw Type", "Max Knee Flexion Frame"]
+display_cols = priority_cols + [c for c in display_cols if c not in priority_cols]
+st.dataframe(df_tab1[display_cols], height=height)
 
 @st.cache_data
 def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, comp_col, use_abs, throw_types=None):
