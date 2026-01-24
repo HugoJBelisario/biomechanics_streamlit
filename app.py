@@ -440,6 +440,29 @@ with tab1:
         key="tab1_energy_plot_options"
     )
 
+    # ---- Exclude Takes (Tab 1) ----
+    if rows:
+        df_tab1_tmp = pd.DataFrame(rows)
+
+        def make_label_tab1(row):
+            try:
+                auc0 = float(row["AUC (Drive → 0)"])
+            except Exception:
+                auc0 = float("nan")
+            try:
+                auc_peak = float(row["AUC (Drive → Peak Arm Energy)"])
+            except Exception:
+                auc_peak = float("nan")
+            return f"{row['Session Date']} | {row['Velocity']} mph | {auc0:.2f} → {auc_peak:.2f}"
+
+        df_tab1_tmp["label"] = df_tab1_tmp.apply(make_label_tab1, axis=1)
+
+        exclude_labels_tab1 = st.multiselect(
+            "Exclude Takes",
+            options=df_tab1_tmp["label"].tolist(),
+            key="exclude_takes_tab1"
+        )
+
     # --- Ensure empty selections are still guarded ---
     if not selected_throw_types:
         selected_throw_types = default_throw_types
@@ -750,40 +773,17 @@ with tab1:
 if rows:
     df_tab1 = pd.DataFrame(rows)
 
-    # ---- Exclude Takes (Tab 1) ----
     df_tab1 = df_tab1.copy()
 
     # Normalize Velocity column name if pitch_velo is used
     if "pitch_velo" in df_tab1.columns and "Velocity" not in df_tab1.columns:
         df_tab1 = df_tab1.rename(columns={"pitch_velo": "Velocity"})
 
-    if not df_tab1.empty:
-        # Build readable labels identical in style to Tab 3
-        def make_label_tab1(row):
-            try:
-                auc0 = float(row["AUC (Drive → 0)"])
-            except Exception:
-                auc0 = float("nan")
-            try:
-                auc_peak = float(row["AUC (Drive → Peak Arm Energy)"])
-            except Exception:
-                auc_peak = float("nan")
-            return f"{row['Session Date']} | {row['Velocity']} mph | {auc0:.2f} → {auc_peak:.2f}"
-
-        df_tab1["label"] = df_tab1.apply(make_label_tab1, axis=1)
-
-        exclude_labels_tab1 = st.multiselect(
-            "Exclude Takes",
-            options=df_tab1["label"].tolist(),
-            key="exclude_takes_tab1"
-        )
-
-        # Map labels back to take_ids
+    # ---- Exclude Takes (Tab 1) filter only ----
+    if "exclude_labels_tab1" in st.session_state and st.session_state["exclude_labels_tab1"]:
         exclude_take_ids_tab1 = df_tab1[
-            df_tab1["label"].isin(exclude_labels_tab1)
+            df_tab1["label"].isin(st.session_state["exclude_labels_tab1"])
         ]["take_id"].tolist()
-
-        # Filter out excluded takes
         df_tab1 = df_tab1[~df_tab1["take_id"].isin(exclude_take_ids_tab1)]
 
     # Prepare regressions
