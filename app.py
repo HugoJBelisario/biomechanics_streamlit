@@ -895,7 +895,7 @@ with tab1:
         color = date_color_cycle[i % len(date_color_cycle)]
         x = sub["Velocity"]
         # customdata for these points (must match sub index)
-        sub_customdata = sub[["Session Date", "Throw Type", "Pitch Number", "Velocity"]].values
+        sub_customdata_df = sub[["Session Date", "Throw Type", "Pitch Number", "Velocity"]]
         for energy_plot_option in energy_plot_options:
             # Torso Power: plot both AUC → 0 and AUC → Peak
             if energy_plot_option == "Torso Power":
@@ -910,7 +910,7 @@ with tab1:
                         marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][0]),
                         name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][0]}",
                         # POINTS hover: customdata includes Pitch Number after Throw Type
-                        customdata=sub_customdata[y0.index],
+                        customdata=sub_customdata_df.loc[y0.index].values,
                         hovertemplate=(
                             "%{customdata[0]} | %{customdata[1]} | Pitch %{customdata[2]}<br>"
                             "Value: %{y:.2f}<br>"
@@ -934,7 +934,7 @@ with tab1:
                         x=x.loc[y1.index], y=y1, mode="markers",
                         marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][1]),
                         name=f"{date} | {throw_type} | {metric_trace_names[energy_plot_option][1]}",
-                        customdata=sub_customdata[y1.index],
+                        customdata=sub_customdata_df.loc[y1.index].values,
                         hovertemplate=(
                             "%{customdata[0]} | %{customdata[1]} | Pitch %{customdata[2]}<br>"
                             "Value: %{y:.2f}<br>"
