@@ -814,6 +814,7 @@ with tab1:
             "label": label,
             "Pitch Number": pitch_number,
             "Session Date": take_date.strftime("%Y-%m-%d"),
+            "Max Rear Knee Flexion Frame": max_knee_frame,
             "Throw Type": throw_type,
             "Velocity": velo,
             "AUC (Drive → 0)": round(float(auc_total), 2),
