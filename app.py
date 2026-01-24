@@ -440,28 +440,6 @@ with tab1:
         key="tab1_energy_plot_options"
     )
 
-    # ---- Exclude Takes (Tab 1) ----
-    exclude_labels_tab1 = []
-    exclude_take_ids_tab1 = []
-
-    if "take_rows" in locals() and take_rows:
-        exclude_options = []
-
-        for tid, file_name, velo, take_date, throw_type in take_rows:
-            label = f"{take_date.strftime('%Y-%m-%d')} | {throw_type} | {velo:.1f} mph | {file_name}"
-            exclude_options.append((label, tid))
-
-        label_list = [l for l, _ in exclude_options]
-
-        selected_excludes = st.multiselect(
-            "Exclude Takes",
-            options=label_list,
-            key="exclude_takes_tab1"
-        )
-
-        exclude_take_ids_tab1 = [
-            tid for label, tid in exclude_options if label in selected_excludes
-        ]
 
 
     # --- Ensure empty selections are still guarded ---
@@ -774,9 +752,6 @@ with tab1:
 if rows:
     df_tab1 = pd.DataFrame(rows)
 
-    # ---- Apply Exclude Takes (Tab 1 only) ----
-    if exclude_take_ids_tab1:
-        df_tab1 = df_tab1[~df_tab1["take_id"].isin(exclude_take_ids_tab1)]
 
     df_tab1 = df_tab1.copy()
 
