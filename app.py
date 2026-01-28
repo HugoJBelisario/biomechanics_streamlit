@@ -53,7 +53,34 @@ def get_ball_release_frame(take_id, handedness, cur):
         return int(row[0])
     return None
 
-def get_shoulder_er_max_frame(take_id, handedness, cur):
+def get_ball_release_frame_pulldown(take_id, handedness, fp_frame, cur):
+    """
+    Pulldown BR: peak |hand CGVel X| AFTER Foot Plant.
+    Prevents early CGVel spikes from being mis-labeled as BR.
+    """
+    if fp_frame is None:
+        return get_ball_release_frame(take_id, handedness, cur)
+
+    cur.execute(
+        """
+        SELECT ts.frame, ts.x_data
+        FROM time_series_data ts
+        JOIN categories c ON ts.category_id = c.category_id
+        JOIN segments s   ON ts.segment_id  = s.segment_id
+        WHERE ts.take_id = %s
+          AND c.category_name = 'KINETIC_KINEMATIC_CGVel'
+          AND s.segment_name IN ('LHA', 'RHA')
+          AND ts.x_data IS NOT NULL
+          AND ts.frame >= %s
+        ORDER BY ABS(ts.x_data) DESC
+        LIMIT 1
+        """,
+        (take_id, int(fp_frame)),
+    )
+    row = cur.fetchone()
+    return int(row[0]) if row else None
+
+def get_shoulder_er_max_frame(take_id, handedness, cur, throw_type=None):
     """
     Returns the frame of TRUE shoulder external rotation (layback),
     anchored to the FIRST significant arm energy peak (>100).
@@ -139,10 +166,21 @@ def get_shoulder_er_max_frame(take_id, handedness, cur):
     # ------------------------------------
     shoulder_segment = "RT_SHOULDER" if handedness == "R" else "LT_SHOULDER"
     start_frame = peak_arm_energy_frame - 15
-    end_frame   = peak_arm_energy_frame + 15
+    end_frame = peak_arm_energy_frame + 15
+
+    # Pulldown-only: Foot Plant gating
+    fp_frame = None
+    if throw_type == "Pulldown":
+        fp_frame = get_foot_plant_frame(take_id, handedness, cur)
+        if fp_frame is not None:
+            start_frame = max(int(start_frame), int(fp_frame))
 
     # Constrain MER search so it cannot occur after Ball Release
-    br_frame = get_ball_release_frame(take_id, handedness, cur)
+    if throw_type == "Pulldown":
+        br_frame = get_ball_release_frame_pulldown(take_id, handedness, fp_frame, cur)
+    else:
+        br_frame = get_ball_release_frame(take_id, handedness, cur)
+
     if br_frame is not None:
         end_frame = min(int(end_frame), int(br_frame))
 
@@ -243,6 +281,53 @@ def get_zero_cross_frame(take_id, handedness, ankle_min_frame, sh_er_max_frame, 
     row = cur.fetchone()
     return int(row[0] + 1) if row else None
 
+def get_foot_plant_frame(take_id, handedness, cur):
+    """
+    Pulldown Foot Plant:
+    - Lead foot DistEndVel Z
+    - Largest negative dip
+    - First return to ~zero AFTER dip
+    """
+    lead_foot = "LFT" if handedness == "R" else "RFT"
+
+    # Largest negative dip
+    cur.execute("""
+        SELECT ts.frame, ts.z_data
+        FROM time_series_data ts
+        JOIN categories c ON ts.category_id = c.category_id
+        JOIN segments s ON ts.segment_id = s.segment_id
+        WHERE ts.take_id = %s
+          AND c.category_name = 'KINETIC_KINEMATIC_DistEndVel'
+          AND s.segment_name = %s
+          AND ts.z_data IS NOT NULL
+        ORDER BY ts.z_data ASC
+        LIMIT 1
+    """, (take_id, lead_foot))
+
+    row = cur.fetchone()
+    if not row:
+        return None
+
+    trough_frame = int(row[0])
+
+    # Back-to-zero AFTER trough
+    cur.execute("""
+        SELECT ts.frame
+        FROM time_series_data ts
+        JOIN categories c ON ts.category_id = c.category_id
+        JOIN segments s ON ts.segment_id = s.segment_id
+        WHERE ts.take_id = %s
+          AND c.category_name = 'KINETIC_KINEMATIC_DistEndVel'
+          AND s.segment_name = %s
+          AND ts.frame > %s
+          AND ts.z_data >= -0.05
+        ORDER BY ts.frame ASC
+        LIMIT 1
+    """, (take_id, lead_foot, trough_frame))
+
+    row2 = cur.fetchone()
+    return int(row2[0]) if row2 else None
+
 # Title
 st.title("Biomechanics Viewer")
 
@@ -298,10 +383,19 @@ def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment,
         df_knee = df_knee.dropna(subset=["x_data"])
 
         if throw_type == "Pulldown":
-            knee_window = df_knee[
-                (df_knee["frame"] >= drive_start_frame - 100) &
-                (df_knee["frame"] < drive_start_frame)
-                ]
+            fp_frame = get_foot_plant_frame(take_id, handedness, cur)
+
+            if fp_frame is not None:
+                knee_window = df_knee[
+                    (df_knee["frame"] >= fp_frame - 100) &
+                    (df_knee["frame"] < fp_frame)
+                    ]
+            else:
+                # fallback (rare)
+                knee_window = df_knee[
+                    (df_knee["frame"] >= drive_start_frame - 100) &
+                    (df_knee["frame"] < drive_start_frame)
+                    ]
         else:
             knee_window = df_knee[df_knee["frame"] < drive_start_frame]
 
@@ -597,7 +691,7 @@ with tab1:
         df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
 
         # --- Drive start: within 50 frames BEFORE MER ---
-        peak_shoulder_frame = get_shoulder_er_max_frame(tid, handedness, cur)
+        peak_shoulder_frame = get_shoulder_er_max_frame(tid, handedness, cur, throw_type=throw_type)
         if peak_shoulder_frame is None:
             peak_shoulder_frame = np.nan
 
@@ -628,10 +722,19 @@ with tab1:
             df_knee = df_knee.dropna(subset=["x_data"])
 
             if throw_type == "Pulldown":
-                knee_window = df_knee[
-                    (df_knee["frame"] >= drive_start_frame - 100) &
-                    (df_knee["frame"] < drive_start_frame)
-                ]
+                fp_frame = get_foot_plant_frame(tid, handedness, cur)
+
+                if fp_frame is not None:
+                    knee_window = df_knee[
+                        (df_knee["frame"] >= fp_frame - 100) &
+                        (df_knee["frame"] < fp_frame)
+                        ]
+                else:
+                    # fallback (rare)
+                    knee_window = df_knee[
+                        (df_knee["frame"] >= drive_start_frame - 100) &
+                        (df_knee["frame"] < drive_start_frame)
+                        ]
             else:
                 knee_window = df_knee[df_knee["frame"] < drive_start_frame]
 
@@ -673,7 +776,11 @@ with tab1:
 
         if not df_arm.empty and not np.isnan(max_knee_frame):
             mer_frame = int(peak_shoulder_frame) if not np.isnan(peak_shoulder_frame) else None
-            br_frame = get_ball_release_frame(tid, handedness, cur)
+            if throw_type == "Pulldown":
+                fp_frame_br = get_foot_plant_frame(tid, handedness, cur)
+                br_frame = get_ball_release_frame_pulldown(tid, handedness, fp_frame_br, cur)
+            else:
+                br_frame = get_ball_release_frame(tid, handedness, cur)
 
             df_arm["x_data"] = pd.to_numeric(df_arm["x_data"], errors="coerce")
 
