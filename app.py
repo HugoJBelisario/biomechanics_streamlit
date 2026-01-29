@@ -383,6 +383,23 @@ def get_foot_plant_frame(take_id, handedness, cur):
     row2 = cur.fetchone()
     return int(row2[0]) if row2 else None
 
+def get_pulldown_window(take_id, handedness, cur):
+    """
+    Pulldown-only bounded window for drive (RTA_DIST), peak arm energy, and AUC searches.
+    Window = [FP - 80, BR]
+      - FP: pelvis-anchored foot plant
+      - BR: pulldown ball release (peak |hand CGVel X| after FP; pelvis-anchored fallback)
+    Returns: (start_frame, end_frame, fp_frame)
+    """
+    fp_frame = get_foot_plant_frame(take_id, handedness, cur)
+    if fp_frame is None:
+        return None, None, None
+
+    br_frame = get_ball_release_frame_pulldown(take_id, handedness, fp_frame, cur)
+    if br_frame is None:
+        return None, None, int(fp_frame)
+
+    return int(fp_frame) - 80, int(br_frame), int(fp_frame)
 # Title
 st.title("Biomechanics Viewer")
 
@@ -404,10 +421,18 @@ def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment,
     if not take_rows:
         return None
 
+    # Determine handedness for this pitcher (avoid relying on outer-scope variables)
+    cur.execute("SELECT handedness FROM athletes WHERE athlete_name = %s", (pitcher,))
+    _hn = cur.fetchone()
+    handedness = _hn[0] if _hn and _hn[0] else "R"
+
     dfs_shoulder = []
     dfs_torso = []
 
     for (take_id,) in take_rows:
+        cur.execute("SELECT COALESCE(throw_type, 'Mound') FROM takes WHERE take_id = %s", (take_id,))
+        tt_row = cur.fetchone()
+        throw_type = tt_row[0] if tt_row else "Mound"
         # Query torso power to get drive start
         cur.execute("""
             SELECT frame, x_data FROM time_series_data ts
@@ -418,7 +443,15 @@ def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment,
         """, (take_id, torso_segment))
         df_power = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
         df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
-        drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
+        drive_start_frame = np.nan
+        if throw_type == "Pulldown":
+            w_start, w_end, _fp = get_pulldown_window(take_id, handedness, cur)
+            if (w_start is not None) and (w_end is not None):
+                df_pw = df_power[(df_power["frame"] >= w_start) & (df_power["frame"] <= w_end)]
+                drive_start_frame = df_pw[df_pw["x_data"] < -3000]["frame"].min()
+        else:
+            drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
+
         if pd.isna(drive_start_frame):
             continue
 
@@ -745,18 +778,29 @@ with tab1:
         df_power = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
         df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
 
-        # --- Drive start: within 50 frames BEFORE MER ---
+        # --- Drive start (Pulldown bounded to [FP-80, BR]; Mound keeps MER-relative window) ---
         peak_shoulder_frame = get_shoulder_er_max_frame(tid, handedness, cur, throw_type=throw_type)
         if peak_shoulder_frame is None:
             peak_shoulder_frame = np.nan
 
-        # Only attempt drive start detection if peak_shoulder_frame is valid
-        if not np.isnan(peak_shoulder_frame):
-            df_power_window = df_power[
-                (df_power["frame"] >= peak_shoulder_frame - 50) &
-                (df_power["frame"] < peak_shoulder_frame)
-            ]
-            drive_start_frame = df_power_window[df_power_window["x_data"] < -3000]["frame"].min()
+        drive_start_frame = np.nan
+
+        if throw_type == "Pulldown":
+            w_start, w_end, _fp = get_pulldown_window(tid, handedness, cur)
+            if (w_start is not None) and (w_end is not None):
+                df_power_window = df_power[
+                    (df_power["frame"] >= w_start) &
+                    (df_power["frame"] <= w_end)
+                    ]
+                drive_start_frame = df_power_window[df_power_window["x_data"] < -3000]["frame"].min()
+        else:
+            # Mound: within 50 frames BEFORE MER
+            if not np.isnan(peak_shoulder_frame):
+                df_power_window = df_power[
+                    (df_power["frame"] >= peak_shoulder_frame - 50) &
+                    (df_power["frame"] < peak_shoulder_frame)
+                    ]
+                drive_start_frame = df_power_window[df_power_window["x_data"] < -3000]["frame"].min()
 
         if pd.isna(drive_start_frame):
             drive_start_frame = np.nan
@@ -800,7 +844,16 @@ with tab1:
 
         # Only compute torso_end_frame and auc_total if max_knee_frame valid and df_power not empty
         if not np.isnan(max_knee_frame) and not df_power.empty:
-            df_after = df_power[df_power["frame"] > max_knee_frame].copy()
+            # For pulldowns, do not allow torso-end/AUC detection to extend past BR
+            br_cap = None
+            if throw_type == "Pulldown":
+                w_start, w_end, _fp = get_pulldown_window(tid, handedness, cur)
+                br_cap = w_end if w_end is not None else None
+
+            if br_cap is not None:
+                df_after = df_power[(df_power["frame"] > max_knee_frame) & (df_power["frame"] <= br_cap)].copy()
+            else:
+                df_after = df_power[df_power["frame"] > max_knee_frame].copy()
             if not df_after.empty:
                 neg_peak_idx = df_after["x_data"].idxmin()
                 neg_peak_frame = df_after.loc[neg_peak_idx, "frame"]
@@ -839,16 +892,28 @@ with tab1:
 
             df_arm["x_data"] = pd.to_numeric(df_arm["x_data"], errors="coerce")
 
-            if mer_frame is not None:
-                mer_row_idx = df_arm["frame"].sub(mer_frame).abs().idxmin()
-                start_idx = max(0, mer_row_idx - 20)
-                end_idx = min(len(df_arm) - 1, mer_row_idx + 20)
-                df_arm_window = df_arm.iloc[start_idx:end_idx + 1].copy()
+            if throw_type == "Pulldown":
+                # Pulldown: peak arm energy bounded to [FP-80, BR]
+                w_start, w_end, _fp = get_pulldown_window(tid, handedness, cur)
+                if (w_start is not None) and (w_end is not None):
+                    df_arm_window = df_arm[
+                        (df_arm["frame"] >= w_start) &
+                        (df_arm["frame"] <= w_end)
+                        ].copy()
+                else:
+                    df_arm_window = df_arm.copy()
             else:
-                df_arm_window = df_arm.copy()
+                # Mound: MER ± 20 frames, also constrained to <= BR
+                if mer_frame is not None:
+                    mer_row_idx = df_arm["frame"].sub(mer_frame).abs().idxmin()
+                    start_idx = max(0, mer_row_idx - 20)
+                    end_idx = min(len(df_arm) - 1, mer_row_idx + 20)
+                    df_arm_window = df_arm.iloc[start_idx:end_idx + 1].copy()
+                else:
+                    df_arm_window = df_arm.copy()
 
-            if br_frame is not None:
-                df_arm_window = df_arm_window[df_arm_window["frame"] <= br_frame]
+                if br_frame is not None:
+                    df_arm_window = df_arm_window[df_arm_window["frame"] <= br_frame]
 
             if not df_arm_window.empty:
                 windowed_energy = df_arm_window["x_data"]
