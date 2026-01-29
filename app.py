@@ -442,7 +442,7 @@ def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment,
 
             if fp_frame is not None:
                 knee_window = df_knee[
-                    (df_knee["frame"] >= fp_frame - 80) &
+                    (df_knee["frame"] >= fp_frame - 100) &
                     (df_knee["frame"] < fp_frame)
                     ]
             else:
@@ -781,7 +781,7 @@ with tab1:
 
                 if fp_frame is not None:
                     knee_window = df_knee[
-                        (df_knee["frame"] >= fp_frame - 80) &
+                        (df_knee["frame"] >= fp_frame - 100) &
                         (df_knee["frame"] < fp_frame)
                         ]
                 else:
