@@ -375,7 +375,7 @@ def get_foot_plant_frame(take_id, handedness, cur):
           AND c.category_name = 'KINETIC_KINEMATIC_DistEndVel'
           AND s.segment_name = %s
           AND ts.frame > %s
-          AND ts.z_data >= -0.05
+          AND ts.z_data >= -0.08
         ORDER BY ts.frame ASC
         LIMIT 1
     """, (int(take_id), lead_foot, trough_frame))
