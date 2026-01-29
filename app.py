@@ -55,12 +55,27 @@ def get_ball_release_frame(take_id, handedness, cur):
 
 def get_ball_release_frame_pulldown(take_id, handedness, fp_frame, cur):
     """
-    Pulldown BR: peak |hand CGVel X| AFTER Foot Plant.
-    Prevents early CGVel spikes from being mis-labeled as BR.
+    Pulldown BR:
+    - Primary: peak |hand CGVel X| AFTER Foot Plant
+    - Fallback: peak |hand CGVel X| AFTER pelvis angular velocity peak
+    This prevents early-take CGVel artifacts from being mislabeled as BR.
     """
-    if fp_frame is None:
-        return get_ball_release_frame(take_id, handedness, cur)
 
+    # -----------------------------
+    # Determine minimum valid frame
+    # -----------------------------
+    if fp_frame is not None:
+        min_frame = int(fp_frame)
+    else:
+        # Fallback anchor: pelvis angular velocity peak
+        pelvis_peak = get_pelvis_angvel_peak_frame(take_id, cur)
+        if pelvis_peak is None:
+            return None
+        min_frame = int(pelvis_peak)
+
+    # -----------------------------
+    # Peak hand CGVel X AFTER anchor
+    # -----------------------------
     cur.execute(
         """
         SELECT ts.frame, ts.x_data
@@ -75,7 +90,7 @@ def get_ball_release_frame_pulldown(take_id, handedness, fp_frame, cur):
         ORDER BY ABS(ts.x_data) DESC
         LIMIT 1
         """,
-        (take_id, int(fp_frame)),
+        (take_id, min_frame),
     )
     row = cur.fetchone()
     return int(row[0]) if row else None
