@@ -817,7 +817,18 @@ with tab1:
 
         # Only compute torso_end_frame and auc_total if max_knee_frame valid and df_power not empty
         if not np.isnan(max_knee_frame) and not df_power.empty:
-            df_after = df_power[df_power["frame"] > max_knee_frame].copy()
+            # Pulldown-only: cap torso-end search at Ball Release
+            if throw_type == "Pulldown":
+                w_start, w_end, _fp = get_pulldown_window(tid, handedness, cur)
+                if w_end is not None:
+                    df_after = df_power[
+                        (df_power["frame"] > max_knee_frame) &
+                        (df_power["frame"] <= w_end)
+                    ].copy()
+                else:
+                    df_after = df_power[df_power["frame"] > max_knee_frame].copy()
+            else:
+                df_after = df_power[df_power["frame"] > max_knee_frame].copy()
             if not df_after.empty:
                 neg_peak_idx = df_after["x_data"].idxmin()
                 neg_peak_frame = df_after.loc[neg_peak_idx, "frame"]
