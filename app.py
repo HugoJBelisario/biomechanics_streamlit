@@ -281,28 +281,66 @@ def get_zero_cross_frame(take_id, handedness, ankle_min_frame, sh_er_max_frame, 
     row = cur.fetchone()
     return int(row[0] + 1) if row else None
 
-def get_foot_plant_frame(take_id, handedness, cur):
+# --- Pulldown helper: Pelvis angular velocity peak frame ---
+def get_pelvis_angvel_peak_frame(take_id, cur):
     """
-    Pulldown Foot Plant:
-    - Lead foot DistEndVel Z
-    - Largest negative dip
-    - First return to ~zero AFTER dip
+    Pulldown helper:
+    Returns the frame of MAX pelvis angular velocity (z_data)
+    from Original / PELVIS_ANGULAR_VELOCITY.
     """
-    lead_foot = "LFT" if handedness == "R" else "RFT"
-
-    # Largest negative dip
     cur.execute("""
         SELECT ts.frame, ts.z_data
         FROM time_series_data ts
         JOIN categories c ON ts.category_id = c.category_id
-        JOIN segments s ON ts.segment_id = s.segment_id
+        JOIN segments s   ON ts.segment_id  = s.segment_id
+        WHERE ts.take_id = %s
+          AND c.category_name = 'Original'
+          AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
+          AND ts.z_data IS NOT NULL
+        ORDER BY ABS(ts.z_data) DESC
+        LIMIT 1
+    """, (int(take_id),))
+    row = cur.fetchone()
+    return int(row[0]) if row else None
+
+# --- Pulldown Foot Plant (Pelvis-anchored) ---
+def get_foot_plant_frame(take_id, handedness, cur):
+    """
+    Pulldown Foot Plant (Pelvis-anchored):
+    1) Find max pelvis angular velocity (z_data)
+    2) Search ±15 frames around that for:
+       - largest negative dip in lead foot DistEndVel Z
+    3) Foot Plant = first return to ~zero AFTER that dip
+    """
+
+    lead_foot = "LFT" if handedness == "R" else "RFT"
+
+    # -------------------------------------------------
+    # 1) Pelvis angular velocity peak (anchor)
+    # -------------------------------------------------
+    pelvis_peak_frame = get_pelvis_angvel_peak_frame(take_id, cur)
+    if pelvis_peak_frame is None:
+        return None
+
+    search_start = pelvis_peak_frame - 30
+    search_end   = pelvis_peak_frame + 30
+
+    # -------------------------------------------------
+    # 2) Largest negative dip in DistEndVel Z (windowed)
+    # -------------------------------------------------
+    cur.execute("""
+        SELECT ts.frame, ts.z_data
+        FROM time_series_data ts
+        JOIN categories c ON ts.category_id = c.category_id
+        JOIN segments s   ON ts.segment_id = s.segment_id
         WHERE ts.take_id = %s
           AND c.category_name = 'KINETIC_KINEMATIC_DistEndVel'
           AND s.segment_name = %s
           AND ts.z_data IS NOT NULL
+          AND ts.frame BETWEEN %s AND %s
         ORDER BY ts.z_data ASC
         LIMIT 1
-    """, (take_id, lead_foot))
+    """, (int(take_id), lead_foot, int(search_start), int(search_end)))
 
     row = cur.fetchone()
     if not row:
@@ -310,12 +348,14 @@ def get_foot_plant_frame(take_id, handedness, cur):
 
     trough_frame = int(row[0])
 
-    # Back-to-zero AFTER trough
+    # -------------------------------------------------
+    # 3) Back-to-zero AFTER trough (unchanged logic)
+    # -------------------------------------------------
     cur.execute("""
         SELECT ts.frame
         FROM time_series_data ts
         JOIN categories c ON ts.category_id = c.category_id
-        JOIN segments s ON ts.segment_id = s.segment_id
+        JOIN segments s   ON ts.segment_id = s.segment_id
         WHERE ts.take_id = %s
           AND c.category_name = 'KINETIC_KINEMATIC_DistEndVel'
           AND s.segment_name = %s
@@ -323,7 +363,7 @@ def get_foot_plant_frame(take_id, handedness, cur):
           AND ts.z_data >= -0.05
         ORDER BY ts.frame ASC
         LIMIT 1
-    """, (take_id, lead_foot, trough_frame))
+    """, (int(take_id), lead_foot, trough_frame))
 
     row2 = cur.fetchone()
     return int(row2[0]) if row2 else None
