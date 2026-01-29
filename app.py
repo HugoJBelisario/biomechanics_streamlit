@@ -745,32 +745,18 @@ with tab1:
         df_power = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
         df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
 
-        # --- Drive start detection (Pulldown-safe) ---
+        # --- Drive start: within 50 frames BEFORE MER ---
         peak_shoulder_frame = get_shoulder_er_max_frame(tid, handedness, cur, throw_type=throw_type)
         if peak_shoulder_frame is None:
             peak_shoulder_frame = np.nan
 
-        drive_start_frame = np.nan
-
-        if throw_type == "Pulldown":
-            # Anchor drive detection to Foot Plant (±50 frames)
-            fp_frame = get_foot_plant_frame(tid, handedness, cur)
-
-            if fp_frame is not None:
-                df_power_window = df_power[
-                    (df_power["frame"] >= fp_frame - 50) &
-                    (df_power["frame"] <= fp_frame + 50)
-                ]
-                drive_start_frame = df_power_window[df_power_window["x_data"] < -3000]["frame"].min()
-
-        else:
-            # Mound logic: drive start relative to MER
-            if not np.isnan(peak_shoulder_frame):
-                df_power_window = df_power[
-                    (df_power["frame"] >= peak_shoulder_frame - 50) &
-                    (df_power["frame"] < peak_shoulder_frame)
-                ]
-                drive_start_frame = df_power_window[df_power_window["x_data"] < -3000]["frame"].min()
+        # Only attempt drive start detection if peak_shoulder_frame is valid
+        if not np.isnan(peak_shoulder_frame):
+            df_power_window = df_power[
+                (df_power["frame"] >= peak_shoulder_frame - 50) &
+                (df_power["frame"] < peak_shoulder_frame)
+            ]
+            drive_start_frame = df_power_window[df_power_window["x_data"] < -3000]["frame"].min()
 
         if pd.isna(drive_start_frame):
             drive_start_frame = np.nan
@@ -1393,18 +1379,7 @@ def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, co
         if df_power.empty:
             continue
         df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
-        drive_start_frame = np.nan
-
-        if throw_type == "Pulldown":
-            fp_frame = get_foot_plant_frame(take_id, handedness, cur)
-            if fp_frame is not None:
-                df_power_window = df_power[
-                    (df_power["frame"] >= fp_frame - 50) &
-                    (df_power["frame"] <= fp_frame + 50)
-                ]
-                drive_start_frame = df_power_window[df_power_window["x_data"] < -3000]["frame"].min()
-        else:
-            drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
+        drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
         if pd.isna(drive_start_frame):
             continue
         cur.execute("""
