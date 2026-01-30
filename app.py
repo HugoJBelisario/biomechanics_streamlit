@@ -64,7 +64,8 @@ def get_ball_release_frame_pulldown(take_id, handedness, fp_frame, cur):
     # -----------------------------
     # Determine minimum valid frame
     # -----------------------------
-    if fp_frame is not None:
+    import numpy as np
+    if fp_frame is not None and not np.isnan(fp_frame):
         min_frame = int(fp_frame)
     else:
         # Fallback anchor: pelvis angular velocity peak
