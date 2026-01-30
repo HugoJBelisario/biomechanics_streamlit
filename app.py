@@ -798,13 +798,13 @@ with tab1:
 
                 if fp_frame is not None:
                     knee_window = df_knee[
-                        (df_knee["frame"] >= fp_frame - 90) &
+                        (df_knee["frame"] >= fp_frame - 80) &
                         (df_knee["frame"] < fp_frame)
                         ]
                 else:
                     # fallback (rare)
                     knee_window = df_knee[
-                        (df_knee["frame"] >= drive_start_frame - 90) &
+                        (df_knee["frame"] >= drive_start_frame - 80) &
                         (df_knee["frame"] < drive_start_frame)
                         ]
             else:
