@@ -750,6 +750,11 @@ with tab1:
         auc_stp_habd_to_peak = np.nan
         auc_stp_rot_total = np.nan
         auc_stp_rot_to_peak = np.nan
+        fp_frame = np.nan
+        # --- Foot Plant frame (pelvis-anchored) ---
+        fp = get_foot_plant_frame(tid, handedness, cur)
+        if fp is not None:
+            fp_frame = float(fp)
 
         # Query torso power
         cur.execute("""
@@ -977,6 +982,7 @@ with tab1:
             "Max Rear Knee Flexion Frame": max_knee_frame,
             "Throw Type": throw_type,
             "Velocity": velo,
+            "Foot Plant Frame": fp_frame,
             "AUC (Drive → 0)": (round(auc_total, 2) if pd.notna(auc_total) else np.nan),
             "AUC (Drive → Peak Arm Energy)": (round(auc_to_peak, 2) if pd.notna(auc_to_peak) else np.nan),
             "Peak Arm Energy": (round(arm_peak_value, 2) if pd.notna(arm_peak_value) else np.nan),
@@ -1311,7 +1317,8 @@ with tab1:
         "Session Date",
         "Throw Type",
         "Pitch Number",
-        "Velocity"
+        "Velocity",
+        "Foot Plant Frame"
     ]
 
     # Keep only priority columns that exist
