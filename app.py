@@ -337,8 +337,8 @@ def get_foot_plant_frame(take_id, handedness, cur):
     if pelvis_peak_frame is None:
         return None
 
-    search_start = pelvis_peak_frame - 50
-    search_end   = pelvis_peak_frame + 50
+    search_start = pelvis_peak_frame - 30
+    search_end   = pelvis_peak_frame + 30
 
     # -------------------------------------------------
     # 2) Largest negative dip in DistEndVel Z (windowed)
@@ -751,6 +751,23 @@ with tab1:
         auc_stp_rot_total = np.nan
         auc_stp_rot_to_peak = np.nan
 
+        pelvis_angvel_max = np.nan
+        # --- Pelvis Angular Velocity Max (|z|) ---
+        cur.execute("""
+            SELECT MAX(ABS(ts.z_data))
+            FROM time_series_data ts
+            JOIN categories c ON ts.category_id = c.category_id
+            JOIN segments s   ON ts.segment_id  = s.segment_id
+            WHERE ts.take_id = %s
+              AND c.category_name = 'Original'
+              AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
+              AND ts.z_data IS NOT NULL
+        """, (tid,))
+
+        row_pelvis = cur.fetchone()
+        if row_pelvis and row_pelvis[0] is not None:
+            pelvis_angvel_max = float(row_pelvis[0])
+
         # Query torso power
         cur.execute("""
             SELECT frame, x_data FROM time_series_data ts
@@ -977,6 +994,7 @@ with tab1:
             "Max Rear Knee Flexion Frame": max_knee_frame,
             "Throw Type": throw_type,
             "Velocity": velo,
+            "Pelvis Angular Velocity Max": (round(pelvis_angvel_max, 2) if pd.notna(pelvis_angvel_max) else np.nan),
             "AUC (Drive → 0)": (round(auc_total, 2) if pd.notna(auc_total) else np.nan),
             "AUC (Drive → Peak Arm Energy)": (round(auc_to_peak, 2) if pd.notna(auc_to_peak) else np.nan),
             "Peak Arm Energy": (round(arm_peak_value, 2) if pd.notna(arm_peak_value) else np.nan),
@@ -1311,7 +1329,8 @@ with tab1:
         "Session Date",
         "Throw Type",
         "Pitch Number",
-        "Velocity"
+        "Velocity",
+        "Pelvis Angular Velocity Max"
     ]
 
     # Keep only priority columns that exist
