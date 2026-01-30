@@ -974,7 +974,6 @@ with tab1:
             "Max Rear Knee Flexion Frame": max_knee_frame,
             "Throw Type": throw_type,
             "Velocity": velo,
-            "Foot Plant Frame": fp_frame,
             "AUC (Drive → 0)": (round(auc_total, 2) if pd.notna(auc_total) else np.nan),
             "AUC (Drive → Peak Arm Energy)": (round(auc_to_peak, 2) if pd.notna(auc_to_peak) else np.nan),
             "Peak Arm Energy": (round(arm_peak_value, 2) if pd.notna(arm_peak_value) else np.nan),
@@ -1309,8 +1308,7 @@ with tab1:
         "Session Date",
         "Throw Type",
         "Pitch Number",
-        "Velocity",
-        "Foot Plant Frame"
+        "Velocity"
     ]
 
     # Keep only priority columns that exist
