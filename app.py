@@ -798,20 +798,12 @@ with tab1:
             df_knee["x_data"] = pd.to_numeric(df_knee["x_data"], errors="coerce")
             df_knee = df_knee.dropna(subset=["x_data"])
 
-            if throw_type == "Pulldown":
-                fp_frame = get_foot_plant_frame(tid, handedness, cur)
-
-                if fp_frame is not None:
-                    knee_window = df_knee[
-                        (df_knee["frame"] >= fp_frame - 80) &
-                        (df_knee["frame"] < fp_frame)
-                        ]
-                else:
-                    # fallback (rare)
-                    knee_window = df_knee[
-                        (df_knee["frame"] >= drive_start_frame - 80) &
-                        (df_knee["frame"] < drive_start_frame)
-                        ]
+            # Rear knee window (Pulldown-safe, display-only fix)
+            if throw_type == "Pulldown" and not np.isnan(fp_frame):
+                knee_window = df_knee[
+                    (df_knee["frame"] >= fp_frame - 80) &
+                    (df_knee["frame"] < fp_frame)
+                ]
             else:
                 knee_window = df_knee[df_knee["frame"] < drive_start_frame]
 
@@ -854,8 +846,7 @@ with tab1:
         if not df_arm.empty and not np.isnan(max_knee_frame):
             mer_frame = int(peak_shoulder_frame) if not np.isnan(peak_shoulder_frame) else None
             if throw_type == "Pulldown":
-                fp_frame_br = get_foot_plant_frame(tid, handedness, cur)
-                br_frame = get_ball_release_frame_pulldown(tid, handedness, fp_frame_br, cur)
+                br_frame = get_ball_release_frame_pulldown(tid, handedness, fp_frame, cur)
             else:
                 br_frame = get_ball_release_frame(tid, handedness, cur)
 
