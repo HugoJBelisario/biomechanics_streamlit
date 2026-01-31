@@ -323,6 +323,51 @@ def get_zero_cross_frame(take_id, handedness, ankle_min_frame, sh_er_max_frame, 
     row = cur.fetchone()
     return int(row[0] + 1) if row else None
 
+def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
+    """
+    Returns (frame, value) of max rear knee flexion
+    constrained to frames where rear HEEL z_data < 0.08.
+
+    Rear knee:
+      - RHP -> RT_KNEE
+      - LHP -> LT_KNEE
+
+    Heel landmark:
+      - RHP -> R_HEEL
+      - LHP -> L_HEEL
+
+    Category for heel: LANDMARK_ORIGINAL
+    """
+    knee_segment = "RT_KNEE" if handedness == "R" else "LT_KNEE"
+    heel_segment = "R_HEEL" if handedness == "R" else "L_HEEL"
+
+    cur.execute("""
+        SELECT
+            k.frame,
+            k.x_data
+        FROM time_series_data k
+        JOIN categories ck ON k.category_id = ck.category_id
+        JOIN segments sk   ON k.segment_id = sk.segment_id
+        JOIN time_series_data h
+             ON h.take_id = k.take_id AND h.frame = k.frame
+        JOIN categories ch ON h.category_id = ch.category_id
+        JOIN segments sh   ON h.segment_id = sh.segment_id
+        WHERE k.take_id = %s
+          AND ck.category_name = 'JOINT_ANGLES'
+          AND sk.segment_name = %s
+          AND ch.category_name = 'LANDMARK_ORIGINAL'
+          AND sh.segment_name = %s
+          AND h.z_data < 0.08
+          AND k.x_data IS NOT NULL
+        ORDER BY k.x_data ASC
+        LIMIT 1
+    """, (int(take_id), knee_segment, heel_segment))
+
+    row = cur.fetchone()
+    if row:
+        return int(row[0]), float(row[1])
+    return None, None
+
 # --- Pulldown helper: Pelvis angular velocity peak frame ---
 def get_pelvis_angvel_peak_frame(take_id, handedness, cur):
     """
@@ -832,6 +877,7 @@ with tab1:
         label = f"{take_date.strftime('%Y-%m-%d')} | {throw_type} | Pitch {pitch_number} ({velo:.1f} mph)"
         # ---- Defaults: always include take; metrics may be NaN if detection fails ----
         max_knee_frame = np.nan
+        max_knee_value = np.nan
         drive_start_frame = np.nan
         torso_end_frame = np.nan
         auc_total = np.nan
@@ -909,34 +955,12 @@ with tab1:
         if pd.isna(drive_start_frame):
             drive_start_frame = np.nan
 
-        # Query rear knee
-        cur.execute("""
-            SELECT frame, x_data FROM time_series_data ts
-            JOIN segments s ON ts.segment_id = s.segment_id
-            JOIN categories c ON ts.category_id = c.category_id
-            WHERE ts.take_id = %s AND c.category_name = 'JOINT_ANGLES' AND s.segment_name = %s
-            ORDER BY frame
-        """, (tid, rear_knee))
-        df_knee = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
-
-        # Only compute max_knee_frame if knee and drive_start_frame are valid
-        if not df_knee.empty and not np.isnan(drive_start_frame):
-            df_knee["x_data"] = pd.to_numeric(df_knee["x_data"], errors="coerce")
-            df_knee = df_knee.dropna(subset=["x_data"])
-
-            # Rear knee window (Pulldown-safe, display-only fix)
-            if throw_type == "Pulldown" and not np.isnan(fp_frame):
-                knee_window = df_knee[
-                    (df_knee["frame"] >= fp_frame - 80) &
-                    (df_knee["frame"] < fp_frame)
-                ]
-            else:
-                knee_window = df_knee[df_knee["frame"] < drive_start_frame]
-
-            if not knee_window.empty:
-                idx = knee_window["x_data"].idxmin()
-                if pd.notna(idx):
-                    max_knee_frame = float(int(knee_window.loc[idx, "frame"]))
+        # --- Max Rear Knee Flexion (HEEL-constrained) ---
+        rk_frame, rk_value = get_max_rear_knee_flexion_frame_with_heel(tid, handedness, cur)
+        if rk_frame is not None:
+            max_knee_frame = float(rk_frame)
+        if rk_value is not None:
+            max_knee_value = float(rk_value)
 
         # Only compute torso_end_frame and auc_total if max_knee_frame valid and df_power not empty
         if not np.isnan(max_knee_frame) and not df_power.empty:
@@ -1089,6 +1113,7 @@ with tab1:
             "Pitch Number": pitch_number,
             "Session Date": take_date.strftime("%Y-%m-%d"),
             "Max Rear Knee Flexion Frame": max_knee_frame,
+            "Max Rear Knee Flexion (deg)": round(max_knee_value, 2) if not np.isnan(max_knee_value) else np.nan,
             "Throw Type": throw_type,
             "Velocity": velo,
             "Foot Plant Frame": fp_frame,
