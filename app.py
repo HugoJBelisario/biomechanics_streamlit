@@ -310,7 +310,7 @@ def get_pelvis_angvel_peak_frame(take_id, cur):
         JOIN categories c ON ts.category_id = c.category_id
         JOIN segments s   ON ts.segment_id  = s.segment_id
         WHERE ts.take_id = %s
-          AND c.category_name = 'Original'
+          AND c.category_name = 'ORIGINAL'
           AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
           AND ts.z_data IS NOT NULL
         ORDER BY ABS(ts.z_data) DESC
@@ -330,7 +330,7 @@ def get_pelvis_angvel_peak(take_id, cur):
         JOIN categories c ON ts.category_id = c.category_id
         JOIN segments s   ON ts.segment_id  = s.segment_id
         WHERE ts.take_id = %s
-          AND c.category_name = 'Original'
+          AND c.category_name = 'ORIGINAL'
           AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
           AND ts.z_data IS NOT NULL
         ORDER BY ABS(ts.z_data) DESC
