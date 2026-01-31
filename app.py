@@ -1050,6 +1050,9 @@ with tab1:
             "Max Rear Knee Flexion Frame": max_knee_frame,
             "Throw Type": throw_type,
             "Velocity": velo,
+            "Foot Plant Frame": fp_frame,
+            "Pelvis AngVel Peak Frame": pelvis_peak_frame,
+            "Pelvis AngVel Peak (Z)": (round(pelvis_peak_value, 2) if not np.isnan(pelvis_peak_value) else np.nan),
             "AUC (Drive → 0)": (round(auc_total, 2) if pd.notna(auc_total) else np.nan),
             "AUC (Drive → Peak Arm Energy)": (round(auc_to_peak, 2) if pd.notna(auc_to_peak) else np.nan),
             "Peak Arm Energy": (round(arm_peak_value, 2) if pd.notna(arm_peak_value) else np.nan),
@@ -1060,8 +1063,6 @@ with tab1:
             "STP HorizAbd AUC (Drive → Peak Arm Energy)": (round(auc_stp_habd_to_peak, 2) if pd.notna(auc_stp_habd_to_peak) else np.nan),
             "STP Rotational AUC (Drive → 0)": (round(auc_stp_rot_total, 2) if pd.notna(auc_stp_rot_total) else np.nan),
             "STP Rotational AUC (Drive → Peak Arm Energy)": (round(auc_stp_rot_to_peak, 2) if pd.notna(auc_stp_rot_to_peak) else np.nan),
-            "Pelvis AngVel Peak Frame": pelvis_peak_frame,
-            "Pelvis AngVel Peak (Z)": (round(pelvis_peak_value, 2) if not np.isnan(pelvis_peak_value) else np.nan),
         })
 
 # Guard for empty rows
@@ -1386,7 +1387,8 @@ with tab1:
         "Session Date",
         "Throw Type",
         "Pitch Number",
-        "Velocity"
+        "Velocity",
+        "Foot Plant Frame"
     ]
 
     # Keep only priority columns that exist
