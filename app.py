@@ -301,13 +301,32 @@ def get_zero_cross_frame(take_id, handedness, ankle_min_frame, sh_er_max_frame, 
 def get_pelvis_angvel_peak_frame(take_id, handedness, cur):
     """
     Returns pelvis angular velocity Z peak frame.
-    RHP -> max positive Z
-    LHP -> max negative Z
+    Constraint:
+      - Peak must occur >= (min_frame + 20)
+    Direction:
+      - RHP -> max positive Z
+      - LHP -> max negative Z
     """
+    # Find earliest frame available for this take/category/segment
+    cur.execute("""
+        SELECT MIN(ts.frame)
+        FROM time_series_data ts
+        JOIN categories c ON ts.category_id = c.category_id
+        JOIN segments s   ON ts.segment_id = s.segment_id
+        WHERE ts.take_id = %s
+          AND c.category_name = 'ORIGINAL'
+          AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
+    """, (int(take_id),))
+    row0 = cur.fetchone()
+    if not row0 or row0[0] is None:
+        return None
+
+    min_allowed_frame = int(row0[0]) + 20
+
     order_clause = "ORDER BY ts.z_data DESC" if handedness == "R" else "ORDER BY ts.z_data ASC"
 
     cur.execute(f"""
-        SELECT ts.frame, ts.z_data
+        SELECT ts.frame
         FROM time_series_data ts
         JOIN categories c ON ts.category_id = c.category_id
         JOIN segments s   ON ts.segment_id = s.segment_id
@@ -315,9 +334,10 @@ def get_pelvis_angvel_peak_frame(take_id, handedness, cur):
           AND c.category_name = 'ORIGINAL'
           AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
           AND ts.z_data IS NOT NULL
+          AND ts.frame >= %s
         {order_clause}
         LIMIT 1
-    """, (int(take_id),))
+    """, (int(take_id), min_allowed_frame))
 
     row = cur.fetchone()
     return int(row[0]) if row else None
@@ -325,9 +345,28 @@ def get_pelvis_angvel_peak_frame(take_id, handedness, cur):
 def get_pelvis_angvel_peak(take_id, handedness, cur):
     """
     Returns (frame, value) of pelvis angular velocity Z peak.
-    RHP -> max positive Z
-    LHP -> max negative Z
+    Constraint:
+      - Peak must occur >= (min_frame + 20)
+    Direction:
+      - RHP -> max positive Z
+      - LHP -> max negative Z
     """
+    # Find earliest frame available
+    cur.execute("""
+        SELECT MIN(ts.frame)
+        FROM time_series_data ts
+        JOIN categories c ON ts.category_id = c.category_id
+        JOIN segments s   ON ts.segment_id = s.segment_id
+        WHERE ts.take_id = %s
+          AND c.category_name = 'ORIGINAL'
+          AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
+    """, (int(take_id),))
+    row0 = cur.fetchone()
+    if not row0 or row0[0] is None:
+        return None, None
+
+    min_allowed_frame = int(row0[0]) + 20
+
     order_clause = "ORDER BY ts.z_data DESC" if handedness == "R" else "ORDER BY ts.z_data ASC"
 
     cur.execute(f"""
@@ -339,9 +378,10 @@ def get_pelvis_angvel_peak(take_id, handedness, cur):
           AND c.category_name = 'ORIGINAL'
           AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
           AND ts.z_data IS NOT NULL
+          AND ts.frame >= %s
         {order_clause}
         LIMIT 1
-    """, (int(take_id),))
+    """, (int(take_id), min_allowed_frame))
 
     row = cur.fetchone()
     if row:
