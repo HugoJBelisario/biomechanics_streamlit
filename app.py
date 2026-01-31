@@ -319,6 +319,28 @@ def get_pelvis_angvel_peak_frame(take_id, cur):
     row = cur.fetchone()
     return int(row[0]) if row else None
 
+# --- Helper: Pelvis angular velocity peak frame AND value ---
+def get_pelvis_angvel_peak(take_id, cur):
+    """
+    Returns (peak_frame, peak_value) for pelvis angular velocity (z_data).
+    """
+    cur.execute("""
+        SELECT ts.frame, ts.z_data
+        FROM time_series_data ts
+        JOIN categories c ON ts.category_id = c.category_id
+        JOIN segments s   ON ts.segment_id  = s.segment_id
+        WHERE ts.take_id = %s
+          AND c.category_name = 'Original'
+          AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
+          AND ts.z_data IS NOT NULL
+        ORDER BY ABS(ts.z_data) DESC
+        LIMIT 1
+    """, (int(take_id),))
+    row = cur.fetchone()
+    if row:
+        return int(row[0]), float(row[1])
+    return None, None
+
 # --- Pulldown Foot Plant (Pelvis-anchored) ---
 def get_foot_plant_frame(take_id, handedness, cur):
     """
@@ -751,11 +773,19 @@ with tab1:
         auc_stp_habd_to_peak = np.nan
         auc_stp_rot_total = np.nan
         auc_stp_rot_to_peak = np.nan
+        pelvis_peak_frame = np.nan
+        pelvis_peak_value = np.nan
         fp_frame = np.nan
         # --- Foot Plant frame (pelvis-anchored) ---
         fp = get_foot_plant_frame(tid, handedness, cur)
         if fp is not None:
             fp_frame = float(fp)
+
+        # --- Pelvis angular velocity peak frame and value ---
+        pp_frame, pp_value = get_pelvis_angvel_peak(tid, cur)
+        if pp_frame is not None:
+            pelvis_peak_frame = float(pp_frame)
+            pelvis_peak_value = float(pp_value)
 
         # Query torso power
         cur.execute("""
@@ -984,6 +1014,8 @@ with tab1:
             "STP HorizAbd AUC (Drive → Peak Arm Energy)": (round(auc_stp_habd_to_peak, 2) if pd.notna(auc_stp_habd_to_peak) else np.nan),
             "STP Rotational AUC (Drive → 0)": (round(auc_stp_rot_total, 2) if pd.notna(auc_stp_rot_total) else np.nan),
             "STP Rotational AUC (Drive → Peak Arm Energy)": (round(auc_stp_rot_to_peak, 2) if pd.notna(auc_stp_rot_to_peak) else np.nan),
+            "Pelvis AngVel Peak Frame": pelvis_peak_frame,
+            "Pelvis AngVel Peak (Z)": (round(pelvis_peak_value, 2) if not np.isnan(pelvis_peak_value) else np.nan),
         })
 
 # Guard for empty rows
