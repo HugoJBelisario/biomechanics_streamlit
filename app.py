@@ -114,6 +114,47 @@ def get_shoulder_er_max_frame(take_id, handedness, cur, throw_type=None):
     import numpy as np
     from scipy.signal import find_peaks
 
+    # -----------------------------------------------------------
+    # Pulldown-only override:
+    # MER must occur within ±30 frames of Foot Plant (FP)
+    # -----------------------------------------------------------
+    if throw_type == "Pulldown":
+        fp_frame = get_foot_plant_frame(take_id, handedness, cur)
+        if fp_frame is None:
+            return None
+
+        shoulder_segment = "RT_SHOULDER" if handedness == "R" else "LT_SHOULDER"
+        start_frame = int(fp_frame) - 30
+        end_frame   = int(fp_frame) + 30
+
+        cur.execute("""
+            SELECT ts.frame, ts.z_data
+            FROM time_series_data ts
+            JOIN categories c ON ts.category_id = c.category_id
+            JOIN segments s   ON ts.segment_id  = s.segment_id
+            WHERE ts.take_id = %s
+              AND c.category_name = 'JOINT_ANGLES'
+              AND s.segment_name = %s
+              AND ts.frame BETWEEN %s AND %s
+              AND ts.z_data IS NOT NULL
+            ORDER BY ts.frame
+        """, (int(take_id), shoulder_segment, int(start_frame), int(end_frame)))
+
+        rows = cur.fetchall()
+        if not rows:
+            return None
+
+        frames = np.array([r[0] for r in rows], dtype=int)
+        z_vals = np.array([r[1] for r in rows], dtype=float)
+
+        # Directional ER selection
+        if handedness == "R":
+            idx = int(np.nanargmin(z_vals))
+        else:
+            idx = int(np.nanargmax(z_vals))
+
+        return int(frames[idx])
+
     # -----------------------------
     # 1) Load arm energy time series
     # -----------------------------
@@ -184,21 +225,6 @@ def get_shoulder_er_max_frame(take_id, handedness, cur, throw_type=None):
     start_frame = peak_arm_energy_frame - 15
     end_frame = peak_arm_energy_frame + 15
 
-    # Pulldown-only: Foot Plant gating
-    fp_frame = None
-    if throw_type == "Pulldown":
-        fp_frame = get_foot_plant_frame(take_id, handedness, cur)
-        if fp_frame is not None:
-            start_frame = max(int(start_frame), int(fp_frame))
-
-    # Constrain MER search so it cannot occur after Ball Release
-    if throw_type == "Pulldown":
-        br_frame = get_ball_release_frame_pulldown(take_id, handedness, fp_frame, cur)
-    else:
-        br_frame = get_ball_release_frame(take_id, handedness, cur)
-
-    if br_frame is not None:
-        end_frame = min(int(end_frame), int(br_frame))
 
     cur.execute("""
         SELECT ts.frame, ts.z_data
@@ -822,6 +848,8 @@ with tab1:
         pelvis_peak_frame = np.nan
         pelvis_peak_value = np.nan
         fp_frame = np.nan
+        mer_frame = np.nan
+        mer_value = np.nan
         # --- Foot Plant frame (pelvis-anchored) ---
         fp = get_foot_plant_frame(tid, handedness, cur)
         if fp is not None:
@@ -848,6 +876,27 @@ with tab1:
         peak_shoulder_frame = get_shoulder_er_max_frame(tid, handedness, cur, throw_type=throw_type)
         if peak_shoulder_frame is None:
             peak_shoulder_frame = np.nan
+
+        # --- MER frame and value columns ---
+        if peak_shoulder_frame is not None:
+            mer_frame = float(int(peak_shoulder_frame))
+
+            shoulder_segment = "RT_SHOULDER" if handedness == "R" else "LT_SHOULDER"
+            cur.execute("""
+                SELECT ts.z_data
+                FROM time_series_data ts
+                JOIN categories c ON ts.category_id = c.category_id
+                JOIN segments s   ON ts.segment_id  = s.segment_id
+                WHERE ts.take_id = %s
+                  AND c.category_name = 'JOINT_ANGLES'
+                  AND s.segment_name = %s
+                  AND ts.frame = %s
+                  AND ts.z_data IS NOT NULL
+                LIMIT 1
+            """, (int(tid), shoulder_segment, int(mer_frame)))
+            r = cur.fetchone()
+            if r and r[0] is not None:
+                mer_value = float(r[0])
 
         # Only attempt drive start detection if peak_shoulder_frame is valid
         if not np.isnan(peak_shoulder_frame):
@@ -910,7 +959,7 @@ with tab1:
                 if not df_segment.empty:
                     auc_total = float(np.trapezoid(df_segment["x_data"], df_segment["frame"]))
 
-        # Peak Arm Energy (MER-windowed max: ±20 frames around MER)
+        # Peak Arm Energy (MER-windowed max: ±30 frames around MER)
         cur.execute("""
             SELECT frame, x_data FROM time_series_data ts
             JOIN segments s ON ts.segment_id = s.segment_id
@@ -921,24 +970,16 @@ with tab1:
         df_arm = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
 
         if not df_arm.empty and not np.isnan(max_knee_frame):
-            mer_frame = int(peak_shoulder_frame) if not np.isnan(peak_shoulder_frame) else None
-            if throw_type == "Pulldown":
-                br_frame = get_ball_release_frame_pulldown(tid, handedness, fp_frame, cur)
-            else:
-                br_frame = get_ball_release_frame(tid, handedness, cur)
-
+            mer_frame_local = int(peak_shoulder_frame) if not np.isnan(peak_shoulder_frame) else None
             df_arm["x_data"] = pd.to_numeric(df_arm["x_data"], errors="coerce")
 
-            if mer_frame is not None:
-                mer_row_idx = df_arm["frame"].sub(mer_frame).abs().idxmin()
-                start_idx = max(0, mer_row_idx - 20)
-                end_idx = min(len(df_arm) - 1, mer_row_idx + 20)
-                df_arm_window = df_arm.iloc[start_idx:end_idx + 1].copy()
+            if mer_frame_local is not None:
+                df_arm_window = df_arm[
+                    (df_arm["frame"] >= mer_frame_local - 30) &
+                    (df_arm["frame"] <= mer_frame_local + 30)
+                ].copy()
             else:
                 df_arm_window = df_arm.copy()
-
-            if br_frame is not None:
-                df_arm_window = df_arm_window[df_arm_window["frame"] <= br_frame]
 
             if not df_arm_window.empty:
                 windowed_energy = df_arm_window["x_data"]
@@ -1053,6 +1094,9 @@ with tab1:
             "Foot Plant Frame": fp_frame,
             "Pelvis AngVel Peak Frame": pelvis_peak_frame,
             "Pelvis AngVel Peak (Z)": (round(pelvis_peak_value, 2) if not np.isnan(pelvis_peak_value) else np.nan),
+            "MER Frame": mer_frame,
+            "MER Value (Z)": (round(mer_value, 2) if not np.isnan(mer_value) else np.nan),
+            "Peak Arm Energy Frame": arm_peak_frame,
             "AUC (Drive → 0)": (round(auc_total, 2) if pd.notna(auc_total) else np.nan),
             "AUC (Drive → Peak Arm Energy)": (round(auc_to_peak, 2) if pd.notna(auc_to_peak) else np.nan),
             "Peak Arm Energy": (round(arm_peak_value, 2) if pd.notna(arm_peak_value) else np.nan),
@@ -1388,7 +1432,10 @@ with tab1:
         "Throw Type",
         "Pitch Number",
         "Velocity",
-        "Foot Plant Frame"
+        "Foot Plant Frame",
+        "Pelvis AngVel Peak Frame",
+        "MER Frame",
+        "Peak Arm Energy Frame"
     ]
 
     # Keep only priority columns that exist
