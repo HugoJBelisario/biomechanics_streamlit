@@ -392,7 +392,22 @@ def get_pelvis_angvel_peak_frame(take_id, handedness, cur):
     if not row0 or row0[0] is None:
         return None
 
+    # Find latest frame available (to exclude last 30 frames)
+    cur.execute("""
+        SELECT MAX(ts.frame)
+        FROM time_series_data ts
+        JOIN categories c ON ts.category_id = c.category_id
+        JOIN segments s   ON ts.segment_id = s.segment_id
+        WHERE ts.take_id = %s
+          AND c.category_name = 'ORIGINAL'
+          AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
+    """, (int(take_id),))
+    row_end = cur.fetchone()
+    if not row_end or row_end[0] is None:
+        return None
+
     min_allowed_frame = int(row0[0]) + 20
+    max_allowed_frame = int(row_end[0]) - 30
 
     order_clause = "ORDER BY ts.z_data DESC" if handedness == "R" else "ORDER BY ts.z_data ASC"
 
@@ -406,9 +421,10 @@ def get_pelvis_angvel_peak_frame(take_id, handedness, cur):
           AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
           AND ts.z_data IS NOT NULL
           AND ts.frame >= %s
+          AND ts.frame <= %s
         {order_clause}
         LIMIT 1
-    """, (int(take_id), min_allowed_frame))
+    """, (int(take_id), min_allowed_frame, max_allowed_frame))
 
     row = cur.fetchone()
     return int(row[0]) if row else None
@@ -436,7 +452,22 @@ def get_pelvis_angvel_peak(take_id, handedness, cur):
     if not row0 or row0[0] is None:
         return None, None
 
+    # Find latest frame available (to exclude last 30 frames)
+    cur.execute("""
+        SELECT MAX(ts.frame)
+        FROM time_series_data ts
+        JOIN categories c ON ts.category_id = c.category_id
+        JOIN segments s   ON ts.segment_id = s.segment_id
+        WHERE ts.take_id = %s
+          AND c.category_name = 'ORIGINAL'
+          AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
+    """, (int(take_id),))
+    row_end = cur.fetchone()
+    if not row_end or row_end[0] is None:
+        return None, None
+
     min_allowed_frame = int(row0[0]) + 20
+    max_allowed_frame = int(row_end[0]) - 30
 
     order_clause = "ORDER BY ts.z_data DESC" if handedness == "R" else "ORDER BY ts.z_data ASC"
 
@@ -450,9 +481,10 @@ def get_pelvis_angvel_peak(take_id, handedness, cur):
           AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
           AND ts.z_data IS NOT NULL
           AND ts.frame >= %s
+          AND ts.frame <= %s
         {order_clause}
         LIMIT 1
-    """, (int(take_id), min_allowed_frame))
+    """, (int(take_id), min_allowed_frame, max_allowed_frame))
 
     row = cur.fetchone()
     if row:
