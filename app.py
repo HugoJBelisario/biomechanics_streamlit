@@ -69,7 +69,7 @@ def get_ball_release_frame_pulldown(take_id, handedness, fp_frame, cur):
         min_frame = int(fp_frame)
     else:
         # Fallback anchor: pelvis angular velocity peak
-        pelvis_peak = get_pelvis_angvel_peak_frame(take_id, cur)
+        pelvis_peak = get_pelvis_angvel_peak_frame(take_id, handedness, cur)
         if pelvis_peak is None:
             return None
         min_frame = int(pelvis_peak)
@@ -298,49 +298,55 @@ def get_zero_cross_frame(take_id, handedness, ankle_min_frame, sh_er_max_frame, 
     return int(row[0] + 1) if row else None
 
 # --- Pulldown helper: Pelvis angular velocity peak frame ---
-def get_pelvis_angvel_peak_frame(take_id, cur):
+def get_pelvis_angvel_peak_frame(take_id, handedness, cur):
     """
-    Pulldown helper:
-    Returns the frame of MAX pelvis angular velocity (z_data)
-    from Original / PELVIS_ANGULAR_VELOCITY.
+    Returns pelvis angular velocity Z peak frame.
+    RHP -> max positive Z
+    LHP -> max negative Z
     """
-    cur.execute("""
+    order_clause = "ORDER BY ts.z_data DESC" if handedness == "R" else "ORDER BY ts.z_data ASC"
+
+    cur.execute(f"""
         SELECT ts.frame, ts.z_data
         FROM time_series_data ts
         JOIN categories c ON ts.category_id = c.category_id
-        JOIN segments s   ON ts.segment_id  = s.segment_id
+        JOIN segments s   ON ts.segment_id = s.segment_id
         WHERE ts.take_id = %s
           AND c.category_name = 'ORIGINAL'
           AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
           AND ts.z_data IS NOT NULL
-        ORDER BY ABS(ts.z_data) DESC
+        {order_clause}
         LIMIT 1
     """, (int(take_id),))
+
     row = cur.fetchone()
     return int(row[0]) if row else None
-
 # --- Helper: Pelvis angular velocity peak frame AND value ---
-def get_pelvis_angvel_peak(take_id, cur):
+def get_pelvis_angvel_peak(take_id, handedness, cur):
     """
-    Returns (peak_frame, peak_value) for pelvis angular velocity (z_data).
+    Returns (frame, value) of pelvis angular velocity Z peak.
+    RHP -> max positive Z
+    LHP -> max negative Z
     """
-    cur.execute("""
+    order_clause = "ORDER BY ts.z_data DESC" if handedness == "R" else "ORDER BY ts.z_data ASC"
+
+    cur.execute(f"""
         SELECT ts.frame, ts.z_data
         FROM time_series_data ts
         JOIN categories c ON ts.category_id = c.category_id
-        JOIN segments s   ON ts.segment_id  = s.segment_id
+        JOIN segments s   ON ts.segment_id = s.segment_id
         WHERE ts.take_id = %s
           AND c.category_name = 'ORIGINAL'
           AND s.segment_name = 'PELVIS_ANGULAR_VELOCITY'
           AND ts.z_data IS NOT NULL
-        ORDER BY ABS(ts.z_data) DESC
+        {order_clause}
         LIMIT 1
     """, (int(take_id),))
+
     row = cur.fetchone()
     if row:
         return int(row[0]), float(row[1])
     return None, None
-
 # --- Pulldown Foot Plant (Pelvis-anchored) ---
 def get_foot_plant_frame(take_id, handedness, cur):
     """
@@ -356,7 +362,7 @@ def get_foot_plant_frame(take_id, handedness, cur):
     # -------------------------------------------------
     # 1) Pelvis angular velocity peak (anchor)
     # -------------------------------------------------
-    pelvis_peak_frame = get_pelvis_angvel_peak_frame(take_id, cur)
+    pelvis_peak_frame = get_pelvis_angvel_peak_frame(take_id, handedness, cur)
     if pelvis_peak_frame is None:
         return None
 
@@ -782,7 +788,7 @@ with tab1:
             fp_frame = float(fp)
 
         # --- Pelvis angular velocity peak frame and value ---
-        pp_frame, pp_value = get_pelvis_angvel_peak(tid, cur)
+        pp_frame, pp_value = get_pelvis_angvel_peak(tid, handedness, cur)
         if pp_frame is not None:
             pelvis_peak_frame = float(pp_frame)
             pelvis_peak_value = float(pp_value)
