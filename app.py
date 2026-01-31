@@ -357,7 +357,7 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
           AND sk.segment_name = %s
           AND ch.category_name = 'LANDMARK_ORIGINAL'
           AND sh.segment_name = %s
-          AND h.z_data < 0.06
+          AND h.z_data < 0.055
           AND k.x_data IS NOT NULL
         ORDER BY k.x_data ASC
         LIMIT 1
