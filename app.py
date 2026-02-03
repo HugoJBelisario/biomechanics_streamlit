@@ -374,7 +374,7 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
         return None, None
 
     heel_floor = float(row[0])
-    heel_thresh = heel_floor * 1.15   # 15% above floor
+    heel_thresh = heel_floor * 1.1   # 15% above floor
 
     # -------------------------------------------------
     # 2) Max rear knee flexion WHEN heel is near floor
