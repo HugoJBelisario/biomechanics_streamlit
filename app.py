@@ -793,6 +793,9 @@ with tab1:
         default=default_throw_types,
         key="throw_types"
     )
+    # --- Guard: never allow empty throw type list (prevents IN ()) ---
+    if not selected_throw_types:
+        selected_throw_types = default_throw_types
 
     # --- Session date options ---
     cur.execute("""
@@ -998,11 +1001,10 @@ with tab1:
 
         # --- Drive start: within 50 frames BEFORE MER ---
         peak_shoulder_frame = get_shoulder_er_max_frame(tid, handedness, cur, throw_type=throw_type)
-        if peak_shoulder_frame is None:
-            peak_shoulder_frame = np.nan
+        # Keep None as None (do NOT coerce to NaN) so we never attempt int(np.nan)
 
         # --- MER frame and value columns ---
-        if peak_shoulder_frame is not None:
+        if peak_shoulder_frame is not None and not (isinstance(peak_shoulder_frame, float) and np.isnan(peak_shoulder_frame)):
             mer_frame = float(int(peak_shoulder_frame))
 
             shoulder_segment = "RT_SHOULDER" if handedness == "R" else "LT_SHOULDER"
@@ -1023,7 +1025,7 @@ with tab1:
                 mer_value = float(r[0])
 
         # Only attempt drive start detection if peak_shoulder_frame is valid
-        if not np.isnan(peak_shoulder_frame):
+        if peak_shoulder_frame is not None and not (isinstance(peak_shoulder_frame, float) and np.isnan(peak_shoulder_frame)):
             df_power_window = df_power[
                 (df_power["frame"] >= peak_shoulder_frame - 50) &
                 (df_power["frame"] < peak_shoulder_frame)
