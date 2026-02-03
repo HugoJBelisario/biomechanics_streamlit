@@ -327,11 +327,12 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     """
     Returns (frame, value) of max rear knee flexion.
 
-    Logic (FP-aware, heel-min anchored):
+    Relative heel-floor logic (15% above floor):
     1) Get Foot Plant frame (FP)
-    2) Within [FP − 80, FP], find frame where rear heel z_data is MINIMUM
-    3) Build window ±10 frames around that heel-min frame
-    4) Find max rear knee flexion in that window
+    2) Within [FP − 80, FP], find heel floor (minimum z)
+    3) Define threshold = heel_floor * 1.15
+    4) Find the frame of the LOWEST heel z that is <= threshold
+    5) Search ±10 frames around that frame for max rear knee flexion
 
     Rear knee:
       - RHP -> RT_KNEE
@@ -356,7 +357,29 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     drive_start = fp_frame - 80
 
     # -------------------------------------------------
-    # 1) Find heel-min frame within drive window
+    # 1) Heel floor (minimum z) in [FP-80, FP]
+    # -------------------------------------------------
+    cur.execute("""
+        SELECT MIN(h.z_data)
+        FROM time_series_data h
+        JOIN categories ch ON h.category_id = ch.category_id
+        JOIN segments sh   ON h.segment_id = sh.segment_id
+        WHERE h.take_id = %s
+          AND ch.category_name = 'LANDMARK_ORIGINAL'
+          AND sh.segment_name = %s
+          AND h.frame BETWEEN %s AND %s
+          AND h.z_data IS NOT NULL
+    """, (int(take_id), heel_segment, int(drive_start), int(fp_frame)))
+
+    row = cur.fetchone()
+    if not row or row[0] is None:
+        return None, None
+
+    heel_floor = float(row[0])
+    heel_thresh = heel_floor * 1.15   # 15% above per-take floor
+
+    # -------------------------------------------------
+    # 2) Lowest heel frame within relative threshold
     # -------------------------------------------------
     cur.execute("""
         SELECT h.frame, h.z_data
@@ -368,21 +391,22 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
           AND sh.segment_name = %s
           AND h.frame BETWEEN %s AND %s
           AND h.z_data IS NOT NULL
+          AND h.z_data <= %s
         ORDER BY h.z_data ASC
         LIMIT 1
-    """, (int(take_id), heel_segment, int(drive_start), int(fp_frame)))
+    """, (int(take_id), heel_segment, int(drive_start), int(fp_frame), heel_thresh))
 
     row = cur.fetchone()
     if not row:
         return None, None
 
-    heel_min_frame = int(row[0])
+    heel_anchor_frame = int(row[0])
 
     # -------------------------------------------------
-    # 2) Knee flexion within ±10 frames of heel-min
+    # 3) Max rear knee flexion ±10 frames around anchor
     # -------------------------------------------------
-    start_frame = max(drive_start, heel_min_frame - 5)
-    end_frame   = min(fp_frame,      heel_min_frame + 10)
+    start_frame = max(drive_start, heel_anchor_frame - 10)
+    end_frame   = min(fp_frame,      heel_anchor_frame + 10)
 
     if start_frame >= end_frame:
         return None, None
@@ -406,7 +430,6 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
         return int(row[0]), float(row[1])
 
     return None, None
-
 # --- Pulldown helper: Pelvis angular velocity peak frame ---
 def get_pelvis_angvel_peak_frame(take_id, handedness, cur):
     """
