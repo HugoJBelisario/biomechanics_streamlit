@@ -352,7 +352,7 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
         return None, None
     fp_frame = int(fp_frame)
 
-    drive_start = fp_frame - 90
+    drive_start = fp_frame - 100
 
     # -------------------------------------------------
     # 1) Heel floor in [FP-80, FP]
