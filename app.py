@@ -381,7 +381,7 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     # -------------------------------------------------
     # 2) Knee flexion within ±10 frames of heel-min
     # -------------------------------------------------
-    start_frame = max(drive_start, heel_min_frame)
+    start_frame = max(drive_start, heel_min_frame - 5)
     end_frame   = min(fp_frame,      heel_min_frame + 10)
 
     if start_frame >= end_frame:
