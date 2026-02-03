@@ -325,8 +325,12 @@ def get_zero_cross_frame(take_id, handedness, ankle_min_frame, sh_er_max_frame, 
 
 def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     """
-    Returns (frame, value) of max rear knee flexion
-    constrained to frames where rear HEEL z_data < 0.08.
+    Returns (frame, value) of max rear knee flexion.
+
+    Logic:
+    1) Find the LAST frame where rear heel z_data < 0.06
+    2) Search for max rear knee flexion within ±10 frames of that heel-down frame
+    3) If nothing found, fallback to strict heel-only constraint
 
     Rear knee:
       - RHP -> RT_KNEE
@@ -336,15 +340,60 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
       - RHP -> R_HEEL
       - LHP -> L_HEEL
 
-    Category for heel: LANDMARK_ORIGINAL
+    Heel category: LANDMARK_ORIGINAL
+    Knee category: JOINT_ANGLES
     """
+
     knee_segment = "RT_KNEE" if handedness == "R" else "LT_KNEE"
     heel_segment = "R_HEEL" if handedness == "R" else "L_HEEL"
 
+    # -------------------------------------------------
+    # 1) Find LAST heel-down frame (z < 0.06)
+    # -------------------------------------------------
     cur.execute("""
-        SELECT
-            k.frame,
-            k.x_data
+        SELECT MAX(h.frame)
+        FROM time_series_data h
+        JOIN categories ch ON h.category_id = ch.category_id
+        JOIN segments sh   ON h.segment_id = sh.segment_id
+        WHERE h.take_id = %s
+          AND ch.category_name = 'LANDMARK_ORIGINAL'
+          AND sh.segment_name = %s
+          AND h.z_data < 0.06
+    """, (int(take_id), heel_segment))
+
+    row = cur.fetchone()
+    last_heel_down = int(row[0]) if row and row[0] is not None else None
+
+    # -------------------------------------------------
+    # 2) Primary: knee flexion within ±10 frames of last heel-down
+    # -------------------------------------------------
+    if last_heel_down is not None:
+        start_frame = last_heel_down - 10
+        end_frame   = last_heel_down + 10
+
+        cur.execute("""
+            SELECT k.frame, k.x_data
+            FROM time_series_data k
+            JOIN categories ck ON k.category_id = ck.category_id
+            JOIN segments sk   ON k.segment_id = sk.segment_id
+            WHERE k.take_id = %s
+              AND ck.category_name = 'JOINT_ANGLES'
+              AND sk.segment_name = %s
+              AND k.frame BETWEEN %s AND %s
+              AND k.x_data IS NOT NULL
+            ORDER BY k.x_data ASC
+            LIMIT 1
+        """, (int(take_id), knee_segment, int(start_frame), int(end_frame)))
+
+        row = cur.fetchone()
+        if row:
+            return int(row[0]), float(row[1])
+
+    # -------------------------------------------------
+    # 3) Fallback: strict heel-only constraint
+    # -------------------------------------------------
+    cur.execute("""
+        SELECT k.frame, k.x_data
         FROM time_series_data k
         JOIN categories ck ON k.category_id = ck.category_id
         JOIN segments sk   ON k.segment_id = sk.segment_id
@@ -366,6 +415,7 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     row = cur.fetchone()
     if row:
         return int(row[0]), float(row[1])
+
     return None, None
 
 # --- Pulldown helper: Pelvis angular velocity peak frame ---
