@@ -357,7 +357,7 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     fp_frame = int(fp_frame)
 
     # -------------------------------------------------
-    # 1) LAST heel-down frame (z < 0.06)
+    # 1) LAST heel-down frame (z < 0.04)
     # -------------------------------------------------
     cur.execute("""
         SELECT MAX(h.frame)
@@ -367,7 +367,7 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
         WHERE h.take_id = %s
           AND ch.category_name = 'LANDMARK_ORIGINAL'
           AND sh.segment_name = %s
-          AND h.z_data < 0.06
+          AND h.z_data < 0.04
           AND h.frame <= %s
     """, (int(take_id), heel_segment, fp_frame))
 
