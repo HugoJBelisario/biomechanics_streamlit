@@ -327,14 +327,11 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     """
     Returns (frame, value) of max rear knee flexion.
 
-    Logic (FP-aware, heel-anchored):
+    Logic (FP-aware, heel-min anchored):
     1) Get Foot Plant frame (FP)
-    2) Find the LAST frame where rear heel z_data < 0.06
-    3) Build a constrained window:
-         start = max(FP - 80, last_heel_down - 10)
-         end   = min(FP,      last_heel_down + 10)
-    4) Find max rear knee flexion within that window
-    5) Fallback: strict heel-only + FP window
+    2) Within [FP − 80, FP], find frame where rear heel z_data is MINIMUM
+    3) Build window ±10 frames around that heel-min frame
+    4) Find max rear knee flexion in that window
 
     Rear knee:
       - RHP -> RT_KNEE
@@ -349,80 +346,60 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     heel_segment = "R_HEEL" if handedness == "R" else "L_HEEL"
 
     # -------------------------------------------------
-    # 0) Foot Plant (FP) — required anchor
+    # 0) Foot Plant (FP)
     # -------------------------------------------------
     fp_frame = get_foot_plant_frame(take_id, handedness, cur)
     if fp_frame is None:
         return None, None
     fp_frame = int(fp_frame)
 
+    drive_start = fp_frame - 80
+
     # -------------------------------------------------
-    # 1) LAST heel-down frame (z < 0.06)
+    # 1) Find heel-min frame within drive window
     # -------------------------------------------------
     cur.execute("""
-        SELECT MAX(h.frame)
+        SELECT h.frame, h.z_data
         FROM time_series_data h
         JOIN categories ch ON h.category_id = ch.category_id
         JOIN segments sh   ON h.segment_id = sh.segment_id
         WHERE h.take_id = %s
           AND ch.category_name = 'LANDMARK_ORIGINAL'
           AND sh.segment_name = %s
-          AND h.z_data < 0.06
-          AND h.frame <= %s
-    """, (int(take_id), heel_segment, fp_frame))
+          AND h.frame BETWEEN %s AND %s
+          AND h.z_data IS NOT NULL
+        ORDER BY h.z_data ASC
+        LIMIT 1
+    """, (int(take_id), heel_segment, int(drive_start), int(fp_frame)))
 
     row = cur.fetchone()
-    last_heel_down = int(row[0]) if row and row[0] is not None else None
+    if not row:
+        return None, None
+
+    heel_min_frame = int(row[0])
 
     # -------------------------------------------------
-    # 2) Primary window: heel-anchored AND FP-safe
+    # 2) Knee flexion within ±10 frames of heel-min
     # -------------------------------------------------
-    if last_heel_down is not None:
-        start_frame = max(fp_frame - 80, last_heel_down - 30)
-        end_frame   = min(fp_frame,      last_heel_down + 30)
+    start_frame = max(drive_start, heel_min_frame - 10)
+    end_frame   = min(fp_frame,      heel_min_frame + 10)
 
-        if start_frame < end_frame:
-            cur.execute("""
-                SELECT k.frame, k.x_data
-                FROM time_series_data k
-                JOIN categories ck ON k.category_id = ck.category_id
-                JOIN segments sk   ON k.segment_id = sk.segment_id
-                WHERE k.take_id = %s
-                  AND ck.category_name = 'JOINT_ANGLES'
-                  AND sk.segment_name = %s
-                  AND k.frame BETWEEN %s AND %s
-                  AND k.x_data IS NOT NULL
-                ORDER BY k.x_data ASC
-                LIMIT 1
-            """, (int(take_id), knee_segment, int(start_frame), int(end_frame)))
+    if start_frame >= end_frame:
+        return None, None
 
-            row = cur.fetchone()
-            if row:
-                return int(row[0]), float(row[1])
-
-    # -------------------------------------------------
-    # 3) Fallback: strict heel-only WITH FP clamp
-    # -------------------------------------------------
     cur.execute("""
         SELECT k.frame, k.x_data
         FROM time_series_data k
         JOIN categories ck ON k.category_id = ck.category_id
         JOIN segments sk   ON k.segment_id = sk.segment_id
-        JOIN time_series_data h
-             ON h.take_id = k.take_id AND h.frame = k.frame
-        JOIN categories ch ON h.category_id = ch.category_id
-        JOIN segments sh   ON h.segment_id = sh.segment_id
         WHERE k.take_id = %s
           AND ck.category_name = 'JOINT_ANGLES'
           AND sk.segment_name = %s
-          AND ch.category_name = 'LANDMARK_ORIGINAL'
-          AND sh.segment_name = %s
-          AND h.z_data < 0.06
           AND k.frame BETWEEN %s AND %s
           AND k.x_data IS NOT NULL
         ORDER BY k.x_data ASC
         LIMIT 1
-    """, (int(take_id), knee_segment, heel_segment, int(fp_frame - 80), int(fp_frame)))
+    """, (int(take_id), knee_segment, int(start_frame), int(end_frame)))
 
     row = cur.fetchone()
     if row:
