@@ -327,17 +327,10 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     """
     Returns (frame, value) of max rear knee flexion.
 
-    FP-aware + take-specific heel-floor gating:
-
-    Window: [FP − 80, FP]
-
-    1) Compute heel_floor = MIN(heel_z) in the window
-    2) Compute heel_ceil  = MAX(heel_z) in the window
-    3) Define heel_thresh = heel_floor + 0.15 * (heel_ceil - heel_floor)
-       (i.e., within the lowest 15% of that take's heel excursion)
-    4) Find max rear knee flexion ONLY on frames where heel_z <= heel_thresh
-    5) Fallback: if no frames qualify, use the absolute heel-min frame and select
-       knee at that same frame.
+    Relative heel-floor logic (15% above floor):
+    - Only consider frames where heel z is within [floor, floor * 1.15]
+    - Search is clamped to [FP − 80, FP]
+    - Knee flexion is chosen ONLY from those heel-valid frames
 
     Rear knee:
       - RHP -> RT_KNEE
@@ -359,14 +352,13 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
         return None, None
     fp_frame = int(fp_frame)
 
-    drive_start = fp_frame - 80
+    drive_start = fp_frame - 100
 
     # -------------------------------------------------
-    # 1) Heel floor and ceiling in window
+    # 1) Heel floor in [FP-80, FP]
     # -------------------------------------------------
     cur.execute("""
-        SELECT MIN(h.z_data) AS heel_floor,
-               MAX(h.z_data) AS heel_ceil
+        SELECT MIN(h.z_data)
         FROM time_series_data h
         JOIN categories c ON h.category_id = c.category_id
         JOIN segments s   ON h.segment_id = s.segment_id
@@ -378,21 +370,14 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     """, (int(take_id), heel_segment, int(drive_start), int(fp_frame)))
 
     row = cur.fetchone()
-    if not row or row[0] is None or row[1] is None:
+    if not row or row[0] is None:
         return None, None
 
     heel_floor = float(row[0])
-    heel_ceil  = float(row[1])
-
-    # If range is degenerate, fall back to heel_floor only
-    heel_range = heel_ceil - heel_floor
-    if heel_range <= 1e-9:
-        heel_thresh = heel_floor
-    else:
-        heel_thresh = heel_floor + 0.15 * heel_range
+    heel_thresh = heel_floor * 1.4   # 15% above floor
 
     # -------------------------------------------------
-    # 2) Knee min on frames where heel is near floor
+    # 2) Max rear knee flexion WHEN heel is near floor
     # -------------------------------------------------
     cur.execute("""
         SELECT k.frame, k.x_data
@@ -421,48 +406,8 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
         heel_segment,
         int(drive_start),
         int(fp_frame),
-        float(heel_thresh)
+        heel_thresh
     ))
-
-    row = cur.fetchone()
-    if row:
-        return int(row[0]), float(row[1])
-
-    # -------------------------------------------------
-    # 3) Fallback: absolute heel-min frame, knee at same frame
-    # -------------------------------------------------
-    cur.execute("""
-        SELECT h.frame, h.z_data
-        FROM time_series_data h
-        JOIN categories c ON h.category_id = c.category_id
-        JOIN segments s   ON h.segment_id = s.segment_id
-        WHERE h.take_id = %s
-          AND c.category_name = 'LANDMARK_ORIGINAL'
-          AND s.segment_name = %s
-          AND h.frame BETWEEN %s AND %s
-          AND h.z_data IS NOT NULL
-        ORDER BY h.z_data ASC
-        LIMIT 1
-    """, (int(take_id), heel_segment, int(drive_start), int(fp_frame)))
-
-    row = cur.fetchone()
-    if not row:
-        return None, None
-
-    heel_min_frame = int(row[0])
-
-    cur.execute("""
-        SELECT k.frame, k.x_data
-        FROM time_series_data k
-        JOIN categories ck ON k.category_id = ck.category_id
-        JOIN segments sk   ON k.segment_id = sk.segment_id
-        WHERE k.take_id = %s
-          AND ck.category_name = 'JOINT_ANGLES'
-          AND sk.segment_name = %s
-          AND k.frame = %s
-          AND k.x_data IS NOT NULL
-        LIMIT 1
-    """, (int(take_id), knee_segment, int(heel_min_frame)))
 
     row = cur.fetchone()
     if row:
@@ -910,159 +855,6 @@ with tab1:
         st.warning("No takes found for this pitcher and date.")
         st.stop()
 
-    # ------------------------------------------------------------
-    # Debug panel (Tab 1): diagnose missing frames/metrics quickly
-    # ------------------------------------------------------------
-    debug_tab1 = st.checkbox("Debug (Tab 1)", value=False, key="tab1_debug")
-
-    if debug_tab1:
-        # Build label -> take_id map from current take_rows
-        _labels = []
-        _label_to_tid = {}
-        for _tid, _file_name, _velo, _take_date, _throw_type in take_rows:
-            _lbl = f"{_take_date.strftime('%Y-%m-%d')} | {_throw_type} | {_file_name} | {_tid}"
-            _labels.append(_lbl)
-            _label_to_tid[_lbl] = int(_tid)
-
-        debug_take_label = st.selectbox(
-            "Debug Take",
-            options=_labels,
-            index=0,
-            key="tab1_debug_take"
-        )
-
-        debug_tid = _label_to_tid.get(debug_take_label)
-
-        if debug_tid is not None:
-            st.markdown(f"### Debug for take_id = `{debug_tid}`")
-
-            # Foot Plant inputs
-            lead_foot = "LFT" if handedness == "R" else "RFT"
-            heel_seg  = "R_HEEL" if handedness == "R" else "L_HEEL"
-            knee_seg  = "RT_KNEE" if handedness == "R" else "LT_KNEE"
-            torso_seg = "RTA_DIST_R" if handedness == "R" else "RTA_DIST_L"
-            arm_seg   = "RAR" if handedness == "R" else "LAR"
-            sh_seg    = "RT_SHOULDER" if handedness == "R" else "LT_SHOULDER"
-
-            # 1) Pelvis AngVel Z availability
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'ORIGINAL'
-                  AND s.segment_name  = 'PELVIS_ANGULAR_VELOCITY'
-                  AND ts.z_data IS NOT NULL
-            """, (debug_tid,))
-            pelvis_ct = int(cur.fetchone()[0])
-
-            # 2) Lead foot DistEndVel Z availability
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'KINETIC_KINEMATIC_DistEndVel'
-                  AND s.segment_name  = %s
-                  AND ts.z_data IS NOT NULL
-            """, (debug_tid, lead_foot))
-            lead_foot_ct = int(cur.fetchone()[0])
-
-            # 3) Heel Z availability (LANDMARK_ORIGINAL)
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'LANDMARK_ORIGINAL'
-                  AND s.segment_name  = %s
-                  AND ts.z_data IS NOT NULL
-            """, (debug_tid, heel_seg))
-            heel_ct = int(cur.fetchone()[0])
-
-            # 4) Rear knee X availability (JOINT_ANGLES)
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'JOINT_ANGLES'
-                  AND s.segment_name  = %s
-                  AND ts.x_data IS NOT NULL
-            """, (debug_tid, knee_seg))
-            knee_ct = int(cur.fetchone()[0])
-
-            # 5) Torso power availability
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'SEGMENT_POWERS'
-                  AND s.segment_name  = %s
-                  AND ts.x_data IS NOT NULL
-            """, (debug_tid, torso_seg))
-            torso_ct = int(cur.fetchone()[0])
-
-            # 6) Arm energy availability
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'SEGMENT_ENERGIES'
-                  AND s.segment_name  = %s
-                  AND ts.x_data IS NOT NULL
-            """, (debug_tid, arm_seg))
-            arm_ct = int(cur.fetchone()[0])
-
-            # 7) Shoulder ER angle availability
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'JOINT_ANGLES'
-                  AND s.segment_name  = %s
-                  AND ts.z_data IS NOT NULL
-            """, (debug_tid, sh_seg))
-            shoulder_ct = int(cur.fetchone()[0])
-
-            st.write({
-                "take_id": debug_tid,
-                "handedness": handedness,
-                "Pelvis AngVel Z (ORIGINAL) count": pelvis_ct,
-                "Lead Foot DistEndVel Z count": lead_foot_ct,
-                "Heel Z (LANDMARK_ORIGINAL) count": heel_ct,
-                "Rear Knee X (JOINT_ANGLES) count": knee_ct,
-                "Torso Power X (SEGMENT_POWERS) count": torso_ct,
-                "Arm Energy X (SEGMENT_ENERGIES) count": arm_ct,
-                "Shoulder ER Z (JOINT_ANGLES) count": shoulder_ct
-            })
-
-            # Try to compute key event frames for this take
-            _fp = get_foot_plant_frame(debug_tid, handedness, cur)
-            _ppf = get_pelvis_angvel_peak_frame(debug_tid, handedness, cur)
-            _mer = get_shoulder_er_max_frame(debug_tid, handedness, cur, throw_type="Pulldown")
-            _rkf, _rkv = get_max_rear_knee_flexion_frame_with_heel(debug_tid, handedness, cur)
-
-            st.write({
-                "Pelvis peak frame": _ppf,
-                "Foot plant frame": _fp,
-                "MER frame": _mer,
-                "Rear knee frame": _rkf,
-                "Rear knee value (deg)": _rkv
-            })
-
-            st.info("If Heel count is 0 or Rear Knee count is 0, rear knee flexion will be None and most downstream metrics will stay None.")
-
     energy_plot_options = st.multiselect(
         "Energy Flow Type",
         [
@@ -1169,7 +961,6 @@ with tab1:
         max_knee_value = np.nan
         drive_start_frame = np.nan
         torso_end_frame = np.nan
-        auc_zero_cross_frame = np.nan
         auc_total = np.nan
         arm_peak_frame = np.nan
         arm_peak_value = np.nan
@@ -1258,39 +1049,12 @@ with tab1:
                 neg_peak_idx = df_after["x_data"].idxmin()
                 neg_peak_frame = df_after.loc[neg_peak_idx, "frame"]
                 df_after_peak = df_after[df_after["frame"] > neg_peak_frame]
-                # ---------------------------------------------------------
-                # Robust zero-cross:
-                # Avoid single-frame spikes by requiring 3 consecutive frames
-                # at or above 0 after the negative peak.
-                # ---------------------------------------------------------
-                df_after_peak = df_after_peak.sort_values("frame").reset_index(drop=True)
+                zero_cross = df_after_peak[df_after_peak["x_data"] >= 0]
 
-                # Boolean mask where torso power is >= 0
-                ge0 = (df_after_peak["x_data"] >= 0).astype(int)
-
-                # Rolling sum over 3 frames: 3 means 3 consecutive >= 0
-                ge0_run3 = ge0.rolling(window=3, min_periods=3).sum()
-
-                # Candidate indices where a stable zero-cross begins
-                stable_idx = df_after_peak.index[ge0_run3 >= 3]
-
-                if len(stable_idx) > 0:
-                    # First index where we have 3 consecutive >= 0.
-                    # The true "first" frame of that run is (idx - 2).
-                    idx = int(stable_idx[0])
-                    cross_idx = max(0, idx - 2)
-
-                    auc_zero_cross_frame = float(int(df_after_peak.loc[cross_idx, "frame"]))
-                    torso_end_frame = float(int(auc_zero_cross_frame) - 1)
-                else:
-                    # Fallback to original behavior: first >= 0 (may be spike)
-                    zero_cross = df_after_peak[df_after_peak["x_data"] >= 0]
-                    if not zero_cross.empty:
-                        auc_zero_cross_frame = float(int(zero_cross.iloc[0]["frame"]))
-                        torso_end_frame = float(int(auc_zero_cross_frame) - 1)
-                    else:
-                        auc_zero_cross_frame = np.nan
-                        torso_end_frame = float(int(df_after["frame"].iloc[-1]))
+                torso_end_frame = (
+                    float(int(zero_cross.iloc[0]["frame"]) - 1)
+                    if not zero_cross.empty else float(int(df_after["frame"].iloc[-1]))
+                )
 
                 df_segment = df_power[
                     (df_power["frame"] >= max_knee_frame) &
@@ -1439,7 +1203,6 @@ with tab1:
             "MER Value (Z)": (round(mer_value, 2) if not np.isnan(mer_value) else np.nan),
             "Peak Arm Energy Frame": arm_peak_frame,
             "AUC (Drive → 0)": (round(auc_total, 2) if pd.notna(auc_total) else np.nan),
-            "AUC → 0 Zero-Cross Frame": auc_zero_cross_frame,
             "AUC (Drive → Peak Arm Energy)": (round(auc_to_peak, 2) if pd.notna(auc_to_peak) else np.nan),
             "Peak Arm Energy": (round(arm_peak_value, 2) if pd.notna(arm_peak_value) else np.nan),
             "% Total Energy Into Layback": (round(auc_pct, 1) if pd.notna(auc_pct) else np.nan),
@@ -1777,8 +1540,7 @@ with tab1:
         "Foot Plant Frame",
         "Pelvis AngVel Peak Frame",
         "MER Frame",
-        "Peak Arm Energy Frame",
-        "AUC → 0 Zero-Cross Frame"
+        "Peak Arm Energy Frame"
     ]
 
     # Keep only priority columns that exist
