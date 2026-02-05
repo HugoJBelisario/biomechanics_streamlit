@@ -1258,17 +1258,39 @@ with tab1:
                 neg_peak_idx = df_after["x_data"].idxmin()
                 neg_peak_frame = df_after.loc[neg_peak_idx, "frame"]
                 df_after_peak = df_after[df_after["frame"] > neg_peak_frame]
-                zero_cross = df_after_peak[df_after_peak["x_data"] >= 0]
+                # ---------------------------------------------------------
+                # Robust zero-cross:
+                # Avoid single-frame spikes by requiring 3 consecutive frames
+                # at or above 0 after the negative peak.
+                # ---------------------------------------------------------
+                df_after_peak = df_after_peak.sort_values("frame").reset_index(drop=True)
 
-                if not zero_cross.empty:
-                    # First frame where torso power returns to >= 0 after the negative peak
-                    auc_zero_cross_frame = float(int(zero_cross.iloc[0]["frame"]))
+                # Boolean mask where torso power is >= 0
+                ge0 = (df_after_peak["x_data"] >= 0).astype(int)
 
-                    # Keep prior behavior: end frame is the frame just BEFORE the zero-cross
+                # Rolling sum over 3 frames: 3 means 3 consecutive >= 0
+                ge0_run3 = ge0.rolling(window=3, min_periods=3).sum()
+
+                # Candidate indices where a stable zero-cross begins
+                stable_idx = df_after_peak.index[ge0_run3 >= 3]
+
+                if len(stable_idx) > 0:
+                    # First index where we have 3 consecutive >= 0.
+                    # The true "first" frame of that run is (idx - 2).
+                    idx = int(stable_idx[0])
+                    cross_idx = max(0, idx - 2)
+
+                    auc_zero_cross_frame = float(int(df_after_peak.loc[cross_idx, "frame"]))
                     torso_end_frame = float(int(auc_zero_cross_frame) - 1)
                 else:
-                    auc_zero_cross_frame = np.nan
-                    torso_end_frame = float(int(df_after["frame"].iloc[-1]))
+                    # Fallback to original behavior: first >= 0 (may be spike)
+                    zero_cross = df_after_peak[df_after_peak["x_data"] >= 0]
+                    if not zero_cross.empty:
+                        auc_zero_cross_frame = float(int(zero_cross.iloc[0]["frame"]))
+                        torso_end_frame = float(int(auc_zero_cross_frame) - 1)
+                    else:
+                        auc_zero_cross_frame = np.nan
+                        torso_end_frame = float(int(df_after["frame"].iloc[-1]))
 
                 df_segment = df_power[
                     (df_power["frame"] >= max_knee_frame) &
