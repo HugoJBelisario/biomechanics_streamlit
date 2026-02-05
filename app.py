@@ -1169,6 +1169,7 @@ with tab1:
         max_knee_value = np.nan
         drive_start_frame = np.nan
         torso_end_frame = np.nan
+        auc_zero_cross_frame = np.nan
         auc_total = np.nan
         arm_peak_frame = np.nan
         arm_peak_value = np.nan
@@ -1259,10 +1260,15 @@ with tab1:
                 df_after_peak = df_after[df_after["frame"] > neg_peak_frame]
                 zero_cross = df_after_peak[df_after_peak["x_data"] >= 0]
 
-                torso_end_frame = (
-                    float(int(zero_cross.iloc[0]["frame"]) - 1)
-                    if not zero_cross.empty else float(int(df_after["frame"].iloc[-1]))
-                )
+                if not zero_cross.empty:
+                    # First frame where torso power returns to >= 0 after the negative peak
+                    auc_zero_cross_frame = float(int(zero_cross.iloc[0]["frame"]))
+
+                    # Keep prior behavior: end frame is the frame just BEFORE the zero-cross
+                    torso_end_frame = float(int(auc_zero_cross_frame) - 1)
+                else:
+                    auc_zero_cross_frame = np.nan
+                    torso_end_frame = float(int(df_after["frame"].iloc[-1]))
 
                 df_segment = df_power[
                     (df_power["frame"] >= max_knee_frame) &
@@ -1411,6 +1417,7 @@ with tab1:
             "MER Value (Z)": (round(mer_value, 2) if not np.isnan(mer_value) else np.nan),
             "Peak Arm Energy Frame": arm_peak_frame,
             "AUC (Drive → 0)": (round(auc_total, 2) if pd.notna(auc_total) else np.nan),
+            "AUC → 0 Zero-Cross Frame": auc_zero_cross_frame,
             "AUC (Drive → Peak Arm Energy)": (round(auc_to_peak, 2) if pd.notna(auc_to_peak) else np.nan),
             "Peak Arm Energy": (round(arm_peak_value, 2) if pd.notna(arm_peak_value) else np.nan),
             "% Total Energy Into Layback": (round(auc_pct, 1) if pd.notna(auc_pct) else np.nan),
@@ -1748,7 +1755,8 @@ with tab1:
         "Foot Plant Frame",
         "Pelvis AngVel Peak Frame",
         "MER Frame",
-        "Peak Arm Energy Frame"
+        "Peak Arm Energy Frame",
+        "AUC → 0 Zero-Cross Frame"
     ]
 
     # Keep only priority columns that exist
