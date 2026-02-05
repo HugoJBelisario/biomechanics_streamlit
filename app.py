@@ -327,10 +327,17 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     """
     Returns (frame, value) of max rear knee flexion.
 
-    Relative heel-floor logic (15% above floor):
-    - Only consider frames where heel z is within [floor, floor * 1.15]
-    - Search is clamped to [FP − 80, FP]
-    - Knee flexion is chosen ONLY from those heel-valid frames
+    FP-aware + take-specific heel-floor gating:
+
+    Window: [FP − 80, FP]
+
+    1) Compute heel_floor = MIN(heel_z) in the window
+    2) Compute heel_ceil  = MAX(heel_z) in the window
+    3) Define heel_thresh = heel_floor + 0.15 * (heel_ceil - heel_floor)
+       (i.e., within the lowest 15% of that take's heel excursion)
+    4) Find max rear knee flexion ONLY on frames where heel_z <= heel_thresh
+    5) Fallback: if no frames qualify, use the absolute heel-min frame and select
+       knee at that same frame.
 
     Rear knee:
       - RHP -> RT_KNEE
@@ -352,13 +359,14 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
         return None, None
     fp_frame = int(fp_frame)
 
-    drive_start = fp_frame - 100
+    drive_start = fp_frame - 80
 
     # -------------------------------------------------
-    # 1) Heel floor in [FP-80, FP]
+    # 1) Heel floor and ceiling in window
     # -------------------------------------------------
     cur.execute("""
-        SELECT MIN(h.z_data)
+        SELECT MIN(h.z_data) AS heel_floor,
+               MAX(h.z_data) AS heel_ceil
         FROM time_series_data h
         JOIN categories c ON h.category_id = c.category_id
         JOIN segments s   ON h.segment_id = s.segment_id
@@ -370,14 +378,21 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
     """, (int(take_id), heel_segment, int(drive_start), int(fp_frame)))
 
     row = cur.fetchone()
-    if not row or row[0] is None:
+    if not row or row[0] is None or row[1] is None:
         return None, None
 
     heel_floor = float(row[0])
-    heel_thresh = heel_floor * 1.4   # 15% above floor
+    heel_ceil  = float(row[1])
+
+    # If range is degenerate, fall back to heel_floor only
+    heel_range = heel_ceil - heel_floor
+    if heel_range <= 1e-9:
+        heel_thresh = heel_floor
+    else:
+        heel_thresh = heel_floor + 0.15 * heel_range
 
     # -------------------------------------------------
-    # 2) Max rear knee flexion WHEN heel is near floor
+    # 2) Knee min on frames where heel is near floor
     # -------------------------------------------------
     cur.execute("""
         SELECT k.frame, k.x_data
@@ -406,8 +421,48 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
         heel_segment,
         int(drive_start),
         int(fp_frame),
-        heel_thresh
+        float(heel_thresh)
     ))
+
+    row = cur.fetchone()
+    if row:
+        return int(row[0]), float(row[1])
+
+    # -------------------------------------------------
+    # 3) Fallback: absolute heel-min frame, knee at same frame
+    # -------------------------------------------------
+    cur.execute("""
+        SELECT h.frame, h.z_data
+        FROM time_series_data h
+        JOIN categories c ON h.category_id = c.category_id
+        JOIN segments s   ON h.segment_id = s.segment_id
+        WHERE h.take_id = %s
+          AND c.category_name = 'LANDMARK_ORIGINAL'
+          AND s.segment_name = %s
+          AND h.frame BETWEEN %s AND %s
+          AND h.z_data IS NOT NULL
+        ORDER BY h.z_data ASC
+        LIMIT 1
+    """, (int(take_id), heel_segment, int(drive_start), int(fp_frame)))
+
+    row = cur.fetchone()
+    if not row:
+        return None, None
+
+    heel_min_frame = int(row[0])
+
+    cur.execute("""
+        SELECT k.frame, k.x_data
+        FROM time_series_data k
+        JOIN categories ck ON k.category_id = ck.category_id
+        JOIN segments sk   ON k.segment_id = sk.segment_id
+        WHERE k.take_id = %s
+          AND ck.category_name = 'JOINT_ANGLES'
+          AND sk.segment_name = %s
+          AND k.frame = %s
+          AND k.x_data IS NOT NULL
+        LIMIT 1
+    """, (int(take_id), knee_segment, int(heel_min_frame)))
 
     row = cur.fetchone()
     if row:
