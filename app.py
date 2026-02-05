@@ -374,7 +374,7 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
         return None, None
 
     heel_floor = float(row[0])
-    heel_thresh = heel_floor * 1.4   # 15% above floor
+    heel_thresh = heel_floor * 1.1   # 15% above floor
 
     # -------------------------------------------------
     # 2) Max rear knee flexion WHEN heel is near floor
@@ -555,8 +555,8 @@ def get_foot_plant_frame(take_id, handedness, cur):
     if pelvis_peak_frame is None:
         return None
 
-    search_start = pelvis_peak_frame - 30
-    search_end   = pelvis_peak_frame + 30
+    search_start = pelvis_peak_frame - 50
+    search_end   = pelvis_peak_frame + 50
 
     # -------------------------------------------------
     # 2) Largest negative dip in DistEndVel Z (windowed)
