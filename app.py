@@ -359,7 +359,7 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
         return None, None
     fp_frame = int(fp_frame)
 
-    drive_start = fp_frame - 80
+    drive_start = fp_frame - 90
 
     # -------------------------------------------------
     # 1) Heel floor and ceiling in window
