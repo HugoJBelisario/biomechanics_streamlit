@@ -2488,7 +2488,7 @@ with tab2:
                 fig_shoulder.add_trace(go.Scatter(
                     x=interp_points, y=mean_ref_shoulder,
                     mode='lines', name="Reference (mean)",
-                    line=dict(color='black', width=3)
+                    line=dict(color='red', width=3)
                 ))
 
             # y-bounds for vertical markers
@@ -2510,15 +2510,15 @@ with tab2:
             # Legend entries for vertical lines
             fig_shoulder.add_trace(go.Scatter(
                 x=[None], y=[None], mode='lines',
-                line=dict(color='gray', width=2), name="Max Layback"
+                line=dict(dash='dot', color='gray', width=2), name="Max Layback"
             ))
             fig_shoulder.add_trace(go.Scatter(
                 x=[None], y=[None], mode='lines',
-                line=dict(color='green', width=2), name="Peak Arm Energy"
+                line=dict(dash='dot', color='green', width=2), name="Peak Arm Energy"
             ))
 
             # Draw Max Layback (x=50) and Peak Arm Energy for session 1 (use mean across all session1 curves)
-            shapes_list = [dict(type="line", x0=50, x1=50, y0=y0_sh, y1=y1_sh, line=dict(color="gray", width=2))]
+            shapes_list = [dict(type="line", x0=50, x1=50, y0=y0_sh, y1=y1_sh, line=dict(dash="dot", color="gray", width=2))]
             # For peak arm energy, use mean across all session1 curves
             peak_arm_time_pct = None
             all_peak = []
@@ -2530,7 +2530,7 @@ with tab2:
                 peak_arm_time_pct = float(np.nanmean(all_peak))
             if peak_arm_time_pct is not None:
                 shapes_list.append(dict(type="line", x0=peak_arm_time_pct, x1=peak_arm_time_pct,
-                                        y0=y0_sh, y1=y1_sh, line=dict(color="green", width=2)))
+                                        y0=y0_sh, y1=y1_sh, line=dict(dash="dot", color="green", width=2)))
             fig_shoulder.update_layout(
                 title=f"Shoulder {component}",
                 xaxis_title="Normalized Time (%)",
@@ -2602,7 +2602,7 @@ with tab2:
                 fig_torso.add_trace(go.Scatter(
                     x=interp_points, y=mean_ref_torso,
                     mode='lines', name="Reference (mean)",
-                    line=dict(color='black', width=3)
+                    line=dict(color='red', width=3)
                 ))
 
             yvals_to = []
@@ -2622,14 +2622,14 @@ with tab2:
 
             fig_torso.add_trace(go.Scatter(
                 x=[None], y=[None], mode='lines',
-                line=dict(color='gray', width=2), name="Max Layback"
+                line=dict(dash='dot', color='gray', width=2), name="Max Layback"
             ))
             fig_torso.add_trace(go.Scatter(
                 x=[None], y=[None], mode='lines',
-                line=dict(color='green', width=2), name="Peak Arm Energy"
+                line=dict(dash='dot', color='green', width=2), name="Peak Arm Energy"
             ))
 
-            shapes_list_torso = [dict(type="line", x0=50, x1=50, y0=y0_to, y1=y1_to, line=dict(color="gray", width=2))]
+            shapes_list_torso = [dict(type="line", x0=50, x1=50, y0=y0_to, y1=y1_to, line=dict(dash="dot", color="gray", width=2))]
             # For peak arm energy, use mean across all session1 curves
             peak_arm_time_pct_to = None
             all_peak_to = []
@@ -2641,7 +2641,7 @@ with tab2:
                 peak_arm_time_pct_to = float(np.nanmean(all_peak_to))
             if peak_arm_time_pct_to is not None:
                 shapes_list_torso.append(dict(type="line", x0=peak_arm_time_pct_to, x1=peak_arm_time_pct_to,
-                                              y0=y0_to, y1=y1_to, line=dict(color="green", width=2)))
+                                              y0=y0_to, y1=y1_to, line=dict(dash="dot", color="green", width=2)))
             fig_torso.update_layout(
                 title="Torso Power",
                 xaxis_title="Normalized Time (%)",
