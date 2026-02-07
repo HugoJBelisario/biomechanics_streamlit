@@ -1833,9 +1833,23 @@ def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, co
         if df_power.empty:
             continue
         df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
-        drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
-        if pd.isna(drive_start_frame):
-            continue
+        # Determine take throw_type (needed for pulldown alignment)
+        cur.execute("SELECT COALESCE(throw_type, 'Mound') FROM takes WHERE take_id = %s", (int(take_id),))
+        _tt_row = cur.fetchone()
+        take_throw_type = _tt_row[0] if _tt_row else "Mound"
+
+        # Drive start anchor
+        # - Mound: torso power threshold (< -3000)
+        # - Pulldown: pulldown window start (FP - 80)
+        if take_throw_type == "Pulldown":
+            pd_start, pd_end, pd_fp = get_pulldown_window(take_id, handedness, cur)
+            if pd_start is None or pd_end is None or pd_fp is None:
+                continue
+            drive_start_frame = int(pd_start)
+        else:
+            drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
+            if pd.isna(drive_start_frame):
+                continue
         cur.execute("""
             SELECT frame, x_data FROM time_series_data ts
             JOIN segments s ON ts.segment_id = s.segment_id
@@ -1846,10 +1860,19 @@ def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, co
         df_knee = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
         if df_knee.empty:
             continue
-        df_knee_pre = df_knee[df_knee["frame"] < drive_start_frame]
-        if df_knee_pre.empty:
-            continue
-        max_knee_frame = df_knee_pre.loc[df_knee_pre["x_data"].idxmin(), "frame"]
+        # Rear knee anchor
+        # - Mound: knee min before drive_start_frame
+        # - Pulldown: heel-gated rear knee flexion (Tab 1 helper)
+        if take_throw_type == "Pulldown":
+            rk_frame, _rk_val = get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur)
+            if rk_frame is None:
+                continue
+            max_knee_frame = int(rk_frame)
+        else:
+            df_knee_pre = df_knee[df_knee["frame"] < drive_start_frame]
+            if df_knee_pre.empty:
+                continue
+            max_knee_frame = int(df_knee_pre.loc[df_knee_pre["x_data"].idxmin(), "frame"])
         cur.execute("""
             SELECT frame, x_data, y_data, z_data FROM time_series_data ts
             JOIN segments s ON ts.segment_id = s.segment_id
@@ -1861,7 +1884,17 @@ def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, co
         if df_sh.empty:
             continue
         df_sh["z_data"] = pd.to_numeric(df_sh["z_data"], errors="coerce")
-        peak_shoulder_frame = int(df_sh.loc[df_sh["z_data"].abs().idxmax(), "frame"])
+
+        # MER frame
+        # - Mound: legacy (max abs z)
+        # - Pulldown: FP-windowed MER helper
+        if take_throw_type == "Pulldown":
+            peak_shoulder_frame = get_shoulder_er_max_frame(take_id, handedness, cur, throw_type="Pulldown")
+            if peak_shoulder_frame is None:
+                continue
+            peak_shoulder_frame = int(peak_shoulder_frame)
+        else:
+            peak_shoulder_frame = int(df_sh.loc[df_sh["z_data"].abs().idxmax(), "frame"])
         cur.execute("""
             SELECT frame, x_data FROM time_series_data ts
             JOIN segments s ON ts.segment_id = s.segment_id
@@ -1873,7 +1906,14 @@ def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, co
         if df_arm.empty:
             continue
         df_arm["x_data"] = pd.to_numeric(df_arm["x_data"], errors="coerce")
-        end_frame = int(df_arm.loc[df_arm["x_data"].idxmax(), "frame"]) + 50
+        if take_throw_type == "Pulldown":
+            # End at BR for pulldowns (Tab 1 window)
+            pd_start, pd_end, pd_fp = get_pulldown_window(take_id, handedness, cur)
+            if pd_start is None or pd_end is None:
+                continue
+            end_frame = int(pd_end)
+        else:
+            end_frame = int(df_arm.loc[df_arm["x_data"].idxmax(), "frame"]) + 50
         df_sh_seg = df_sh[(df_sh["frame"] >= max_knee_frame) & (df_sh["frame"] <= end_frame)].copy()
         df_sh_seg["time_pct"] = np.where(
             df_sh_seg["frame"] <= peak_shoulder_frame,
@@ -2156,6 +2196,16 @@ with tab2:
         peak_arm_time_pcts = []
 
         for tid, _velo in takes:
+            # Determine take throw_type (needed for pulldown alignment)
+            cur.execute("""
+                SELECT COALESCE(t.throw_type, 'Mound')
+                FROM takes t
+                WHERE t.take_id = %s
+                LIMIT 1
+            """, (int(tid),))
+            _tt_row = cur.fetchone()
+            take_throw_type = _tt_row[0] if _tt_row else "Mound"
+
             # Torso power (to find drive start and for torso curve)
             cur.execute("""
                 SELECT frame, x_data FROM time_series_data ts
@@ -2168,9 +2218,18 @@ with tab2:
             if df_power.empty:
                 continue
             df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
-            drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
-            if pd.isna(drive_start_frame):
-                continue
+            # Drive start anchor
+            # - Mound: torso power threshold (< -3000)
+            # - Pulldown: pulldown window start (FP - 80)
+            if take_throw_type == "Pulldown":
+                pd_start, pd_end, pd_fp = get_pulldown_window(tid, handedness_comp, cur)
+                if pd_start is None or pd_end is None or pd_fp is None:
+                    continue
+                drive_start_frame = int(pd_start)
+            else:
+                drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
+                if pd.isna(drive_start_frame):
+                    continue
 
             # Rear knee (to find max pre-drive knee flexion frame)
             cur.execute("""
@@ -2183,10 +2242,19 @@ with tab2:
             df_knee = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
             if df_knee.empty:
                 continue
-            df_knee_pre = df_knee[df_knee["frame"] < drive_start_frame]
-            if df_knee_pre.empty:
-                continue
-            max_knee_frame = int(df_knee_pre.loc[df_knee_pre["x_data"].idxmin(), "frame"])
+            # Rear knee anchor
+            # - Mound: knee min before drive_start_frame
+            # - Pulldown: heel-gated rear knee flexion (Tab 1 helper)
+            if take_throw_type == "Pulldown":
+                rk_frame, _rk_val = get_max_rear_knee_flexion_frame_with_heel(tid, handedness_comp, cur)
+                if rk_frame is None:
+                    continue
+                max_knee_frame = int(rk_frame)
+            else:
+                df_knee_pre = df_knee[df_knee["frame"] < drive_start_frame]
+                if df_knee_pre.empty:
+                    continue
+                max_knee_frame = int(df_knee_pre.loc[df_knee_pre["x_data"].idxmin(), "frame"])
 
             # Shoulder joint angles (x, y, z) to find layback (peak |z|)
             cur.execute("""
@@ -2200,7 +2268,17 @@ with tab2:
             if df_sh.empty:
                 continue
             df_sh["z_data"] = pd.to_numeric(df_sh["z_data"], errors="coerce")
-            peak_shoulder_frame = int(df_sh.loc[df_sh["z_data"].abs().idxmax(), "frame"])
+
+            # MER frame
+            # - Mound: legacy (max abs z)
+            # - Pulldown: FP-windowed MER helper
+            if take_throw_type == "Pulldown":
+                peak_shoulder_frame = get_shoulder_er_max_frame(tid, handedness_comp, cur, throw_type="Pulldown")
+                if peak_shoulder_frame is None:
+                    continue
+                peak_shoulder_frame = int(peak_shoulder_frame)
+            else:
+                peak_shoulder_frame = int(df_sh.loc[df_sh["z_data"].abs().idxmax(), "frame"])
             cur.execute("""
                 SELECT frame, x_data FROM time_series_data ts
                 JOIN segments s ON ts.segment_id = s.segment_id
@@ -2212,7 +2290,14 @@ with tab2:
             if df_arm.empty:
                 continue
             df_arm["x_data"] = pd.to_numeric(df_arm["x_data"], errors="coerce")
-            end_frame = int(df_arm.loc[df_arm["x_data"].idxmax(), "frame"]) + 50
+            if take_throw_type == "Pulldown":
+                # End at BR for pulldowns (Tab 1 window)
+                pd_start, pd_end, pd_fp = get_pulldown_window(tid, handedness_comp, cur)
+                if pd_start is None or pd_end is None:
+                    continue
+                end_frame = int(pd_end)
+            else:
+                end_frame = int(df_arm.loc[df_arm["x_data"].idxmax(), "frame"]) + 50
 
             # Peak arm energy frame (MER-windowed max, constrained by Ball Release)
             mer_frame = int(peak_shoulder_frame)
@@ -2332,7 +2417,7 @@ with tab2:
         # Color encodes throw type (solid lines)
         throw_type_color = {
             "Mound": "#1f77b4",     # blue
-            "Pulldown": "#d62728"   # red
+            "Pulldown": "#FF7F0E"   # orange
         }
 
         # Only plot if at least one session has at least one valid curve
@@ -2403,7 +2488,7 @@ with tab2:
                 fig_shoulder.add_trace(go.Scatter(
                     x=interp_points, y=mean_ref_shoulder,
                     mode='lines', name="Reference (mean)",
-                    line=dict(color='red')
+                    line=dict(color='black', width=3)
                 ))
 
             # y-bounds for vertical markers
@@ -2425,15 +2510,15 @@ with tab2:
             # Legend entries for vertical lines
             fig_shoulder.add_trace(go.Scatter(
                 x=[None], y=[None], mode='lines',
-                line=dict(dash='dot', color='gray'), name="Max Layback"
+                line=dict(color='gray', width=2), name="Max Layback"
             ))
             fig_shoulder.add_trace(go.Scatter(
                 x=[None], y=[None], mode='lines',
-                line=dict(dash='dot', color='green'), name="Peak Arm Energy"
+                line=dict(color='green', width=2), name="Peak Arm Energy"
             ))
 
             # Draw Max Layback (x=50) and Peak Arm Energy for session 1 (use mean across all session1 curves)
-            shapes_list = [dict(type="line", x0=50, x1=50, y0=y0_sh, y1=y1_sh, line=dict(dash="dot", color="gray"))]
+            shapes_list = [dict(type="line", x0=50, x1=50, y0=y0_sh, y1=y1_sh, line=dict(color="gray", width=2))]
             # For peak arm energy, use mean across all session1 curves
             peak_arm_time_pct = None
             all_peak = []
@@ -2445,7 +2530,7 @@ with tab2:
                 peak_arm_time_pct = float(np.nanmean(all_peak))
             if peak_arm_time_pct is not None:
                 shapes_list.append(dict(type="line", x0=peak_arm_time_pct, x1=peak_arm_time_pct,
-                                        y0=y0_sh, y1=y1_sh, line=dict(dash="dot", color="green")))
+                                        y0=y0_sh, y1=y1_sh, line=dict(color="green", width=2)))
             fig_shoulder.update_layout(
                 title=f"Shoulder {component}",
                 xaxis_title="Normalized Time (%)",
@@ -2517,7 +2602,7 @@ with tab2:
                 fig_torso.add_trace(go.Scatter(
                     x=interp_points, y=mean_ref_torso,
                     mode='lines', name="Reference (mean)",
-                    line=dict(color='red')
+                    line=dict(color='black', width=3)
                 ))
 
             yvals_to = []
@@ -2537,14 +2622,14 @@ with tab2:
 
             fig_torso.add_trace(go.Scatter(
                 x=[None], y=[None], mode='lines',
-                line=dict(dash='dot', color='gray'), name="Max Layback"
+                line=dict(color='gray', width=2), name="Max Layback"
             ))
             fig_torso.add_trace(go.Scatter(
                 x=[None], y=[None], mode='lines',
-                line=dict(dash='dot', color='green'), name="Peak Arm Energy"
+                line=dict(color='green', width=2), name="Peak Arm Energy"
             ))
 
-            shapes_list_torso = [dict(type="line", x0=50, x1=50, y0=y0_to, y1=y1_to, line=dict(dash="dot", color="gray"))]
+            shapes_list_torso = [dict(type="line", x0=50, x1=50, y0=y0_to, y1=y1_to, line=dict(color="gray", width=2))]
             # For peak arm energy, use mean across all session1 curves
             peak_arm_time_pct_to = None
             all_peak_to = []
@@ -2556,7 +2641,7 @@ with tab2:
                 peak_arm_time_pct_to = float(np.nanmean(all_peak_to))
             if peak_arm_time_pct_to is not None:
                 shapes_list_torso.append(dict(type="line", x0=peak_arm_time_pct_to, x1=peak_arm_time_pct_to,
-                                              y0=y0_to, y1=y1_to, line=dict(dash="dot", color="green")))
+                                              y0=y0_to, y1=y1_to, line=dict(color="green", width=2)))
             fig_torso.update_layout(
                 title="Torso Power",
                 xaxis_title="Normalized Time (%)",
