@@ -3228,7 +3228,22 @@ with tab3:
                     y=y,
                     mode="markers",
                     marker=dict(color=marker_color, symbol=marker_symbol, size=10),
-                    name=f"{pitcher_name} | {date_str} | {tt}"
+                    name=f"{pitcher_name} | {date_str} | {tt}",
+                    hovertemplate=(
+                        "Pitcher: %{customdata[0]}<br>"
+                        "Date: %{customdata[1]}<br>"
+                        "Throw Type: %{customdata[2]}<br>"
+                        "Velocity: %{customdata[3]:.1f} mph<br>"
+                        f"{selected_metric_010}: %{{customdata[4]:.2f}}<extra></extra>"
+                    ),
+                    customdata=np.column_stack([
+                        np.array([pitcher_name] * len(x), dtype=object),
+                        np.array([date_str] * len(x), dtype=object),
+                        np.array([tt] * len(x), dtype=object),
+                        x.values,
+                        y.values
+                    ]),
+                    hoverlabel=dict(namelength=-1)
                 ))
 
                 # Regression line
@@ -3252,7 +3267,15 @@ with tab3:
                     xanchor="center",
                     x=0.5
                 ),
-                height=500
+                height=520,
+                margin=dict(l=60, r=140, t=90, b=60),
+                hovermode="closest",
+                hoverlabel=dict(
+                    bgcolor="white",
+                    font_size=13,
+                    align="left",
+                    namelength=-1
+                )
             )
 
             st.plotly_chart(fig_010, use_container_width=True)
