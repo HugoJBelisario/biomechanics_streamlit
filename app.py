@@ -1005,159 +1005,6 @@ with tab1:
         st.warning("No takes found for this pitcher and date.")
         st.stop()
 
-    # ------------------------------------------------------------
-    # Debug panel (Tab 1): diagnose missing frames/metrics quickly
-    # ------------------------------------------------------------
-    debug_tab1 = st.checkbox("Debug (Tab 1)", value=False, key="tab1_debug")
-
-    if debug_tab1:
-        # Build label -> take_id map from current take_rows
-        _labels = []
-        _label_to_tid = {}
-        for _tid, _file_name, _velo, _take_date, _throw_type in take_rows:
-            _lbl = f"{_take_date.strftime('%Y-%m-%d')} | {_throw_type} | {_file_name} | {_tid}"
-            _labels.append(_lbl)
-            _label_to_tid[_lbl] = int(_tid)
-
-        debug_take_label = st.selectbox(
-            "Debug Take",
-            options=_labels,
-            index=0,
-            key="tab1_debug_take"
-        )
-
-        debug_tid = _label_to_tid.get(debug_take_label)
-
-        if debug_tid is not None:
-            st.markdown(f"### Debug for take_id = `{debug_tid}`")
-
-            # Foot Plant inputs
-            lead_foot = "LFT" if handedness == "R" else "RFT"
-            heel_seg  = "R_HEEL" if handedness == "R" else "L_HEEL"
-            knee_seg  = "RT_KNEE" if handedness == "R" else "LT_KNEE"
-            torso_seg = "RTA_DIST_R" if handedness == "R" else "RTA_DIST_L"
-            arm_seg   = "RAR" if handedness == "R" else "LAR"
-            sh_seg    = "RT_SHOULDER" if handedness == "R" else "LT_SHOULDER"
-
-            # 1) Pelvis AngVel Z availability
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'ORIGINAL'
-                  AND s.segment_name  = 'PELVIS_ANGULAR_VELOCITY'
-                  AND ts.z_data IS NOT NULL
-            """, (debug_tid,))
-            pelvis_ct = int(cur.fetchone()[0])
-
-            # 2) Lead foot DistEndVel Z availability
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'KINETIC_KINEMATIC_DistEndVel'
-                  AND s.segment_name  = %s
-                  AND ts.z_data IS NOT NULL
-            """, (debug_tid, lead_foot))
-            lead_foot_ct = int(cur.fetchone()[0])
-
-            # 3) Heel Z availability (LANDMARK_ORIGINAL)
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'LANDMARK_ORIGINAL'
-                  AND s.segment_name  = %s
-                  AND ts.z_data IS NOT NULL
-            """, (debug_tid, heel_seg))
-            heel_ct = int(cur.fetchone()[0])
-
-            # 4) Rear knee X availability (JOINT_ANGLES)
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'JOINT_ANGLES'
-                  AND s.segment_name  = %s
-                  AND ts.x_data IS NOT NULL
-            """, (debug_tid, knee_seg))
-            knee_ct = int(cur.fetchone()[0])
-
-            # 5) Torso power availability
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'SEGMENT_POWERS'
-                  AND s.segment_name  = %s
-                  AND ts.x_data IS NOT NULL
-            """, (debug_tid, torso_seg))
-            torso_ct = int(cur.fetchone()[0])
-
-            # 6) Arm energy availability
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'SEGMENT_ENERGIES'
-                  AND s.segment_name  = %s
-                  AND ts.x_data IS NOT NULL
-            """, (debug_tid, arm_seg))
-            arm_ct = int(cur.fetchone()[0])
-
-            # 7) Shoulder ER angle availability
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM time_series_data ts
-                JOIN categories c ON ts.category_id = c.category_id
-                JOIN segments s   ON ts.segment_id  = s.segment_id
-                WHERE ts.take_id = %s
-                  AND c.category_name = 'JOINT_ANGLES'
-                  AND s.segment_name  = %s
-                  AND ts.z_data IS NOT NULL
-            """, (debug_tid, sh_seg))
-            shoulder_ct = int(cur.fetchone()[0])
-
-            st.write({
-                "take_id": debug_tid,
-                "handedness": handedness,
-                "Pelvis AngVel Z (ORIGINAL) count": pelvis_ct,
-                "Lead Foot DistEndVel Z count": lead_foot_ct,
-                "Heel Z (LANDMARK_ORIGINAL) count": heel_ct,
-                "Rear Knee X (JOINT_ANGLES) count": knee_ct,
-                "Torso Power X (SEGMENT_POWERS) count": torso_ct,
-                "Arm Energy X (SEGMENT_ENERGIES) count": arm_ct,
-                "Shoulder ER Z (JOINT_ANGLES) count": shoulder_ct
-            })
-
-            # Try to compute key event frames for this take
-            _fp = get_foot_plant_frame(debug_tid, handedness, cur)
-            _ppf = get_pelvis_angvel_peak_frame(debug_tid, handedness, cur)
-            _mer = get_shoulder_er_max_frame(debug_tid, handedness, cur, throw_type="Pulldown")
-            _rkf, _rkv = get_max_rear_knee_flexion_frame_with_heel(debug_tid, handedness, cur)
-
-            st.write({
-                "Pelvis peak frame": _ppf,
-                "Foot plant frame": _fp,
-                "MER frame": _mer,
-                "Rear knee frame": _rkf,
-                "Rear knee value (deg)": _rkv
-            })
-
-            st.info("If Rear knee is None, most downstream metrics will stay None. If FP is None, rear knee will be None.")
-
     rows = []
     for tid, file_name, velo, take_date, throw_type in take_rows:
         if int(tid) in exclude_take_ids:
@@ -1400,16 +1247,8 @@ with tab1:
             "label": label,
             "Pitch Number": pitch_number,
             "Session Date": take_date.strftime("%Y-%m-%d"),
-            "Max Rear Knee Flexion Frame": max_knee_frame,
-            "Max Rear Knee Flexion (deg)": round(max_knee_value, 2) if not np.isnan(max_knee_value) else np.nan,
             "Throw Type": throw_type,
             "Velocity": velo,
-            "Foot Plant Frame": fp_frame,
-            "Pelvis AngVel Peak Frame": pelvis_peak_frame,
-            "Pelvis AngVel Peak (Z)": (round(pelvis_peak_value, 2) if not np.isnan(pelvis_peak_value) else np.nan),
-            "MER Frame": mer_frame,
-            "MER Value (Z)": (round(mer_value, 2) if not np.isnan(mer_value) else np.nan),
-            "Peak Arm Energy Frame": arm_peak_frame,
             "AUC (Drive → 0)": (round(auc_total, 2) if pd.notna(auc_total) else np.nan),
             "AUC (Drive → Peak Arm Energy)": (round(auc_to_peak, 2) if pd.notna(auc_to_peak) else np.nan),
             "Peak Arm Energy": (round(arm_peak_value, 2) if pd.notna(arm_peak_value) else np.nan),
@@ -1745,9 +1584,6 @@ with tab1:
         "Throw Type",
         "Pitch Number",
         "Velocity",
-        "Foot Plant Frame",
-        "Pelvis AngVel Peak Frame",
-        "MER Frame",
         "Peak Arm Energy Frame"
     ]
 
