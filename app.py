@@ -1973,34 +1973,10 @@ with tab2:
     with left:
         # --- Select pitcher ---
         selected_pitcher_comp = st.selectbox("Select Pitcher", pitchers, key="comp_pitcher")
-        # --- Throw type selection (default = Mound) ---
-        cur.execute("""
-            SELECT DISTINCT COALESCE(t.throw_type, 'Mound') AS throw_type
-            FROM takes t
-            JOIN athletes a ON t.athlete_id = a.athlete_id
-            WHERE a.athlete_name = %s
-            ORDER BY throw_type
-        """, (selected_pitcher_comp,))
-        throw_type_options_comp = [r[0] for r in cur.fetchall()] or ["Mound", "Pulldown"]
-        default_throw_types_comp = ["Mound"] if "Mound" in throw_type_options_comp else [throw_type_options_comp[0]]
-
-        selected_throw_types_comp = st.multiselect(
-            "Throw Type(s)",
-            options=throw_type_options_comp,
-            default=default_throw_types_comp,
-            key="throw_types_comp"
-        )
-
-        if not selected_throw_types_comp:
-            selected_throw_types_comp = default_throw_types_comp
-
-        display_mode_tab2 = st.radio(
-            "Display Mode",
-            ["Grouped Average", "Individual Throws"],
-            index=0,
-            horizontal=True,
-            key="tab2_display_mode"
-        )
+        # Tab 2 is Mound-only
+        selected_throw_types_comp = ["Mound"]
+        # Tab 2 always shows grouped averages
+        display_mode_tab2 = "Grouped Average"
         # --- Get handedness from DB ---
         cur.execute("SELECT handedness FROM athletes WHERE athlete_name = %s", (selected_pitcher_comp,))
         handedness_row_comp = cur.fetchone()
@@ -2022,19 +1998,18 @@ with tab2:
         session1_date = st.selectbox("Select First Session Date", dates_comp, key="comp_date1")
         session2_date = st.selectbox("Select Second Session Date", dates_comp, key="comp_date2")
 
-        # --- Get min and max velocity for session1 (filtered by throw type) ---
-        placeholders_tt = ",".join(["%s"] * len(selected_throw_types_comp))
-        cur.execute(f"""
+        # --- Get min and max velocity for session1 (Mound only) ---
+        cur.execute("""
             SELECT MIN(t.pitch_velo), MAX(t.pitch_velo)
             FROM takes t
             JOIN athletes a ON t.athlete_id = a.athlete_id
             WHERE a.athlete_name = %s
               AND t.take_date = %s
-              AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
-        """, (selected_pitcher_comp, session1_date, *selected_throw_types_comp))
+              AND COALESCE(t.throw_type, 'Mound') = 'Mound'
+        """, (selected_pitcher_comp, session1_date))
         velo_min1, velo_max1 = cur.fetchone()
         if velo_min1 is None or velo_max1 is None:
-            st.warning(f"No {', '.join(selected_throw_types_comp)} throws found for {session1_date}")
+            st.warning(f"No Mound throws found for {session1_date}")
             st.stop()
         velo_min1 = float(f"{velo_min1:.1f}")
         velo_max1 = float(f"{velo_max1:.1f}")
@@ -2049,19 +2024,18 @@ with tab2:
             key="velo1"
         )
 
-        # --- Get min and max velocity for session2 (filtered by throw type) ---
-        placeholders_tt = ",".join(["%s"] * len(selected_throw_types_comp))
-        cur.execute(f"""
+        # --- Get min and max velocity for session2 (Mound only) ---
+        cur.execute("""
             SELECT MIN(t.pitch_velo), MAX(t.pitch_velo)
             FROM takes t
             JOIN athletes a ON t.athlete_id = a.athlete_id
             WHERE a.athlete_name = %s
               AND t.take_date = %s
-              AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
-        """, (selected_pitcher_comp, session2_date, *selected_throw_types_comp))
+              AND COALESCE(t.throw_type, 'Mound') = 'Mound'
+        """, (selected_pitcher_comp, session2_date))
         velo_min2, velo_max2 = cur.fetchone()
         if velo_min2 is None or velo_max2 is None:
-            st.warning(f"No {', '.join(selected_throw_types_comp)} throws found for {session2_date}")
+            st.warning(f"No Mound throws found for {session2_date}")
             st.stop()
         velo_min2 = float(f"{float(velo_min2):.1f}")
         velo_max2 = float(f"{float(velo_max2):.1f}")
@@ -2140,7 +2114,7 @@ with tab2:
             else:
                 st.info("No pitchers found in reference group for the selected settings.")
 
-    def load_and_interpolate_curves(date, velo_min, velo_max, comp_col, use_abs, throw_types=None):
+    def load_and_interpolate_curves(date, velo_min, velo_max, comp_col, use_abs):
         """
         Returns:
             shoulder_curves (list[np.ndarray])  # one per take, length 100
@@ -2148,45 +2122,25 @@ with tab2:
             peak_arm_time_pcts (list[float])    # one per take
         """
         if date is not None:
-            if throw_types:
-                placeholders_tt = ",".join(["%s"] * len(throw_types))
-                cur.execute(f"""
-                    SELECT t.take_id, t.pitch_velo
-                    FROM takes t
-                    JOIN athletes a ON t.athlete_id = a.athlete_id
-                    WHERE a.athlete_name = %s AND t.take_date = %s
-                      AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
-                      AND t.pitch_velo BETWEEN %s AND %s
-                    ORDER BY t.file_name
-                """, (selected_pitcher_comp, date, *throw_types, velo_min, velo_max))
-            else:
-                cur.execute("""
-                    SELECT t.take_id, t.pitch_velo
-                    FROM takes t
-                    JOIN athletes a ON t.athlete_id = a.athlete_id
-                    WHERE a.athlete_name = %s AND t.take_date = %s
-                    AND t.pitch_velo BETWEEN %s AND %s
-                    ORDER BY t.file_name
-                """, (selected_pitcher_comp, date, velo_min, velo_max))
+            cur.execute("""
+                SELECT t.take_id, t.pitch_velo
+                FROM takes t
+                JOIN athletes a ON t.athlete_id = a.athlete_id
+                WHERE a.athlete_name = %s
+                  AND t.take_date = %s
+                  AND COALESCE(t.throw_type, 'Mound') = 'Mound'
+                  AND t.pitch_velo BETWEEN %s AND %s
+                ORDER BY t.file_name
+            """, (selected_pitcher_comp, date, velo_min, velo_max))
         else:
-            if throw_types:
-                placeholders_tt = ",".join(["%s"] * len(throw_types))
-                cur.execute(f"""
-                    SELECT t.take_id, t.pitch_velo
-                    FROM takes t
-                    JOIN athletes a ON t.athlete_id = a.athlete_id
-                    WHERE COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
-                      AND t.pitch_velo BETWEEN %s AND %s
-                    ORDER BY t.file_name
-                """, (*throw_types, velo_min, velo_max))
-            else:
-                cur.execute("""
-                    SELECT t.take_id, t.pitch_velo
-                    FROM takes t
-                    JOIN athletes a ON t.athlete_id = a.athlete_id
-                    WHERE t.pitch_velo BETWEEN %s AND %s
-                    ORDER BY t.file_name
-                """, (velo_min, velo_max))
+            cur.execute("""
+                SELECT t.take_id, t.pitch_velo
+                FROM takes t
+                JOIN athletes a ON t.athlete_id = a.athlete_id
+                WHERE COALESCE(t.throw_type, 'Mound') = 'Mound'
+                  AND t.pitch_velo BETWEEN %s AND %s
+                ORDER BY t.file_name
+            """, (velo_min, velo_max))
 
         takes = cur.fetchall()
         if not takes:
@@ -2196,16 +2150,6 @@ with tab2:
         peak_arm_time_pcts = []
 
         for tid, _velo in takes:
-            # Determine take throw_type (needed for pulldown alignment)
-            cur.execute("""
-                SELECT COALESCE(t.throw_type, 'Mound')
-                FROM takes t
-                WHERE t.take_id = %s
-                LIMIT 1
-            """, (int(tid),))
-            _tt_row = cur.fetchone()
-            take_throw_type = _tt_row[0] if _tt_row else "Mound"
-
             # Torso power (to find drive start and for torso curve)
             cur.execute("""
                 SELECT frame, x_data FROM time_series_data ts
@@ -2218,18 +2162,10 @@ with tab2:
             if df_power.empty:
                 continue
             df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
-            # Drive start anchor
-            # - Mound: torso power threshold (< -3000)
-            # - Pulldown: pulldown window start (FP - 80)
-            if take_throw_type == "Pulldown":
-                pd_start, pd_end, pd_fp = get_pulldown_window(tid, handedness_comp, cur)
-                if pd_start is None or pd_end is None or pd_fp is None:
-                    continue
-                drive_start_frame = int(pd_start)
-            else:
-                drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
-                if pd.isna(drive_start_frame):
-                    continue
+            # Drive start (Mound only)
+            drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
+            if pd.isna(drive_start_frame):
+                continue
 
             # Rear knee (to find max pre-drive knee flexion frame)
             cur.execute("""
@@ -2242,19 +2178,11 @@ with tab2:
             df_knee = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
             if df_knee.empty:
                 continue
-            # Rear knee anchor
-            # - Mound: knee min before drive_start_frame
-            # - Pulldown: heel-gated rear knee flexion (Tab 1 helper)
-            if take_throw_type == "Pulldown":
-                rk_frame, _rk_val = get_max_rear_knee_flexion_frame_with_heel(tid, handedness_comp, cur)
-                if rk_frame is None:
-                    continue
-                max_knee_frame = int(rk_frame)
-            else:
-                df_knee_pre = df_knee[df_knee["frame"] < drive_start_frame]
-                if df_knee_pre.empty:
-                    continue
-                max_knee_frame = int(df_knee_pre.loc[df_knee_pre["x_data"].idxmin(), "frame"])
+            # Rear knee anchor (Mound only)
+            df_knee_pre = df_knee[df_knee["frame"] < drive_start_frame]
+            if df_knee_pre.empty:
+                continue
+            max_knee_frame = int(df_knee_pre.loc[df_knee_pre["x_data"].idxmin(), "frame"])
 
             # Shoulder joint angles (x, y, z) to find layback (peak |z|)
             cur.execute("""
@@ -2269,16 +2197,8 @@ with tab2:
                 continue
             df_sh["z_data"] = pd.to_numeric(df_sh["z_data"], errors="coerce")
 
-            # MER frame
-            # - Mound: legacy (max abs z)
-            # - Pulldown: FP-windowed MER helper
-            if take_throw_type == "Pulldown":
-                peak_shoulder_frame = get_shoulder_er_max_frame(tid, handedness_comp, cur, throw_type="Pulldown")
-                if peak_shoulder_frame is None:
-                    continue
-                peak_shoulder_frame = int(peak_shoulder_frame)
-            else:
-                peak_shoulder_frame = int(df_sh.loc[df_sh["z_data"].abs().idxmax(), "frame"])
+            # MER frame (Mound only)
+            peak_shoulder_frame = int(df_sh.loc[df_sh["z_data"].abs().idxmax(), "frame"])
             cur.execute("""
                 SELECT frame, x_data FROM time_series_data ts
                 JOIN segments s ON ts.segment_id = s.segment_id
@@ -2290,14 +2210,7 @@ with tab2:
             if df_arm.empty:
                 continue
             df_arm["x_data"] = pd.to_numeric(df_arm["x_data"], errors="coerce")
-            if take_throw_type == "Pulldown":
-                # End at BR for pulldowns (Tab 1 window)
-                pd_start, pd_end, pd_fp = get_pulldown_window(tid, handedness_comp, cur)
-                if pd_start is None or pd_end is None:
-                    continue
-                end_frame = int(pd_end)
-            else:
-                end_frame = int(df_arm.loc[df_arm["x_data"].idxmax(), "frame"]) + 50
+            end_frame = int(df_arm.loc[df_arm["x_data"].idxmax(), "frame"]) + 50
 
             # Peak arm energy frame (MER-windowed max, constrained by Ball Release)
             mer_frame = int(peak_shoulder_frame)
@@ -2383,27 +2296,16 @@ with tab2:
 
     # ---- Compute curves and render charts ----
     with right:
-        # --- 1) Loop per throw type for session 1 ---
-        curves_s1_by_type = {}
-        peak_arm_time_pct_by_type = {}
-        for tt in selected_throw_types_comp:
-            s1_sh_curves, s1_to_curves, s1_peak_arm_times = load_and_interpolate_curves(
-                session1_date, velo_range1[0], velo_range1[1], comp_col, use_abs,
-                throw_types=[tt]
-            )
-            curves_s1_by_type[tt] = dict(shoulder=s1_sh_curves, torso=s1_to_curves)
-            peak_arm_time_pct_by_type[tt] = s1_peak_arm_times
+        # --- Load curves for each session (Mound only) ---
+        s1_sh_curves, s1_to_curves, s1_peak_arm_times = load_and_interpolate_curves(
+            session1_date, velo_range1[0], velo_range1[1], comp_col, use_abs
+        )
+        s2_sh_curves, s2_to_curves, s2_peak_arm_times = load_and_interpolate_curves(
+            session2_date, velo_range2[0], velo_range2[1], comp_col, use_abs
+        )
 
-        # --- 2) Loop per throw type for session 2 ---
-        curves_s2_by_type = {}
-        peak_arm_time_pct_by_type_2 = {}
-        for tt in selected_throw_types_comp:
-            s2_sh_curves, s2_to_curves, s2_peak_arm_times = load_and_interpolate_curves(
-                session2_date, velo_range2[0], velo_range2[1], comp_col, use_abs,
-                throw_types=[tt]
-            )
-            curves_s2_by_type[tt] = dict(shoulder=s2_sh_curves, torso=s2_to_curves)
-            peak_arm_time_pct_by_type_2[tt] = s2_peak_arm_times
+        curves_s1 = dict(shoulder=s1_sh_curves, torso=s1_to_curves)
+        curves_s2 = dict(shoulder=s2_sh_curves, torso=s2_to_curves)
 
         mean_ref_shoulder, mean_ref_torso = None, None
         if include_ref and display_mode_tab2 == "Grouped Average":
@@ -2414,75 +2316,39 @@ with tab2:
                 throw_types=["Mound"]
             )
 
-        # Color encodes throw type (solid lines)
-        throw_type_color = {
-            "Mound": "#1f77b4",     # blue
-            "Pulldown": "#FF7F0E"   # orange
-        }
-
         # Only plot if at least one session has at least one valid curve
         has_any_curve = (
-            any(v["shoulder"] not in (None, []) for v in curves_s1_by_type.values())
-            and any(v["shoulder"] not in (None, []) for v in curves_s2_by_type.values())
+            curves_s1["shoulder"] not in (None, [])
+            and curves_s2["shoulder"] not in (None, [])
         )
         if has_any_curve:
             # ===================== SHOULDER =====================
             fig_shoulder = go.Figure()
-            # Plot session 1
-            for tt, v in curves_s1_by_type.items():
-                curves = v["shoulder"]
-                if not curves:
-                    continue
+            # Plot session 1 (Mound only)
+            curves = curves_s1["shoulder"]
+            if curves:
+                color_s1 = get_session_color(session1_date)
+                mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                fig_shoulder.add_trace(go.Scatter(
+                    x=interp_points, y=mean_curve,
+                    mode="lines",
+                    line=dict(color=color_s1, width=3),
+                    name=f"{session1_date} | Mound",
+                    legendgroup="s1_mound"
+                ))
 
-                color_tt = get_session_color(session1_date)
-
-                if display_mode_tab2 == "Grouped Average":
-                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
-                    fig_shoulder.add_trace(go.Scatter(
-                        x=interp_points, y=mean_curve,
-                        mode="lines",
-                        line=dict(color=color_tt, width=3),
-                        name=f"{session1_date} | {tt}",
-                        legendgroup=f"s1_{tt}"
-                    ))
-                else:
-                    for i, c in enumerate(curves):
-                        fig_shoulder.add_trace(go.Scatter(
-                            x=interp_points, y=c,
-                            mode="lines",
-                            line=dict(color=color_tt, width=2),
-                            opacity=0.35,
-                            name=f"{session1_date} | {tt} | Pitch {i+1}",
-                            legendgroup=f"s1_{tt}"
-                        ))
-
-            # Plot session 2
-            for tt, v in curves_s2_by_type.items():
-                curves = v["shoulder"]
-                if not curves:
-                    continue
-
-                color_tt = get_session_color(session2_date)
-
-                if display_mode_tab2 == "Grouped Average":
-                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
-                    fig_shoulder.add_trace(go.Scatter(
-                        x=interp_points, y=mean_curve,
-                        mode="lines",
-                        line=dict(color=color_tt, width=3),
-                        name=f"{session2_date} | {tt}",
-                        legendgroup=f"s2_{tt}"
-                    ))
-                else:
-                    for i, c in enumerate(curves):
-                        fig_shoulder.add_trace(go.Scatter(
-                            x=interp_points, y=c,
-                            mode="lines",
-                            line=dict(color=color_tt, width=2),
-                            opacity=0.35,
-                            name=f"{session2_date} | {tt} | Pitch {i+1}",
-                            legendgroup=f"s2_{tt}"
-                        ))
+            # Plot session 2 (Mound only)
+            curves = curves_s2["shoulder"]
+            if curves:
+                color_s2 = get_session_color(session2_date)
+                mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                fig_shoulder.add_trace(go.Scatter(
+                    x=interp_points, y=mean_curve,
+                    mode="lines",
+                    line=dict(color=color_s2, width=3),
+                    name=f"{session2_date} | Mound",
+                    legendgroup="s2_mound"
+                ))
             # Reference group
             if mean_ref_shoulder is not None:
                 fig_shoulder.add_trace(go.Scatter(
@@ -2493,16 +2359,12 @@ with tab2:
 
             # y-bounds for vertical markers
             yvals_sh = []
-            for v in curves_s1_by_type.values():
-                curves = v["shoulder"]
-                if curves:
-                    for c in curves:
-                        yvals_sh.extend(list(c))
-            for v in curves_s2_by_type.values():
-                curves = v["shoulder"]
-                if curves:
-                    for c in curves:
-                        yvals_sh.extend(list(c))
+            if curves_s1["shoulder"]:
+                for c in curves_s1["shoulder"]:
+                    yvals_sh.extend(list(c))
+            if curves_s2["shoulder"]:
+                for c in curves_s2["shoulder"]:
+                    yvals_sh.extend(list(c))
             if mean_ref_shoulder is not None:
                 yvals_sh += list(mean_ref_shoulder)
             y0_sh, y1_sh = float(np.nanmin(yvals_sh)), float(np.nanmax(yvals_sh))
@@ -2521,13 +2383,10 @@ with tab2:
             shapes_list = [dict(type="line", x0=50, x1=50, y0=y0_sh, y1=y1_sh, line=dict(dash="dot", color="gray", width=2))]
             # For peak arm energy, use mean across all session1 curves
             peak_arm_time_pct = None
-            all_peak = []
-            for tt in selected_throw_types_comp:
-                vals = peak_arm_time_pct_by_type.get(tt)
+            if s1_peak_arm_times:
+                vals = [v for v in s1_peak_arm_times if v is not None]
                 if vals:
-                    all_peak.extend([v for v in vals if v is not None])
-            if all_peak:
-                peak_arm_time_pct = float(np.nanmean(all_peak))
+                    peak_arm_time_pct = float(np.nanmean(vals))
             if peak_arm_time_pct is not None:
                 shapes_list.append(dict(type="line", x0=peak_arm_time_pct, x1=peak_arm_time_pct,
                                         y0=y0_sh, y1=y1_sh, line=dict(dash="dot", color="green", width=2)))
@@ -2542,61 +2401,31 @@ with tab2:
 
             # ===================== TORSO =====================
             fig_torso = go.Figure()
-            # Plot session 1
-            for tt, v in curves_s1_by_type.items():
-                curves = v["torso"]
-                if not curves:
-                    continue
+            # Plot session 1 (Mound only)
+            curves = curves_s1["torso"]
+            if curves:
+                color_s1 = get_session_color(session1_date)
+                mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                fig_torso.add_trace(go.Scatter(
+                    x=interp_points, y=mean_curve,
+                    mode="lines",
+                    line=dict(color=color_s1, width=3),
+                    name=f"{session1_date} | Mound",
+                    legendgroup="s1_mound"
+                ))
 
-                color_tt = get_session_color(session1_date)
-
-                if display_mode_tab2 == "Grouped Average":
-                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
-                    fig_torso.add_trace(go.Scatter(
-                        x=interp_points, y=mean_curve,
-                        mode="lines",
-                        line=dict(color=color_tt, width=3),
-                        name=f"{session1_date} | {tt}",
-                        legendgroup=f"s1_{tt}"
-                    ))
-                else:
-                    for i, c in enumerate(curves):
-                        fig_torso.add_trace(go.Scatter(
-                            x=interp_points, y=c,
-                            mode="lines",
-                            line=dict(color=color_tt, width=2),
-                            opacity=0.35,
-                            name=f"{session1_date} | {tt} | Pitch {i+1}",
-                            legendgroup=f"s1_{tt}"
-                        ))
-
-            # Plot session 2
-            for tt, v in curves_s2_by_type.items():
-                curves = v["torso"]
-                if not curves:
-                    continue
-
-                color_tt = get_session_color(session2_date)
-
-                if display_mode_tab2 == "Grouped Average":
-                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
-                    fig_torso.add_trace(go.Scatter(
-                        x=interp_points, y=mean_curve,
-                        mode="lines",
-                        line=dict(color=color_tt, width=3),
-                        name=f"{session2_date} | {tt}",
-                        legendgroup=f"s2_{tt}"
-                    ))
-                else:
-                    for i, c in enumerate(curves):
-                        fig_torso.add_trace(go.Scatter(
-                            x=interp_points, y=c,
-                            mode="lines",
-                            line=dict(color=color_tt, width=2),
-                            opacity=0.35,
-                            name=f"{session2_date} | {tt} | Pitch {i+1}",
-                            legendgroup=f"s2_{tt}"
-                        ))
+            # Plot session 2 (Mound only)
+            curves = curves_s2["torso"]
+            if curves:
+                color_s2 = get_session_color(session2_date)
+                mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                fig_torso.add_trace(go.Scatter(
+                    x=interp_points, y=mean_curve,
+                    mode="lines",
+                    line=dict(color=color_s2, width=3),
+                    name=f"{session2_date} | Mound",
+                    legendgroup="s2_mound"
+                ))
             # Reference group
             if mean_ref_torso is not None:
                 fig_torso.add_trace(go.Scatter(
@@ -2606,16 +2435,12 @@ with tab2:
                 ))
 
             yvals_to = []
-            for v in curves_s1_by_type.values():
-                curves = v["torso"]
-                if curves:
-                    for c in curves:
-                        yvals_to.extend(list(c))
-            for v in curves_s2_by_type.values():
-                curves = v["torso"]
-                if curves:
-                    for c in curves:
-                        yvals_to.extend(list(c))
+            if curves_s1["torso"]:
+                for c in curves_s1["torso"]:
+                    yvals_to.extend(list(c))
+            if curves_s2["torso"]:
+                for c in curves_s2["torso"]:
+                    yvals_to.extend(list(c))
             if mean_ref_torso is not None:
                 yvals_to += list(mean_ref_torso)
             y0_to, y1_to = float(np.nanmin(yvals_to)), float(np.nanmax(yvals_to))
@@ -2632,13 +2457,10 @@ with tab2:
             shapes_list_torso = [dict(type="line", x0=50, x1=50, y0=y0_to, y1=y1_to, line=dict(dash="dot", color="gray", width=2))]
             # For peak arm energy, use mean across all session1 curves
             peak_arm_time_pct_to = None
-            all_peak_to = []
-            for tt in selected_throw_types_comp:
-                vals = peak_arm_time_pct_by_type.get(tt)
+            if s1_peak_arm_times:
+                vals = [v for v in s1_peak_arm_times if v is not None]
                 if vals:
-                    all_peak_to.extend([v for v in vals if v is not None])
-            if all_peak_to:
-                peak_arm_time_pct_to = float(np.nanmean(all_peak_to))
+                    peak_arm_time_pct_to = float(np.nanmean(vals))
             if peak_arm_time_pct_to is not None:
                 shapes_list_torso.append(dict(type="line", x0=peak_arm_time_pct_to, x1=peak_arm_time_pct_to,
                                               y0=y0_to, y1=y1_to, line=dict(dash="dot", color="green", width=2)))
