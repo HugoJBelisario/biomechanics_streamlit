@@ -3222,6 +3222,14 @@ with tab3:
                 marker_symbol = "circle" if tt == "Mound" else "diamond"
                 marker_color = color if tt == "Mound" else "#ff7f0e"
 
+                # Hover label: match marker color, readable font
+                _font_color = "white"
+                try:
+                    if marker_color in ("#aec7e8", "#98df8a"):
+                        _font_color = "black"
+                except Exception:
+                    pass
+
                 # Scatter points
                 fig_010.add_trace(go.Scatter(
                     x=x,
@@ -3243,7 +3251,12 @@ with tab3:
                         x.values,
                         y.values
                     ]),
-                    hoverlabel=dict(namelength=-1)
+                    hoverlabel=dict(
+                        bgcolor=marker_color,
+                        font=dict(color=_font_color, size=13),
+                        align="left",
+                        namelength=-1
+                    )
                 ))
 
                 # Regression line
@@ -3271,7 +3284,6 @@ with tab3:
                 margin=dict(l=60, r=140, t=90, b=60),
                 hovermode="closest",
                 hoverlabel=dict(
-                    bgcolor="white",
                     font_size=13,
                     align="left",
                     namelength=-1
