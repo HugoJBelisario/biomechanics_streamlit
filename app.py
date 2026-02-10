@@ -2511,7 +2511,7 @@ with tab3:
         if "All Dates" in selected_dates or not selected_dates:
             placeholders_tt = ",".join(["%s"] * len(selected_throw_types_010))
             cur.execute(f"""
-                SELECT t.take_id, t.pitch_velo, a.handedness
+                SELECT t.take_id, t.pitch_velo, a.handedness, COALESCE(t.throw_type, 'Mound') AS throw_type
                 FROM takes t
                 JOIN athletes a ON t.athlete_id = a.athlete_id
                 WHERE a.athlete_name = %s
@@ -2524,7 +2524,7 @@ with tab3:
             placeholders_dates = ",".join(["%s"] * len(selected_dates))
             placeholders_tt = ",".join(["%s"] * len(selected_throw_types_010))
             cur.execute(f"""
-                SELECT t.take_id, t.pitch_velo, a.handedness
+                SELECT t.take_id, t.pitch_velo, a.handedness, COALESCE(t.throw_type, 'Mound') AS throw_type
                 FROM takes t
                 JOIN athletes a ON t.athlete_id = a.athlete_id
                 WHERE a.athlete_name = %s
@@ -2534,9 +2534,8 @@ with tab3:
             """, (pitcher, *selected_dates, *selected_throw_types_010))
             take_rows_010.extend(cur.fetchall())
 
-
     rows_010 = []
-    for take_id_010, pitch_velo_010, handedness_local in take_rows_010:
+    for take_id_010, pitch_velo_010, handedness_local, throw_type_local in take_rows_010:
         # Determine handedness-specific segment names for this take
         if handedness_local == "R":
             shoulder_velo_segment = "RT_SHOULDER_ANGULAR_VELOCITY"
@@ -3141,6 +3140,7 @@ with tab3:
 
         rows_010.append({
             "take_id": take_id_010,
+            "Throw Type": (throw_type_local if throw_type_local is not None else "Mound"),
             "Velocity": pitch_velo_010,
             selected_metric_010: metric_value
         })
@@ -3151,25 +3151,27 @@ with tab3:
 
         # Attach pitcher names and dates to df_010 (for labels & plotting)
         cur.execute(f"""
-            SELECT t.take_id, a.athlete_name, t.take_date
+            SELECT t.take_id, a.athlete_name, t.take_date, COALESCE(t.throw_type, 'Mound') AS throw_type
             FROM takes t
             JOIN athletes a ON t.athlete_id = a.athlete_id
             WHERE t.take_id IN ({",".join(["%s"] * len(df_010))})
         """, tuple(df_010["take_id"].tolist()))
 
         take_lookup = {
-            row[0]: (row[1], row[2].strftime("%Y-%m-%d"))
+            row[0]: (row[1], row[2].strftime("%Y-%m-%d"), row[3])
             for row in cur.fetchall()
         }
 
         df_010["Pitcher"] = df_010["take_id"].map(lambda x: take_lookup[x][0])
         df_010["Date"]    = df_010["take_id"].map(lambda x: take_lookup[x][1])
+        df_010["Throw Type"] = df_010["take_id"].map(lambda x: take_lookup[x][2])
 
         # Build rich, human-readable exclude labels
         def make_exclude_label(row):
             return (
                 f"{row['Pitcher']} | "
                 f"{row['Date']} | "
+                f"{row['Throw Type']} | "
                 f"{row['Velocity']:.1f} mph | "
                 f"{row[selected_metric_010]:.2f}"
             )
@@ -3201,7 +3203,7 @@ with tab3:
             import plotly.express as px
             color_cycle = px.colors.qualitative.Plotly
             color_idx = 0
-            for (pitcher_name, date_str), sub in df_010.groupby(["Pitcher", "Date"]):
+            for (pitcher_name, date_str, tt), sub in df_010.groupby(["Pitcher", "Date", "Throw Type"]):
                 x = pd.to_numeric(sub["Velocity"], errors="coerce")
                 y = pd.to_numeric(sub[selected_metric_010], errors="coerce")
                 mask = (~x.isna()) & (~y.isna())
@@ -3217,14 +3219,16 @@ with tab3:
                 y_fit = slope * x_fit + intercept
 
                 color = color_cycle[color_idx % len(color_cycle)]
+                marker_symbol = "circle" if tt == "Mound" else "diamond"
+                marker_color = color if tt == "Mound" else "#ff7f0e"
 
                 # Scatter points
                 fig_010.add_trace(go.Scatter(
                     x=x,
                     y=y,
                     mode="markers",
-                    marker=dict(color=color),
-                    name=f"{pitcher_name} | {date_str}"
+                    marker=dict(color=marker_color, symbol=marker_symbol, size=10),
+                    name=f"{pitcher_name} | {date_str} | {tt}"
                 ))
 
                 # Regression line
@@ -3232,8 +3236,8 @@ with tab3:
                     x=x_fit,
                     y=y_fit,
                     mode="lines",
-                    line=dict(color=color, dash="dash"),
-                    name=f"R² = {r_value**2:.2f}"
+                    line=dict(color=marker_color, dash="dash"),
+                    name=f"{pitcher_name} | {date_str} | {tt} | R² = {r_value**2:.2f}"
                 ))
                 color_idx += 1
 
