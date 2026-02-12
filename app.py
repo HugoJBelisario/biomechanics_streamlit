@@ -2738,7 +2738,6 @@ with tab3:
 
             vals = np.array([raw_val])
         elif selected_metric_010 == "Max Shoulder External Rotation Velocity":
-        elif selected_metric_010 == "Max Shoulder External Rotation Velocity":
             z_vals = arr[:, 2]
             # ---------------------------------------------
             # ER-centered windowing for throwing arm metrics
