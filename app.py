@@ -3166,12 +3166,25 @@ with tab3:
         elif selected_metric_010 == "Max Shoulder External Rotation":
             z_vals = arr[:, 2]
 
-            # Use ER frame selected from arm-energy anchor
-            if sh_er_max_frame_010 is not None and frames.size > 0:
-                nearest_idx = int(np.argmin(np.abs(frames - int(sh_er_max_frame_010))))
+            # -------------------------------------------------
+            # Pulldown-safe MER anchor (match Tab 1 logic)
+            # -------------------------------------------------
+            if throw_type_local == "Pulldown":
+                mer_anchor = get_shoulder_er_max_frame(
+                    take_id_010,
+                    handedness_local,
+                    cur,
+                    throw_type="Pulldown"
+                )
+            else:
+                mer_anchor = sh_er_max_frame_010
+
+            # Sample z at MER frame
+            if mer_anchor is not None and frames.size > 0:
+                nearest_idx = int(np.argmin(np.abs(frames - int(mer_anchor))))
                 raw_val = float(z_vals[nearest_idx])
             else:
-                # Fallback only if ER frame unavailable
+                # Fallback only if MER unavailable
                 if handedness_local == "R":
                     raw_val = float(np.nanmin(z_vals))
                 else:
