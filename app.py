@@ -3246,13 +3246,36 @@ with tab3:
             vals = np.array([abs(raw_er)])
 
         elif selected_metric_010 == "Max Hand Speed":
-            # Hand CG speed magnitude (no sign, no windowing)
+            # Hand CG speed magnitude
             # arr columns: x, y, z CG velocity components
             x_vals = arr[:, 0]
             y_vals = arr[:, 1]
             z_vals = arr[:, 2]
             speed = np.sqrt(x_vals**2 + y_vals**2 + z_vals**2)
-            vals = np.array([np.nanmax(speed)])
+
+            # -------------------------------------------------
+            # BR-anchored windowing (pulldown-safe)
+            # Window: BR - 30 frames -> BR + 10 frames
+            # -------------------------------------------------
+            if throw_type_local == "Pulldown":
+                br_anchor = get_ball_release_frame_pulldown(take_id_010, handedness_local, fp_frame_010, cur)
+            else:
+                br_anchor = br_frame_010
+
+            if br_anchor is not None:
+                brf = int(br_anchor)
+                win_mask = (
+                    (frames >= brf - 30) &
+                    (frames <= brf + 10)
+                )
+                if np.any(win_mask):
+                    speed_w = speed[win_mask]
+                else:
+                    speed_w = speed
+            else:
+                speed_w = speed
+
+            vals = np.array([np.nanmax(speed_w)])
         # Convert vals to a scalar for storage
         raw_value = float(np.nanmax(vals)) if vals.size > 0 else np.nan
 
