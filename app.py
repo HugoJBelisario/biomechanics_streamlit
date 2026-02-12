@@ -3100,15 +3100,24 @@ with tab3:
             # ---------------------------------------------
             # ER-centered windowing for throwing arm metrics
             # ---------------------------------------------
-            if sh_er_max_frame_010 is not None:
-                er_frame = int(sh_er_max_frame_010)
+            if throw_type_local == "Pulldown":
+                mer_anchor = get_shoulder_er_max_frame(
+                    take_id_010,
+                    handedness_local,
+                    cur,
+                    throw_type="Pulldown"
+                )
+            else:
+                mer_anchor = sh_er_max_frame_010
+
+            if mer_anchor is not None:
+                er_frame = int(mer_anchor)
                 win_mask = (
                     (frames >= er_frame - 50) &
                     (frames <= er_frame + 30)
                 )
                 # Only apply window if it yields data
                 if np.any(win_mask):
-                    frames = frames[win_mask]
                     x_vals = x_vals[win_mask]
             # Always take the most negative value (both handedness)
             vals = np.array([np.nanmin(x_vals)])
