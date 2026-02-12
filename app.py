@@ -3199,16 +3199,48 @@ with tab3:
             x_vals = arr[:, 0]
             z_vals = arr[:, 2]
 
-            # Determine HA peak frame based on handedness
+            # ---------------------------------------------
+            # MER-windowed HA peak -> sample ER at that HA
+            # Window: MER - 50 frames -> MER
+            # - Pulldown: pulldown-aware MER anchor
+            # - Mound: existing MER anchor
+            # ---------------------------------------------
+            if throw_type_local == "Pulldown":
+                mer_anchor = get_shoulder_er_max_frame(
+                    take_id_010,
+                    handedness_local,
+                    cur,
+                    throw_type="Pulldown"
+                )
+            else:
+                mer_anchor = sh_er_max_frame_010
+
+            if mer_anchor is not None:
+                merf = int(mer_anchor)
+                win_mask = (
+                    (frames >= merf - 50) &
+                    (frames <= merf)
+                )
+                if np.any(win_mask):
+                    x_w = x_vals[win_mask]
+                    z_w = z_vals[win_mask]
+                else:
+                    x_w = x_vals
+                    z_w = z_vals
+            else:
+                x_w = x_vals
+                z_w = z_vals
+
+            # Determine HA peak index based on handedness (within window)
             if handedness_local == "R":
                 # Right-handed: HA = most negative X
-                ha_idx = np.nanargmin(x_vals)
+                ha_idx = int(np.nanargmin(x_w))
             else:
                 # Left-handed: HA = most positive X
-                ha_idx = np.nanargmax(x_vals)
+                ha_idx = int(np.nanargmax(x_w))
 
-            # Extract ER at that frame: z_data
-            raw_er = z_vals[ha_idx]
+            # Extract ER at that HA index
+            raw_er = float(z_w[ha_idx])
 
             # Normalize for UI (absolute)
             vals = np.array([abs(raw_er)])
