@@ -2689,31 +2689,55 @@ with tab3:
         frames = arr[:, 0].astype(int)
         arr = arr[:, 1:]   # now x = arr[:,0], y = arr[:,1], z = arr[:,2]
 
-        # Determine the shoulder IR velocity peak frame (for time restriction)
-        z_vals = arr[:, 2]
-        sh_ir_peak_idx = np.nanargmax(np.abs(z_vals))
-        sh_ir_peak_frame = frames[sh_ir_peak_idx]
+        # -------------------------------------------------
+        # Tab 3 (0-10 Report): Max Shoulder IR Velo
+        # Use the SAME pulldown-safe logic as Tab 1
+        # -------------------------------------------------
         if selected_metric_010 == "Max Shoulder Internal Rotation Velocity":
             z_vals = arr[:, 2]
-            # ---------------------------------------------
-            # ER-centered windowing for throwing arm metrics
-            # ---------------------------------------------
-            if sh_er_max_frame_010 is not None:
-                er_frame = int(sh_er_max_frame_010)
+
+            # Determine throw-type specific Shoulder ER max frame
+            # - Mound: use existing helper
+            # - Pulldown: use pulldown-aware helper windowing
+            if throw_type_local == "Pulldown":
+                sh_er_anchor = get_shoulder_er_max_frame(
+                    take_id_010,
+                    handedness_local,
+                    cur,
+                    throw_type="Pulldown"
+                )
+            else:
+                sh_er_anchor = sh_er_max_frame_010
+
+            # If we have an ER anchor, restrict the IR peak search to a tight window
+            # around layback. This matches Tab 1's intent: prevent early/late spikes
+            # from hijacking the true IR peak.
+            if sh_er_anchor is not None:
+                er_frame = int(sh_er_anchor)
                 win_mask = (
                     (frames >= er_frame - 50) &
                     (frames <= er_frame + 50)
                 )
-                # Only apply window if it yields data
                 if np.any(win_mask):
-                    frames = frames[win_mask]
-                    z_vals = z_vals[win_mask]
-            if handedness_local == "R":
-                # RHP IR = most positive
-                vals = np.array([np.nanmax(z_vals)])
+                    frames_w = frames[win_mask]
+                    z_w = z_vals[win_mask]
+                else:
+                    frames_w = frames
+                    z_w = z_vals
             else:
-                # LHP IR = most negative
-                vals = np.array([np.nanmin(z_vals)])
+                frames_w = frames
+                z_w = z_vals
+
+            # Handedness-aware IR peak
+            if handedness_local == "R":
+                # RHP IR velocity = most positive
+                raw_val = np.nanmax(z_w)
+            else:
+                # LHP IR velocity = most negative
+                raw_val = np.nanmin(z_w)
+
+            vals = np.array([raw_val])
+        elif selected_metric_010 == "Max Shoulder External Rotation Velocity":
         elif selected_metric_010 == "Max Shoulder External Rotation Velocity":
             z_vals = arr[:, 2]
             # ---------------------------------------------
