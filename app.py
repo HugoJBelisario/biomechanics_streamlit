@@ -2696,27 +2696,20 @@ with tab3:
         if selected_metric_010 == "Max Shoulder Internal Rotation Velocity":
             z_vals = arr[:, 2]
 
-            # Determine throw-type specific Shoulder ER max frame
-            # - Mound: use existing helper
-            # - Pulldown: use pulldown-aware helper windowing
+            # -------------------------------------------------
+            # BR-anchored windowing (pulldown-safe)
+            # Window: BR +/- 20 frames
+            # -------------------------------------------------
             if throw_type_local == "Pulldown":
-                sh_er_anchor = get_shoulder_er_max_frame(
-                    take_id_010,
-                    handedness_local,
-                    cur,
-                    throw_type="Pulldown"
-                )
+                br_anchor = get_ball_release_frame_pulldown(take_id_010, handedness_local, fp_frame_010, cur)
             else:
-                sh_er_anchor = sh_er_max_frame_010
+                br_anchor = br_frame_010
 
-            # If we have an ER anchor, restrict the IR peak search to a tight window
-            # around layback. This matches Tab 1's intent: prevent early/late spikes
-            # from hijacking the true IR peak.
-            if sh_er_anchor is not None:
-                er_frame = int(sh_er_anchor)
+            if br_anchor is not None:
+                brf = int(br_anchor)
                 win_mask = (
-                    (frames >= er_frame - 50) &
-                    (frames <= er_frame + 50)
+                    (frames >= brf - 20) &
+                    (frames <= brf + 20)
                 )
                 if np.any(win_mask):
                     frames_w = frames[win_mask]
@@ -2739,25 +2732,38 @@ with tab3:
             vals = np.array([raw_val])
         elif selected_metric_010 == "Max Shoulder External Rotation Velocity":
             z_vals = arr[:, 2]
-            # ---------------------------------------------
-            # ER-centered windowing for throwing arm metrics
-            # ---------------------------------------------
-            if sh_er_max_frame_010 is not None:
-                er_frame = int(sh_er_max_frame_010)
-                win_mask = (
-                    (frames >= er_frame - 50) &
-                    (frames <= er_frame + 30)
-                )
-                # Only apply window if it yields data
-                if np.any(win_mask):
-                    frames = frames[win_mask]
-                    z_vals = z_vals[win_mask]
-            if handedness_local == "R":
-                # RHP ER = most negative
-                vals = np.array([np.nanmin(z_vals)])
+
+            # -------------------------------------------------
+            # BR-anchored windowing (pulldown-safe)
+            # Window: BR +/- 20 frames
+            # -------------------------------------------------
+            if throw_type_local == "Pulldown":
+                br_anchor = get_ball_release_frame_pulldown(take_id_010, handedness_local, fp_frame_010, cur)
             else:
-                # LHP ER = most positive
-                vals = np.array([np.nanmax(z_vals)])
+                br_anchor = br_frame_010
+
+            if br_anchor is not None:
+                brf = int(br_anchor)
+                win_mask = (
+                    (frames >= brf - 20) &
+                    (frames <= brf + 20)
+                )
+                if np.any(win_mask):
+                    z_w = z_vals[win_mask]
+                else:
+                    z_w = z_vals
+            else:
+                z_w = z_vals
+
+            # Handedness-aware ER peak
+            if handedness_local == "R":
+                # RHP ER velocity = most negative
+                raw_val = np.nanmin(z_w)
+            else:
+                # LHP ER velocity = most positive
+                raw_val = np.nanmax(z_w)
+
+            vals = np.array([raw_val])
         elif selected_metric_010 == "Max Elbow Extension Velocity":
             x_vals = arr[:, 0]
             # ---------------------------------------------
