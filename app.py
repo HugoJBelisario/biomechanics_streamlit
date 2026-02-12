@@ -2796,7 +2796,39 @@ with tab3:
             vals = np.array([np.nanmin(x_vals)])
         elif selected_metric_010 == "Max Torso Angular Velocity":
             if torso_axis == "X (Extension)":
-                vals = np.array([np.nanmax(arr[:, 0])])
+                x_vals = arr[:, 0]
+
+                # ---------------------------------------------
+                # MER-windowed Torso X (Extension) angular velocity
+                # Window: MER - 50 frames -> MER + 20 frames
+                # - Pulldown: pulldown-aware MER anchor
+                # - Mound: existing MER anchor
+                # ---------------------------------------------
+                if throw_type_local == "Pulldown":
+                    mer_anchor = get_shoulder_er_max_frame(
+                        take_id_010,
+                        handedness_local,
+                        cur,
+                        throw_type="Pulldown"
+                    )
+                else:
+                    mer_anchor = sh_er_max_frame_010
+
+                if mer_anchor is not None:
+                    merf = int(mer_anchor)
+                    win_mask = (
+                        (frames >= merf - 50) &
+                        (frames <= merf + 20)
+                    )
+                    if np.any(win_mask):
+                        x_w = x_vals[win_mask]
+                    else:
+                        x_w = x_vals
+                else:
+                    x_w = x_vals
+
+                # Extension = most positive X
+                vals = np.array([np.nanmax(x_w)])
 
             elif torso_axis == "X (Flexion)":
                 vals = np.array([np.nanmin(arr[:, 0])])
