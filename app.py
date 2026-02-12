@@ -2767,18 +2767,31 @@ with tab3:
         elif selected_metric_010 == "Max Elbow Extension Velocity":
             x_vals = arr[:, 0]
             # ---------------------------------------------
-            # ER-centered windowing for throwing arm metrics
+            # Windowing for throwing arm metrics
+            # - Pulldown: BR - 30 -> BR + 10
+            # - Mound: ER-centered (existing logic)
             # ---------------------------------------------
-            if sh_er_max_frame_010 is not None:
-                er_frame = int(sh_er_max_frame_010)
-                win_mask = (
-                    (frames >= er_frame - 50) &
-                    (frames <= er_frame + 30)
-                )
-                # Only apply window if it yields data
-                if np.any(win_mask):
-                    frames = frames[win_mask]
-                    x_vals = x_vals[win_mask]
+            if throw_type_local == "Pulldown":
+                br_anchor = get_ball_release_frame_pulldown(take_id_010, handedness_local, fp_frame_010, cur)
+                if br_anchor is not None:
+                    brf = int(br_anchor)
+                    win_mask = (
+                        (frames >= brf - 30) &
+                        (frames <= brf + 10)
+                    )
+                    if np.any(win_mask):
+                        x_vals = x_vals[win_mask]
+            else:
+                # ER-centered windowing for Mound throws
+                if sh_er_max_frame_010 is not None:
+                    er_frame = int(sh_er_max_frame_010)
+                    win_mask = (
+                        (frames >= er_frame - 50) &
+                        (frames <= er_frame + 30)
+                    )
+                    # Only apply window if it yields data
+                    if np.any(win_mask):
+                        x_vals = x_vals[win_mask]
             # Elbow extension velocity: always the most negative value (both handedness)
             vals = np.array([np.nanmin(x_vals)])
         elif selected_metric_010 == "Max Torso Angular Velocity":
