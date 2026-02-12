@@ -3124,12 +3124,41 @@ with tab3:
         elif selected_metric_010 == "Max Shoulder Horizontal Abduction":
             x_vals = arr[:, 0]
 
-            if handedness_local == "R":
-                # Right-handed: use most negative
-                raw_val = np.nanmin(x_vals)
+            # ---------------------------------------------
+            # MER-windowed Horizontal Abduction
+            # Window: MER - 50 frames -> MER
+            # - Pulldown: pulldown-aware MER anchor
+            # - Mound: existing MER anchor
+            # ---------------------------------------------
+            if throw_type_local == "Pulldown":
+                mer_anchor = get_shoulder_er_max_frame(
+                    take_id_010,
+                    handedness_local,
+                    cur,
+                    throw_type="Pulldown"
+                )
             else:
-                # Left-handed: use most positive
-                raw_val = np.nanmax(x_vals)
+                mer_anchor = sh_er_max_frame_010
+
+            if mer_anchor is not None:
+                merf = int(mer_anchor)
+                win_mask = (
+                    (frames >= merf - 50) &
+                    (frames <= merf)
+                )
+                if np.any(win_mask):
+                    x_w = x_vals[win_mask]
+                else:
+                    x_w = x_vals
+            else:
+                x_w = x_vals
+
+            if handedness_local == "R":
+                # Right-handed: HA = most negative
+                raw_val = np.nanmin(x_w)
+            else:
+                # Left-handed: HA = most positive
+                raw_val = np.nanmax(x_w)
 
             # Normalize for UI
             vals = np.array([abs(raw_val)])
