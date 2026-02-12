@@ -2814,12 +2814,42 @@ with tab3:
 
             elif torso_axis == "Z":
                 z_vals = arr[:, 2]
+
+                # ---------------------------------------------
+                # MER-windowed Torso Z angular velocity
+                # Window: MER +/- 30 frames
+                # - Pulldown: pulldown-aware MER anchor
+                # - Mound: existing MER anchor
+                # ---------------------------------------------
+                if throw_type_local == "Pulldown":
+                    mer_anchor = get_shoulder_er_max_frame(
+                        take_id_010,
+                        handedness_local,
+                        cur,
+                        throw_type="Pulldown"
+                    )
+                else:
+                    mer_anchor = sh_er_max_frame_010
+
+                if mer_anchor is not None:
+                    merf = int(mer_anchor)
+                    win_mask = (
+                        (frames >= merf - 30) &
+                        (frames <= merf + 30)
+                    )
+                    if np.any(win_mask):
+                        z_w = z_vals[win_mask]
+                    else:
+                        z_w = z_vals
+                else:
+                    z_w = z_vals
+
                 if handedness_local == "R":
                     # RHP: most positive Z
-                    vals = np.array([np.nanmax(z_vals)])
+                    vals = np.array([np.nanmax(z_w)])
                 else:
                     # LHP: most negative Z
-                    vals = np.array([np.nanmin(z_vals)])
+                    vals = np.array([np.nanmin(z_w)])
 
             else:
                 vals = np.array([])
