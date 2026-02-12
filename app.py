@@ -2735,7 +2735,7 @@ with tab3:
 
             # -------------------------------------------------
             # BR-anchored windowing (pulldown-safe)
-            # Window: BR +/- 20 frames
+            # Window: BR - 50 frames -> BR
             # -------------------------------------------------
             if throw_type_local == "Pulldown":
                 br_anchor = get_ball_release_frame_pulldown(take_id_010, handedness_local, fp_frame_010, cur)
@@ -2745,8 +2745,8 @@ with tab3:
             if br_anchor is not None:
                 brf = int(br_anchor)
                 win_mask = (
-                    (frames >= brf - 20) &
-                    (frames <= brf + 20)
+                    (frames >= brf - 50) &
+                    (frames <= brf)
                 )
                 if np.any(win_mask):
                     z_w = z_vals[win_mask]
