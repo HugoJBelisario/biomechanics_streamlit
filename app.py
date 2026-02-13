@@ -3129,15 +3129,40 @@ with tab3:
             else:
                 vals = np.array([np.nan])
         elif selected_metric_010 == "Pelvis Anterior Tilt at Ball Release":
-            # Pelvis anterior tilt = pelvis X-angle (positive tilt) at BR frame
-            x_vals = arr[:, 0]
-            frame_vals = frames
+            # Pelvis anterior tilt = PELVIS_ANGLE X at BR frame
+            # Pull directly from ORIGINAL/PELVIS_ANGLE to avoid any segment mismatch.
 
-            if br_frame_010 is not None and frame_vals.size > 0:
-                # nearest-frame match
-                idx = np.argmin(np.abs(frame_vals - br_frame_010))
-                pel_x_at_br = x_vals[idx]
-                vals = np.array([pel_x_at_br])
+            if throw_type_local == "Pulldown":
+                br_anchor = get_ball_release_frame_pulldown(
+                    take_id_010,
+                    handedness_local,
+                    fp_frame_010,
+                    cur
+                )
+            else:
+                br_anchor = br_frame_010
+
+            if br_anchor is not None:
+                brf = int(br_anchor)
+                cur.execute("""
+                    SELECT ts.x_data
+                    FROM time_series_data ts
+                    JOIN segments s ON ts.segment_id = s.segment_id
+                    JOIN categories c ON ts.category_id = c.category_id
+                    WHERE ts.take_id = %s
+                      AND c.category_name = 'ORIGINAL'
+                      AND s.segment_name = 'PELVIS_ANGLE'
+                      AND ts.x_data IS NOT NULL
+                    ORDER BY
+                      CASE WHEN ts.frame = %s THEN 0 ELSE 1 END,
+                      ABS(ts.frame - %s)
+                    LIMIT 1
+                """, (take_id_010, brf, brf))
+                row = cur.fetchone()
+                if row is not None:
+                    vals = np.array([float(row[0])])
+                else:
+                    vals = np.array([np.nan])
             else:
                 vals = np.array([np.nan])
         elif selected_metric_010 == "Max Torso–Pelvis Angle (Z)":
