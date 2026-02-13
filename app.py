@@ -3133,19 +3133,9 @@ with tab3:
             x_vals = arr[:, 0]
             frame_vals = frames
 
-            if throw_type_local == "Pulldown":
-                br_anchor = get_ball_release_frame_pulldown(
-                    take_id_010,
-                    handedness_local,
-                    fp_frame_010,
-                    cur
-                )
-            else:
-                br_anchor = br_frame_010
-
-            if br_anchor is not None and frame_vals.size > 0:
+            if br_frame_010 is not None and frame_vals.size > 0:
                 # nearest-frame match
-                idx = np.argmin(np.abs(frame_vals - br_anchor))
+                idx = np.argmin(np.abs(frame_vals - br_frame_010))
                 pel_x_at_br = x_vals[idx]
                 vals = np.array([pel_x_at_br])
             else:
