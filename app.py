@@ -3258,6 +3258,30 @@ with tab3:
             vals = np.array([abs(raw_val)])
         elif selected_metric_010 == "Max Torso–Pelvis Angle (Y-Glove Side)":
             y_vals = arr[:, 1]
+
+            # Ball-release windowing for both throw types:
+            # - Pulldown: use pulldown BR helper
+            # - Mound: use standard BR frame
+            if throw_type_local == "Pulldown":
+                pd_fp = get_foot_plant_frame(take_id_010, handedness_local, cur)
+                br_anchor = get_ball_release_frame_pulldown(
+                    take_id_010,
+                    handedness_local,
+                    pd_fp,
+                    cur
+                )
+            else:
+                br_anchor = br_frame_010
+
+            if br_anchor is not None:
+                brf = int(br_anchor)
+                win_mask = (
+                    (frames >= brf - 10) &
+                    (frames <= brf + 10)
+                )
+                if np.any(win_mask):
+                    y_vals = y_vals[win_mask]
+
             if handedness_local == "R":
                 # Right-handed: Glove Side = most negative Y
                 vals = np.array([np.nanmin(y_vals)])
