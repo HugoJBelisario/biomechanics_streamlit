@@ -3291,6 +3291,24 @@ with tab3:
 
         elif selected_metric_010 == "Max Torso–Pelvis Angle (Y-Arm Side)":
             y_vals = arr[:, 1]
+
+            # Foot-plant windowing for both throw types:
+            # - Pulldown: use Tab 1 pulldown FP helper
+            # - Mound: use Tab 3 mound FP anchor
+            if throw_type_local == "Pulldown":
+                fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+            else:
+                fp_anchor = fp_frame_010
+
+            if fp_anchor is not None:
+                fpf = int(fp_anchor)
+                win_mask = (
+                    (frames >= fpf - 40) &
+                    (frames <= fpf + 10)
+                )
+                if np.any(win_mask):
+                    y_vals = y_vals[win_mask]
+
             if handedness_local == "R":
                 # Right-handed: Arm Side = most positive Y
                 vals = np.array([np.nanmax(y_vals)])
