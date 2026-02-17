@@ -3048,9 +3048,20 @@ with tab3:
         elif selected_metric_010 == "Max Knee Extension Velocity":
             x_vals = arr[:, 0]  # knee extension velocity typically in X
 
-            # Restrict window to frames BEFORE Shoulder ER Max
-            if sh_er_max_frame_010 is not None:
-                mask = frames < sh_er_max_frame_010
+            # Foot-plant windowing for both throw types:
+            # - Pulldown: use Tab 1 pulldown FP helper
+            # - Mound: use Tab 3 mound FP anchor
+            if throw_type_local == "Pulldown":
+                fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+            else:
+                fp_anchor = fp_frame_010
+
+            if fp_anchor is not None:
+                fpf = int(fp_anchor)
+                mask = (
+                    (frames >= fpf - 50) &
+                    (frames <= fpf)
+                )
                 window_vals = x_vals[mask]
             else:
                 window_vals = x_vals
@@ -3059,7 +3070,7 @@ with tab3:
             if window_vals.size == 0:
                 window_vals = x_vals
 
-            # Most positive maxima before ER max
+            # Most positive peak in FP window
             vals = np.array([np.nanmax(window_vals)])
         elif selected_metric_010 == "Max Lead Knee Extension Velocity":
             # Simplified window: BR ± 25 frames
