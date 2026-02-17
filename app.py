@@ -3063,9 +3063,20 @@ with tab3:
             vals = np.array([np.nanmax(window_vals)])
         elif selected_metric_010 == "Max Lead Knee Extension Velocity":
             # Simplified window: BR ± 25 frames
-            if br_frame_010 is not None:
-                start = max(0, br_frame_010 - 25)
-                end = br_frame_010 + 25
+            if throw_type_local == "Pulldown":
+                pd_fp = get_foot_plant_frame(take_id_010, handedness_local, cur)
+                br_anchor = get_ball_release_frame_pulldown(
+                    take_id_010,
+                    handedness_local,
+                    pd_fp,
+                    cur
+                )
+            else:
+                br_anchor = br_frame_010
+
+            if br_anchor is not None:
+                start = max(0, int(br_anchor) - 25)
+                end = int(br_anchor) + 25
                 mask = (frames >= start) & (frames <= end)
 
                 # x_data = knee extension velocity (using LT/RT knee angular velocity depending on handedness)
@@ -3081,9 +3092,20 @@ with tab3:
         elif selected_metric_010 == "Max Ankle Extension Velocity":
             x_vals = arr[:, 0]  # ankle extension velocity typically in X
 
-            # Restrict window to frames BEFORE Shoulder ER Max
-            if sh_er_max_frame_010 is not None:
-                mask = frames < sh_er_max_frame_010
+            # Foot-plant windowing for both throw types:
+            # - Pulldown: use Tab 1 pulldown FP helper
+            # - Mound: use Tab 3 mound FP anchor
+            if throw_type_local == "Pulldown":
+                fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+            else:
+                fp_anchor = fp_frame_010
+
+            if fp_anchor is not None:
+                fpf = int(fp_anchor)
+                mask = (
+                    (frames >= fpf - 40) &
+                    (frames <= fpf + 10)
+                )
                 window_vals = x_vals[mask]
             else:
                 window_vals = x_vals
@@ -3092,7 +3114,7 @@ with tab3:
             if window_vals.size == 0:
                 window_vals = x_vals
 
-            # Most negative maxima before ER max (true ankle extension peak)
+            # Most negative peak in FP window (true ankle extension peak)
             vals = np.array([np.nanmin(window_vals)])
         elif selected_metric_010 == "Pelvis Posterior Tilt at Peak Knee Height":
             # Pelvis X-angle at peak glove-side knee height pre-BR
