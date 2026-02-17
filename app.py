@@ -3194,16 +3194,32 @@ with tab3:
         elif selected_metric_010 == "Max Torso–Pelvis Angle (X-Extended)":
             x_vals = arr[:, 0]
 
-            # Case 1 — if any positive values exist → choose the most positive
-            pos_vals = x_vals[x_vals > 0]
-            if pos_vals.size > 0:
-                raw_val = np.nanmax(pos_vals)
+            # Foot-plant windowing for both throw types:
+            # - Pulldown: use Tab 1 pulldown FP helper
+            # - Mound: use Tab 3 mound FP anchor
+            if throw_type_local == "Pulldown":
+                fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
             else:
-                # Case 2 — all values are negative → choose the value closest to 0 (largest)
-                raw_val = np.nanmax(x_vals)
+                fp_anchor = fp_frame_010
+
+            if fp_anchor is not None:
+                fpf = int(fp_anchor)
+                win_mask = (
+                    (frames >= fpf - 20) &
+                    (frames <= fpf + 20)
+                )
+                if np.any(win_mask):
+                    x_w = x_vals[win_mask]
+                else:
+                    x_w = x_vals
+            else:
+                x_w = x_vals
+
+            # Most positive peak within the FP window
+            raw_val = np.nanmax(x_w)
 
             # Normalize for UI
-            vals = np.array([abs(raw_val)])
+            vals = np.array([raw_val])
 
         elif selected_metric_010 == "Max Torso–Pelvis Angle (X-Flexed)":
             # Always take the most negative value (both handedness)
