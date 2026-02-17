@@ -3241,8 +3241,8 @@ with tab3:
             if br_anchor is not None:
                 brf = int(br_anchor)
                 win_mask = (
-                    (frames >= brf - 20) &
-                    (frames <= brf + 20)
+                    (frames >= brf - 10) &
+                    (frames <= brf + 30)
                 )
                 if np.any(win_mask):
                     x_w = x_vals[win_mask]
