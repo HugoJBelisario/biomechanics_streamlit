@@ -3030,8 +3030,13 @@ with tab3:
                 if z_window.size == 0:
                     z_window = z_vals
 
-                # Return the positive maxima within this window
-                vals = np.array([np.nanmax(z_window)])
+                # Handedness-separated Z peak:
+                # - RHP: most negative
+                # - LHP: most positive
+                if handedness_local == "R":
+                    vals = np.array([np.nanmin(z_window)])
+                else:
+                    vals = np.array([np.nanmax(z_window)])
 
             else:
                 vals = np.array([])
