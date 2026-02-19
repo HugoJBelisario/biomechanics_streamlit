@@ -2928,29 +2928,66 @@ with tab3:
             # X-axis split into Extension (positive) and Flexion (negative)
             if torso_pelvis_axis == "X (Extension)":
                 x_vals = arr[:, 0]
+
+                # FP-windowed torso-pelvis X extension
+                # Window: FP +/- 30 frames
+                if throw_type_local == "Pulldown":
+                    fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+                else:
+                    fp_anchor = fp_frame_010
+
+                if fp_anchor is not None:
+                    fpf = int(fp_anchor)
+                    mask = (
+                        (frames >= fpf - 30) &
+                        (frames <= fpf + 30)
+                    )
+                    if np.any(mask):
+                        x_vals = x_vals[mask]
+
                 raw_val = np.nanmax(x_vals)
                 vals = np.array([raw_val])
 
 
             elif torso_pelvis_axis == "X (Flexion)":
                 x_vals = arr[:, 0]
+
+                # FP-windowed torso-pelvis X flexion
+                # Window: FP - 20 frames -> FP + 50 frames
+                if throw_type_local == "Pulldown":
+                    fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+                else:
+                    fp_anchor = fp_frame_010
+
+                if fp_anchor is not None:
+                    fpf = int(fp_anchor)
+                    mask = (
+                        (frames >= fpf - 20) &
+                        (frames <= fpf + 50)
+                    )
+                    if np.any(mask):
+                        x_vals = x_vals[mask]
+
                 raw_val = np.nanmin(x_vals)
                 vals = np.array([abs(raw_val)])  # normalize flexion to positive
 
-            # Y-axis: handedness-aware, pre-BR windowed logic
+            # Y-axis: handedness-aware, FP-windowed logic
             elif torso_pelvis_axis == "Y":
-                # ---------------------------------------------
-                # Pre-BR windowed torso–pelvis Y angular velocity
-                # Glove-side peak, normalized to POSITIVE
-                # Window: 50 frames before Ball Release
-                # ---------------------------------------------
                 y_vals = arr[:, 1]
-                frame_vals = frames
 
-                if br_frame_010 is not None:
-                    start = br_frame_010 - 50
-                    end = br_frame_010
-                    mask = (frame_vals >= start) & (frame_vals <= end)
+                # FP-windowed torso-pelvis Y
+                # Window: FP +/- 30 frames
+                if throw_type_local == "Pulldown":
+                    fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+                else:
+                    fp_anchor = fp_frame_010
+
+                if fp_anchor is not None:
+                    fpf = int(fp_anchor)
+                    mask = (
+                        (frames >= fpf - 30) &
+                        (frames <= fpf + 30)
+                    )
                     y_window = y_vals[mask]
                 else:
                     y_window = y_vals
@@ -2969,13 +3006,22 @@ with tab3:
                 # Normalize to positive magnitude
                 vals = np.array([abs(raw_val)])
 
-            # Z-axis: always return the positive maxima for the Z component, but restrict to values before Shoulder ER Max frame
+            # Z-axis: FP-windowed, positive maxima
             elif torso_pelvis_axis == "Z":
                 z_vals = arr[:, 2]
 
-                # Reapply window: ONLY use values before Shoulder ER Max frame
-                if sh_er_max_frame_010 is not None:
-                    mask = frames < sh_er_max_frame_010
+                # Window: FP - 50 frames -> FP + 20 frames
+                if throw_type_local == "Pulldown":
+                    fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+                else:
+                    fp_anchor = fp_frame_010
+
+                if fp_anchor is not None:
+                    fpf = int(fp_anchor)
+                    mask = (
+                        (frames >= fpf - 50) &
+                        (frames <= fpf + 20)
+                    )
                     z_window = z_vals[mask]
                 else:
                     z_window = z_vals
