@@ -3075,6 +3075,23 @@ with tab3:
         elif selected_metric_010 == "Max Pelvis Angle (Z)":
             z_vals = arr[:, 2]
 
+            # Foot-plant windowing for both throw types:
+            # - Pulldown: use Tab 1 pulldown FP helper
+            # - Mound: use Tab 3 mound FP anchor
+            if throw_type_local == "Pulldown":
+                fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+            else:
+                fp_anchor = fp_frame_010
+
+            if fp_anchor is not None:
+                fpf = int(fp_anchor)
+                mask = (
+                    (frames >= fpf - 30) &
+                    (frames <= fpf + 30)
+                )
+                if np.any(mask):
+                    z_vals = z_vals[mask]
+
             if handedness_local == "R":
                 # RHP → most negative
                 raw_val = np.nanmin(z_vals)
