@@ -3086,8 +3086,8 @@ with tab3:
             if fp_anchor is not None:
                 fpf = int(fp_anchor)
                 mask = (
-                    (frames >= fpf - 30) &
-                    (frames <= fpf + 30)
+                    (frames >= fpf - 60) &
+                    (frames <= fpf + 20)
                 )
                 if np.any(mask):
                     z_vals = z_vals[mask]
