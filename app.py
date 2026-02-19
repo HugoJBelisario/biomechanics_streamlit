@@ -3041,12 +3041,33 @@ with tab3:
             else:
                 vals = np.array([])
         elif selected_metric_010 == "Max Pelvis Angular Velocity":
+            # Foot-plant windowing for both throw types:
+            # - Pulldown: use Tab 1 pulldown FP helper
+            # - Mound: use Tab 3 mound FP anchor
+            if throw_type_local == "Pulldown":
+                fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+            else:
+                fp_anchor = fp_frame_010
+
+            if fp_anchor is not None:
+                fpf = int(fp_anchor)
+                mask = (
+                    (frames >= fpf - 40) &
+                    (frames <= fpf + 40)
+                )
+                if np.any(mask):
+                    arr_w = arr[mask]
+                else:
+                    arr_w = arr
+            else:
+                arr_w = arr
+
             # X-axis: always most negative for both handedness
             if pelvis_axis == "X":
-                vals = np.array([np.nanmin(arr[:, 0])])
+                vals = np.array([np.nanmin(arr_w[:, 0])])
             # Z-axis: use absolute maxima regardless of handedness
             elif pelvis_axis == "Z":
-                z_vals = arr[:, 2]
+                z_vals = arr_w[:, 2]
                 idx = np.nanargmax(np.abs(z_vals))
                 vals = np.array([z_vals[idx]])
             else:
