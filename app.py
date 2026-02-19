@@ -2798,27 +2798,20 @@ with tab3:
             if torso_axis == "X (Extension)":
                 x_vals = arr[:, 0]
 
-                # ---------------------------------------------
-                # MER-windowed Torso X (Extension) angular velocity
-                # Window: MER - 50 frames -> MER + 20 frames
-                # - Pulldown: pulldown-aware MER anchor
-                # - Mound: existing MER anchor
-                # ---------------------------------------------
+                # FP-windowed Torso X (Extension) angular velocity
+                # Window: FP - 50 frames -> FP + 20 frames
+                # - Pulldown: use Tab 1 pulldown FP helper
+                # - Mound: use Tab 3 mound FP anchor
                 if throw_type_local == "Pulldown":
-                    mer_anchor = get_shoulder_er_max_frame(
-                        take_id_010,
-                        handedness_local,
-                        cur,
-                        throw_type="Pulldown"
-                    )
+                    fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
                 else:
-                    mer_anchor = sh_er_max_frame_010
+                    fp_anchor = fp_frame_010
 
-                if mer_anchor is not None:
-                    merf = int(mer_anchor)
+                if fp_anchor is not None:
+                    fpf = int(fp_anchor)
                     win_mask = (
-                        (frames >= merf - 50) &
-                        (frames <= merf + 20)
+                        (frames >= fpf - 50) &
+                        (frames <= fpf + 20)
                     )
                     if np.any(win_mask):
                         x_w = x_vals[win_mask]
@@ -2831,17 +2824,12 @@ with tab3:
                 vals = np.array([np.nanmax(x_w)])
 
             elif torso_axis == "X (Flexion)":
-                vals = np.array([np.nanmin(arr[:, 0])])
+                x_vals = arr[:, 0]
 
-            elif torso_axis == "Y":
-                y_vals = arr[:, 1]
-
-                # ---------------------------------------------
-                # MER-windowed Torso Y angular velocity
+                # MER-windowed Torso X (Flexion) angular velocity
                 # Window: MER +/- 30 frames
                 # - Pulldown: pulldown-aware MER anchor
                 # - Mound: existing MER anchor
-                # ---------------------------------------------
                 if throw_type_local == "Pulldown":
                     mer_anchor = get_shoulder_er_max_frame(
                         take_id_010,
@@ -2857,6 +2845,34 @@ with tab3:
                     win_mask = (
                         (frames >= merf - 30) &
                         (frames <= merf + 30)
+                    )
+                    if np.any(win_mask):
+                        x_w = x_vals[win_mask]
+                    else:
+                        x_w = x_vals
+                else:
+                    x_w = x_vals
+
+                # Flexion = most negative X
+                vals = np.array([np.nanmin(x_w)])
+
+            elif torso_axis == "Y":
+                y_vals = arr[:, 1]
+
+                # FP-windowed Torso Y angular velocity
+                # Window: FP +/- 30 frames
+                # - Pulldown: use Tab 1 pulldown FP helper
+                # - Mound: use Tab 3 mound FP anchor
+                if throw_type_local == "Pulldown":
+                    fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+                else:
+                    fp_anchor = fp_frame_010
+
+                if fp_anchor is not None:
+                    fpf = int(fp_anchor)
+                    win_mask = (
+                        (frames >= fpf - 30) &
+                        (frames <= fpf + 30)
                     )
                     if np.any(win_mask):
                         y_w = y_vals[win_mask]
@@ -2876,27 +2892,20 @@ with tab3:
             elif torso_axis == "Z":
                 z_vals = arr[:, 2]
 
-                # ---------------------------------------------
-                # MER-windowed Torso Z angular velocity
-                # Window: MER +/- 30 frames
-                # - Pulldown: pulldown-aware MER anchor
-                # - Mound: existing MER anchor
-                # ---------------------------------------------
+                # FP-windowed Torso Z angular velocity
+                # Window: FP +/- 30 frames
+                # - Pulldown: use Tab 1 pulldown FP helper
+                # - Mound: use Tab 3 mound FP anchor
                 if throw_type_local == "Pulldown":
-                    mer_anchor = get_shoulder_er_max_frame(
-                        take_id_010,
-                        handedness_local,
-                        cur,
-                        throw_type="Pulldown"
-                    )
+                    fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
                 else:
-                    mer_anchor = sh_er_max_frame_010
+                    fp_anchor = fp_frame_010
 
-                if mer_anchor is not None:
-                    merf = int(mer_anchor)
+                if fp_anchor is not None:
+                    fpf = int(fp_anchor)
                     win_mask = (
-                        (frames >= merf - 30) &
-                        (frames <= merf + 30)
+                        (frames >= fpf - 30) &
+                        (frames <= fpf + 30)
                     )
                     if np.any(win_mask):
                         z_w = z_vals[win_mask]
@@ -3004,13 +3013,34 @@ with tab3:
             # Normalize for UI
             vals = np.array([abs(raw_val)])
         elif selected_metric_010 == "Max COM Velocity":
+            # Pulldown override: use FP - 50 -> FP window for COM metrics
+            if throw_type_local == "Pulldown":
+                fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+            else:
+                fp_anchor = None
+
+            if fp_anchor is not None:
+                fpf = int(fp_anchor)
+                com_mask = (
+                    (frames >= fpf - 50) &
+                    (frames <= fpf)
+                )
+            else:
+                com_mask = None
+
             if com_axis == "X":
-                vals = arr[:, 0]
+                x_vals = arr[:, 0]
+                if com_mask is not None and np.any(com_mask):
+                    x_vals = x_vals[com_mask]
+                vals = x_vals
             elif com_axis == "Y":
                 y_vals = arr[:, 1]
 
+                # Pulldown override: FP - 50 -> FP; otherwise preserve existing ER-based logic
+                if com_mask is not None and np.any(com_mask):
+                    y_window = y_vals[com_mask]
                 # Restrict to frames before max shoulder ER (layback), if available
-                if sh_er_max_frame_010 is not None:
+                elif sh_er_max_frame_010 is not None:
                     mask = frames < sh_er_max_frame_010
                     y_window = y_vals[mask]
                 else:
@@ -3024,6 +3054,8 @@ with tab3:
                 vals = np.array([np.nanmin(y_window)])
             elif com_axis == "Z":
                 z_vals = arr[:, 2]
+                if com_mask is not None and np.any(com_mask):
+                    z_vals = z_vals[com_mask]
                 vals = np.array([np.nanmin(z_vals)])  # COM Z = most negative max for both handedness
             else:
                 vals = np.array([])
