@@ -3163,32 +3163,49 @@ with tab3:
         elif selected_metric_010 == "Max Pelvis Angle (Z)":
             z_vals = arr[:, 2]
 
-            # Foot-plant windowing for both throw types:
-            # - Pulldown: use Tab 1 pulldown FP helper
-            # - Mound: use Tab 3 mound FP anchor
+            # Windowing:
+            # - Pulldown: Peak Knee Height frame -> Pulldown BR
+            # - Mound: FP - 70 -> FP + 20 (existing logic)
             if throw_type_local == "Pulldown":
-                fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
+                pd_fp = get_foot_plant_frame(take_id_010, handedness_local, cur)
+                pd_br = get_ball_release_frame_pulldown(
+                    take_id_010,
+                    handedness_local,
+                    pd_fp,
+                    cur
+                )
+                knee_event = knee_peak_frame_pre_br_010
+
+                if knee_event is not None and pd_br is not None:
+                    start = int(min(knee_event, pd_br))
+                    end = int(max(knee_event, pd_br))
+                    mask = (
+                        (frames >= start) &
+                        (frames <= end)
+                    )
+                    if np.any(mask):
+                        z_vals = z_vals[mask]
             else:
                 fp_anchor = fp_frame_010
+                if fp_anchor is not None:
+                    fpf = int(fp_anchor)
+                    mask = (
+                        (frames >= fpf - 70) &
+                        (frames <= fpf + 20)
+                    )
+                    if np.any(mask):
+                        z_vals = z_vals[mask]
 
-            if fp_anchor is not None:
-                fpf = int(fp_anchor)
-                mask = (
-                    (frames >= fpf - 70) &
-                    (frames <= fpf + 20)
-                )
-                if np.any(mask):
-                    z_vals = z_vals[mask]
-
+            # Match SQL-handedness transform:
+            # CASE WHEN handedness = 'R' THEN z + 90 ELSE 90 - z END
             if handedness_local == "R":
-                # RHP → most negative
-                raw_val = np.nanmin(z_vals)
+                transformed = z_vals + 90.0
             else:
-                # LHP → (peak value) - 90
-                raw_val = np.nanmax(z_vals) - 90
+                transformed = 90.0 - z_vals
 
-            # Normalize for UI
-            vals = np.array([abs(raw_val)])
+            # Max pelvis angle (Z) in the selected window
+            raw_val = np.nanmax(transformed)
+            vals = np.array([raw_val])
         elif selected_metric_010 == "Max COM Velocity":
             # Pulldown override: use FP - 50 -> FP window for COM metrics
             if throw_type_local == "Pulldown":
