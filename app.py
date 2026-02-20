@@ -3207,17 +3207,21 @@ with tab3:
             raw_val = np.nanmax(transformed)
             vals = np.array([raw_val])
         elif selected_metric_010 == "Max COM Velocity":
-            # Pulldown override: use FP - 50 -> FP window for COM metrics
+            # Event window for COM metrics:
+            # Peak Knee Height frame -> Foot Plant frame
             if throw_type_local == "Pulldown":
                 fp_anchor = get_foot_plant_frame(take_id_010, handedness_local, cur)
             else:
-                fp_anchor = None
+                fp_anchor = fp_frame_010
 
-            if fp_anchor is not None:
-                fpf = int(fp_anchor)
+            knee_anchor = knee_peak_frame_pre_br_010
+
+            if knee_anchor is not None and fp_anchor is not None:
+                start = int(min(knee_anchor, fp_anchor))
+                end = int(max(knee_anchor, fp_anchor))
                 com_mask = (
-                    (frames >= fpf - 50) &
-                    (frames <= fpf)
+                    (frames >= start) &
+                    (frames <= end)
                 )
             else:
                 com_mask = None
@@ -3230,7 +3234,7 @@ with tab3:
             elif com_axis == "Y":
                 y_vals = arr[:, 1]
 
-                # Pulldown override: FP - 50 -> FP; otherwise preserve existing ER-based logic
+                # Event-windowed Y (fallback to prior ER-based behavior if window unavailable)
                 if com_mask is not None and np.any(com_mask):
                     y_window = y_vals[com_mask]
                 # Restrict to frames before max shoulder ER (layback), if available
