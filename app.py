@@ -470,7 +470,7 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
 
     return None, None
 
-def get_pulldown_peak_knee_height_frame(take_id, handedness, br_frame, cur, heel_thresh=0.5, min_consecutive_frames=5):
+def get_pulldown_peak_knee_height_frame(take_id, handedness, br_frame, cur, heel_thresh=0.1, min_consecutive_frames=5):
     """
     Pulldown Peak Knee Height event (Tab 3 override):
     - Throwing-side knee X (RT/LT_KNEE.x_data) + throwing-side heel Z (R/L_HEEL.z_data)
