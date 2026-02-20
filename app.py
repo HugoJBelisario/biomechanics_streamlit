@@ -3761,6 +3761,9 @@ with tab3:
             "take_id": take_id_010,
             "Throw Type": (throw_type_local if throw_type_local is not None else "Mound"),
             "Velocity": pitch_velo_010,
+            "Peak Knee Height Frame (Pulldown)": (
+                knee_peak_frame_pre_br_010 if throw_type_local == "Pulldown" else np.nan
+            ),
             selected_metric_010: metric_value
         })
 
