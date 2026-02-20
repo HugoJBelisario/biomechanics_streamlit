@@ -469,6 +469,83 @@ def get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur):
         return int(row[0]), float(row[1])
 
     return None, None
+
+def get_pulldown_peak_knee_height_frame(take_id, handedness, br_frame, cur, heel_thresh=0.5, min_consecutive_frames=5):
+    """
+    Pulldown Peak Knee Height event (Tab 3 override):
+    - Throwing-side knee X (RT/LT_KNEE.x_data) + throwing-side heel Z (R/L_HEEL.z_data)
+    - Identify the first sustained heel-contact block where heel_z <= heel_thresh
+      for at least min_consecutive_frames
+    - Return frame of MAX knee_x within that block
+    Fallbacks:
+      1) max knee_x on any frame with heel_z <= heel_thresh
+      2) max knee_x across the full queried window
+    """
+
+    knee_segment = "RT_KNEE" if handedness == "R" else "LT_KNEE"
+    heel_segment = "R_HEEL" if handedness == "R" else "L_HEEL"
+
+    fp_frame = get_foot_plant_frame(take_id, handedness, cur)
+    start_frame = int(fp_frame) - 120 if fp_frame is not None else 0
+    end_frame = int(br_frame) if br_frame is not None else 10**9
+
+    cur.execute("""
+        SELECT k.frame, k.x_data, h.z_data
+        FROM time_series_data k
+        JOIN categories ck ON k.category_id = ck.category_id
+        JOIN segments sk   ON k.segment_id = sk.segment_id
+        JOIN time_series_data h
+          ON h.take_id = k.take_id
+         AND h.frame   = k.frame
+        JOIN categories ch ON h.category_id = ch.category_id
+        JOIN segments sh   ON h.segment_id = sh.segment_id
+        WHERE k.take_id = %s
+          AND ck.category_name = 'JOINT_ANGLES'
+          AND sk.segment_name = %s
+          AND ch.category_name = 'LANDMARK_ORIGINAL'
+          AND sh.segment_name = %s
+          AND k.frame BETWEEN %s AND %s
+          AND k.x_data IS NOT NULL
+          AND h.z_data IS NOT NULL
+        ORDER BY k.frame ASC
+    """, (int(take_id), knee_segment, heel_segment, int(start_frame), int(end_frame)))
+
+    rows = cur.fetchall()
+    if not rows:
+        return None
+
+    # Find first sustained block where heel is below threshold.
+    block_start = None
+    block_end = None
+    for i, (_frm, _kx, heel_z) in enumerate(rows):
+        in_contact = float(heel_z) <= float(heel_thresh)
+        if in_contact and block_start is None:
+            block_start = i
+        elif (not in_contact) and block_start is not None:
+            if i - block_start >= int(min_consecutive_frames):
+                block_end = i - 1
+                break
+            block_start = None
+
+    if block_start is not None and block_end is None:
+        if len(rows) - block_start >= int(min_consecutive_frames):
+            block_end = len(rows) - 1
+
+    if block_start is not None and block_end is not None:
+        block_rows = rows[block_start:block_end + 1]
+        peak_row = max(block_rows, key=lambda r: float(r[1]))
+        return int(peak_row[0])
+
+    # Fallback 1: any frame meeting heel threshold.
+    contact_rows = [r for r in rows if float(r[2]) <= float(heel_thresh)]
+    if contact_rows:
+        peak_row = max(contact_rows, key=lambda r: float(r[1]))
+        return int(peak_row[0])
+
+    # Fallback 2: max knee x in full queried range.
+    peak_row = max(rows, key=lambda r: float(r[1]))
+    return int(peak_row[0])
+
 # --- Pulldown helper: Pelvis angular velocity peak frame ---
 def get_pelvis_angvel_peak_frame(take_id, handedness, cur):
     """
@@ -2559,9 +2636,20 @@ with tab3:
         # Get ball release frame for this take
         br_frame_010 = get_ball_release_frame(take_id_010, handedness_local, cur)
 
-        # --- Compute peak glove-side knee height frame before BR ---
+        # --- Compute Peak Knee Height event frame ---
+        # Mound: glove-side shank peak height pre-BR (existing logic)
+        # Pulldown: heel-gated throwing-side knee-x max event
         knee_peak_frame_pre_br_010 = None
-        if br_frame_010 is not None:
+        if throw_type_local == "Pulldown":
+            pd_fp = get_foot_plant_frame(take_id_010, handedness_local, cur)
+            pd_br = get_ball_release_frame_pulldown(take_id_010, handedness_local, pd_fp, cur)
+            knee_peak_frame_pre_br_010 = get_pulldown_peak_knee_height_frame(
+                take_id_010,
+                handedness_local,
+                pd_br,
+                cur
+            )
+        elif br_frame_010 is not None:
             cur.execute("""
                 SELECT ts.frame, ts.z_data
                 FROM time_series_data ts
