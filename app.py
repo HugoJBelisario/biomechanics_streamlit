@@ -476,10 +476,10 @@ def get_pulldown_peak_knee_height_frame(take_id, handedness, br_frame, cur, heel
     - Throwing-side knee X (RT/LT_KNEE.x_data) + throwing-side heel Z (R/L_HEEL.z_data)
     - Identify the first sustained heel-contact block where heel_z <= heel_thresh
       for at least min_consecutive_frames
-    - Return frame of MAX knee_x within that block
+    - Return frame of MIN knee_x (most negative flexion) within that block
     Fallbacks:
-      1) max knee_x on any frame with heel_z <= heel_thresh
-      2) max knee_x across the full queried window
+      1) min knee_x on any frame with heel_z <= heel_thresh
+      2) min knee_x across the full queried window
     """
 
     knee_segment = "RT_KNEE" if handedness == "R" else "LT_KNEE"
@@ -533,17 +533,17 @@ def get_pulldown_peak_knee_height_frame(take_id, handedness, br_frame, cur, heel
 
     if block_start is not None and block_end is not None:
         block_rows = rows[block_start:block_end + 1]
-        peak_row = max(block_rows, key=lambda r: float(r[1]))
+        peak_row = min(block_rows, key=lambda r: float(r[1]))
         return int(peak_row[0])
 
     # Fallback 1: any frame meeting heel threshold.
     contact_rows = [r for r in rows if float(r[2]) <= float(heel_thresh)]
     if contact_rows:
-        peak_row = max(contact_rows, key=lambda r: float(r[1]))
+        peak_row = min(contact_rows, key=lambda r: float(r[1]))
         return int(peak_row[0])
 
-    # Fallback 2: max knee x in full queried range.
-    peak_row = max(rows, key=lambda r: float(r[1]))
+    # Fallback 2: min knee x in full queried range.
+    peak_row = min(rows, key=lambda r: float(r[1]))
     return int(peak_row[0])
 
 # --- Pulldown helper: Pelvis angular velocity peak frame ---
