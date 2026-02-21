@@ -1886,8 +1886,13 @@ with tab2:
     with left:
         # --- Select pitcher ---
         selected_pitcher_comp = st.selectbox("Select Pitcher", pitchers, key="comp_pitcher")
-        # Tab 2 is Mound-only
-        selected_throw_types_comp = ["Mound"]
+        selected_throw_type_comp = st.selectbox(
+            "Throw Type",
+            options=["Mound", "Pulldown"],
+            index=0,
+            key="comp_throw_type"
+        )
+        selected_throw_types_comp = [selected_throw_type_comp]
         # Tab 2 always shows grouped averages
         display_mode_tab2 = "Grouped Average"
         # --- Get handedness from DB ---
@@ -1911,18 +1916,18 @@ with tab2:
         session1_date = st.selectbox("Select First Session Date", dates_comp, key="comp_date1")
         session2_date = st.selectbox("Select Second Session Date", dates_comp, key="comp_date2")
 
-        # --- Get min and max velocity for session1 (Mound only) ---
+        # --- Get min and max velocity for session1 (selected throw type) ---
         cur.execute("""
             SELECT MIN(t.pitch_velo), MAX(t.pitch_velo)
             FROM takes t
             JOIN athletes a ON t.athlete_id = a.athlete_id
             WHERE a.athlete_name = %s
               AND t.take_date = %s
-              AND COALESCE(t.throw_type, 'Mound') = 'Mound'
-        """, (selected_pitcher_comp, session1_date))
+              AND COALESCE(t.throw_type, 'Mound') = %s
+        """, (selected_pitcher_comp, session1_date, selected_throw_type_comp))
         velo_min1, velo_max1 = cur.fetchone()
         if velo_min1 is None or velo_max1 is None:
-            st.warning(f"No Mound throws found for {session1_date}")
+            st.warning(f"No {selected_throw_type_comp} throws found for {session1_date}")
             st.stop()
         velo_min1 = float(f"{velo_min1:.1f}")
         velo_max1 = float(f"{velo_max1:.1f}")
@@ -1937,18 +1942,18 @@ with tab2:
             key="velo1"
         )
 
-        # --- Get min and max velocity for session2 (Mound only) ---
+        # --- Get min and max velocity for session2 (selected throw type) ---
         cur.execute("""
             SELECT MIN(t.pitch_velo), MAX(t.pitch_velo)
             FROM takes t
             JOIN athletes a ON t.athlete_id = a.athlete_id
             WHERE a.athlete_name = %s
               AND t.take_date = %s
-              AND COALESCE(t.throw_type, 'Mound') = 'Mound'
-        """, (selected_pitcher_comp, session2_date))
+              AND COALESCE(t.throw_type, 'Mound') = %s
+        """, (selected_pitcher_comp, session2_date, selected_throw_type_comp))
         velo_min2, velo_max2 = cur.fetchone()
         if velo_min2 is None or velo_max2 is None:
-            st.warning(f"No Mound throws found for {session2_date}")
+            st.warning(f"No {selected_throw_type_comp} throws found for {session2_date}")
             st.stop()
         velo_min2 = float(f"{float(velo_min2):.1f}")
         velo_max2 = float(f"{float(velo_max2):.1f}")
@@ -2016,7 +2021,7 @@ with tab2:
                 ref_mode, selected_pitcher_comp,
                 velo_range_ref[0], velo_range_ref[1],
                 comp_col, use_abs,
-                throw_types=["Mound"]
+                throw_types=selected_throw_types_comp
             )
             st.markdown("**Pitchers in Reference Group:**")
             if ref_pitchers:
@@ -2041,19 +2046,19 @@ with tab2:
                 JOIN athletes a ON t.athlete_id = a.athlete_id
                 WHERE a.athlete_name = %s
                   AND t.take_date = %s
-                  AND COALESCE(t.throw_type, 'Mound') = 'Mound'
+                  AND COALESCE(t.throw_type, 'Mound') = %s
                   AND t.pitch_velo BETWEEN %s AND %s
                 ORDER BY t.file_name
-            """, (selected_pitcher_comp, date, velo_min, velo_max))
+            """, (selected_pitcher_comp, date, selected_throw_type_comp, velo_min, velo_max))
         else:
             cur.execute("""
                 SELECT t.take_id, t.pitch_velo
                 FROM takes t
                 JOIN athletes a ON t.athlete_id = a.athlete_id
-                WHERE COALESCE(t.throw_type, 'Mound') = 'Mound'
+                WHERE COALESCE(t.throw_type, 'Mound') = %s
                   AND t.pitch_velo BETWEEN %s AND %s
                 ORDER BY t.file_name
-            """, (velo_min, velo_max))
+            """, (selected_throw_type_comp, velo_min, velo_max))
 
         takes = cur.fetchall()
         if not takes:
@@ -2209,7 +2214,7 @@ with tab2:
 
     # ---- Compute curves and render charts ----
     with right:
-        # --- Load curves for each session (Mound only) ---
+        # --- Load curves for each session (selected throw type) ---
         s1_sh_curves, s1_to_curves, s1_peak_arm_times = load_and_interpolate_curves(
             session1_date, velo_range1[0], velo_range1[1], comp_col, use_abs
         )
@@ -2226,7 +2231,7 @@ with tab2:
                 ref_mode, selected_pitcher_comp,
                 velo_range_ref[0], velo_range_ref[1],
                 comp_col, use_abs,
-                throw_types=["Mound"]
+                throw_types=selected_throw_types_comp
             )
 
         # Only plot if at least one session has at least one valid curve
@@ -2237,7 +2242,7 @@ with tab2:
         if has_any_curve:
             # ===================== SHOULDER =====================
             fig_shoulder = go.Figure()
-            # Plot session 1 (Mound only)
+            # Plot session 1 (selected throw type)
             curves = curves_s1["shoulder"]
             if curves:
                 color_s1 = get_session_color(session1_date)
@@ -2246,11 +2251,11 @@ with tab2:
                     x=interp_points, y=mean_curve,
                     mode="lines",
                     line=dict(color=color_s1, width=3),
-                    name=f"{session1_date} | Mound",
-                    legendgroup="s1_mound"
+                    name=f"{session1_date} | {selected_throw_type_comp}",
+                    legendgroup=f"s1_{selected_throw_type_comp.lower()}"
                 ))
 
-            # Plot session 2 (Mound only)
+            # Plot session 2 (selected throw type)
             curves = curves_s2["shoulder"]
             if curves:
                 color_s2 = get_session_color(session2_date)
@@ -2259,8 +2264,8 @@ with tab2:
                     x=interp_points, y=mean_curve,
                     mode="lines",
                     line=dict(color=color_s2, width=3),
-                    name=f"{session2_date} | Mound",
-                    legendgroup="s2_mound"
+                    name=f"{session2_date} | {selected_throw_type_comp}",
+                    legendgroup=f"s2_{selected_throw_type_comp.lower()}"
                 ))
             # Reference group
             if mean_ref_shoulder is not None:
@@ -2314,7 +2319,7 @@ with tab2:
 
             # ===================== TORSO =====================
             fig_torso = go.Figure()
-            # Plot session 1 (Mound only)
+            # Plot session 1 (selected throw type)
             curves = curves_s1["torso"]
             if curves:
                 color_s1 = get_session_color(session1_date)
@@ -2323,11 +2328,11 @@ with tab2:
                     x=interp_points, y=mean_curve,
                     mode="lines",
                     line=dict(color=color_s1, width=3),
-                    name=f"{session1_date} | Mound",
-                    legendgroup="s1_mound"
+                    name=f"{session1_date} | {selected_throw_type_comp}",
+                    legendgroup=f"s1_{selected_throw_type_comp.lower()}"
                 ))
 
-            # Plot session 2 (Mound only)
+            # Plot session 2 (selected throw type)
             curves = curves_s2["torso"]
             if curves:
                 color_s2 = get_session_color(session2_date)
@@ -2336,8 +2341,8 @@ with tab2:
                     x=interp_points, y=mean_curve,
                     mode="lines",
                     line=dict(color=color_s2, width=3),
-                    name=f"{session2_date} | Mound",
-                    legendgroup="s2_mound"
+                    name=f"{session2_date} | {selected_throw_type_comp}",
+                    legendgroup=f"s2_{selected_throw_type_comp.lower()}"
                 ))
             # Reference group
             if mean_ref_torso is not None:
