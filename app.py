@@ -1976,6 +1976,48 @@ with tab2:
             key="velo2"
         )
 
+        def _build_take_options_for_session(date_str, velo_range):
+            cur.execute(f"""
+                SELECT t.take_id, t.file_name, COALESCE(t.throw_type, 'Mound') AS throw_type
+                FROM takes t
+                JOIN athletes a ON t.athlete_id = a.athlete_id
+                WHERE a.athlete_name = %s
+                  AND t.take_date = %s
+                  AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+                  AND t.pitch_velo BETWEEN %s AND %s
+                ORDER BY t.file_name
+            """, (selected_pitcher_comp, date_str, *selected_throw_types_comp, velo_range[0], velo_range[1]))
+            rows_local = cur.fetchall()
+            out = []
+            for idx, (tid_local, _fname_local, tt_local) in enumerate(rows_local, start=1):
+                out.append({
+                    "take_id": int(tid_local),
+                    "date": date_str,
+                    "player": selected_pitcher_comp,
+                    "throw_type": tt_local,
+                    "take_number": idx,
+                    "label": f"{date_str} | {selected_pitcher_comp} | {tt_local} | Take {idx}"
+                })
+            return out
+
+        session1_take_options = _build_take_options_for_session(session1_date, velo_range1)
+        session2_take_options = _build_take_options_for_session(session2_date, velo_range2)
+        take_options_all = session1_take_options + session2_take_options
+        take_options_by_label = {row["label"]: row for row in take_options_all}
+
+        excluded_take_labels = st.multiselect(
+            "Exclude Take(s)",
+            options=list(take_options_by_label.keys()),
+            default=[],
+            key="comp_exclude_takes"
+        )
+        exclude_take_ids = {
+            int(take_options_by_label[lbl]["take_id"])
+            for lbl in excluded_take_labels
+            if lbl in take_options_by_label
+        }
+        take_meta_by_id = {int(row["take_id"]): row for row in take_options_all}
+
         # Shoulder component selector
         component = st.selectbox("Shoulder Axis", ["Horizontal Abduction/Adduction (X)", "Abduction/Adduction (Y)", "Internal/External Rotation (Z)"], index=2, key="shoulder_component")
         comp_col = {"Horizontal Abduction/Adduction (X)": "x_data", "Abduction/Adduction (Y)": "y_data", "Internal/External Rotation (Z)": "z_data"}[component]
@@ -2049,6 +2091,7 @@ with tab2:
             torso_curves    (list[np.ndarray])  # one per take, length 100
             peak_arm_time_pcts (list[float])    # one per take
             curve_throw_types (list[str])       # one per take
+            curve_meta (list[dict])             # one per take
         """
         if date is not None:
             cur.execute(f"""
@@ -2073,13 +2116,16 @@ with tab2:
 
         takes = cur.fetchall()
         if not takes:
-            return None, None, None, None
+            return None, None, None, None, None
 
         shoulder_curves, torso_curves = [], []
         peak_arm_time_pcts = []
         curve_throw_types = []
+        curve_meta = []
 
         for tid, _velo, take_throw_type in takes:
+            if int(tid) in exclude_take_ids:
+                continue
             # Torso power (for torso curve and Mound drive-start anchor)
             cur.execute("""
                 SELECT frame, x_data FROM time_series_data ts
@@ -2231,24 +2277,32 @@ with tab2:
             torso_curves.append(torso_curve)
             peak_arm_time_pcts.append(peak_arm_time_pct)
             curve_throw_types.append(take_throw_type)
+            _meta = take_meta_by_id.get(int(tid), {
+                "take_id": int(tid),
+                "date": date if date is not None else "All Dates",
+                "player": selected_pitcher_comp,
+                "throw_type": take_throw_type,
+                "take_number": "?"
+            })
+            curve_meta.append(_meta)
 
         if not shoulder_curves or not torso_curves:
-            return None, None, None, None
+            return None, None, None, None, None
 
-        return shoulder_curves, torso_curves, peak_arm_time_pcts, curve_throw_types
+        return shoulder_curves, torso_curves, peak_arm_time_pcts, curve_throw_types, curve_meta
 
     # ---- Compute curves and render charts ----
     with right:
         # --- Load curves for each session (selected throw type) ---
-        s1_sh_curves, s1_to_curves, s1_peak_arm_times, s1_throw_types = load_and_interpolate_curves(
+        s1_sh_curves, s1_to_curves, s1_peak_arm_times, s1_throw_types, s1_meta = load_and_interpolate_curves(
             session1_date, velo_range1[0], velo_range1[1], comp_col, use_abs
         )
-        s2_sh_curves, s2_to_curves, s2_peak_arm_times, s2_throw_types = load_and_interpolate_curves(
+        s2_sh_curves, s2_to_curves, s2_peak_arm_times, s2_throw_types, s2_meta = load_and_interpolate_curves(
             session2_date, velo_range2[0], velo_range2[1], comp_col, use_abs
         )
 
-        curves_s1 = dict(shoulder=s1_sh_curves, torso=s1_to_curves, throw_types=s1_throw_types)
-        curves_s2 = dict(shoulder=s2_sh_curves, torso=s2_to_curves, throw_types=s2_throw_types)
+        curves_s1 = dict(shoulder=s1_sh_curves, torso=s1_to_curves, throw_types=s1_throw_types, meta=s1_meta)
+        curves_s2 = dict(shoulder=s2_sh_curves, torso=s2_to_curves, throw_types=s2_throw_types, meta=s2_meta)
 
         mean_ref_shoulder, mean_ref_torso = None, None
         if include_ref and display_mode_tab2 == "Grouped Average":
@@ -2265,10 +2319,13 @@ with tab2:
             and curves_s2["shoulder"] not in (None, [])
         )
         if has_any_curve:
-            def _group_curves_by_throw_type(curves, throw_types):
+            def _group_curves_by_throw_type(curves, throw_types, meta):
                 grouped = {}
-                for curve, tt in zip(curves or [], throw_types or []):
-                    grouped.setdefault(tt, []).append(curve)
+                for curve, tt, m in zip(curves or [], throw_types or [], meta or []):
+                    if tt not in grouped:
+                        grouped[tt] = {"curves": [], "meta": []}
+                    grouped[tt]["curves"].append(curve)
+                    grouped[tt]["meta"].append(m)
                 return grouped
 
             pulldown_color = "#ff7f0e"
@@ -2278,9 +2335,10 @@ with tab2:
             if display_mode_tab2 == "Individual":
                 seen_legend_s1 = set()
                 seen_legend_s2 = set()
-                for i, (curve, tt) in enumerate(zip(curves_s1["shoulder"] or [], curves_s1["throw_types"] or []), start=1):
+                for curve, tt, m in zip(curves_s1["shoulder"] or [], curves_s1["throw_types"] or [], curves_s1["meta"] or []):
                     color_s1 = get_session_color(session1_date) if tt == "Mound" else pulldown_color
                     key_s1 = f"{session1_date}_{tt}"
+                    hover_label = f"{m['player']} | {tt} | Take {m['take_number']}"
                     fig_shoulder.add_trace(go.Scatter(
                         x=interp_points, y=curve,
                         mode="lines",
@@ -2289,12 +2347,13 @@ with tab2:
                         name=f"{session1_date} | {tt}",
                         legendgroup=f"s1_{tt.lower()}",
                         showlegend=(key_s1 not in seen_legend_s1),
-                        hovertemplate=f"{session1_date} | {tt} | Take {i}<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
+                        hovertemplate=f"{hover_label}<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
                     ))
                     seen_legend_s1.add(key_s1)
-                for i, (curve, tt) in enumerate(zip(curves_s2["shoulder"] or [], curves_s2["throw_types"] or []), start=1):
+                for curve, tt, m in zip(curves_s2["shoulder"] or [], curves_s2["throw_types"] or [], curves_s2["meta"] or []):
                     color_s2 = get_session_color(session2_date) if tt == "Mound" else pulldown_color
                     key_s2 = f"{session2_date}_{tt}"
+                    hover_label = f"{m['player']} | {tt} | Take {m['take_number']}"
                     fig_shoulder.add_trace(go.Scatter(
                         x=interp_points, y=curve,
                         mode="lines",
@@ -2303,38 +2362,41 @@ with tab2:
                         name=f"{session2_date} | {tt}",
                         legendgroup=f"s2_{tt.lower()}",
                         showlegend=(key_s2 not in seen_legend_s2),
-                        hovertemplate=f"{session2_date} | {tt} | Take {i}<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
+                        hovertemplate=f"{hover_label}<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
                     ))
                     seen_legend_s2.add(key_s2)
             else:
-                grouped_s1_sh = _group_curves_by_throw_type(curves_s1["shoulder"], curves_s1["throw_types"])
-                for tt, curves in grouped_s1_sh.items():
+                grouped_s1_sh = _group_curves_by_throw_type(curves_s1["shoulder"], curves_s1["throw_types"], curves_s1["meta"])
+                for tt, payload in grouped_s1_sh.items():
                     color_s1 = get_session_color(session1_date) if tt == "Mound" else pulldown_color
-                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                    mean_curve = np.nanmean(np.vstack(payload["curves"]), axis=0)
                     fig_shoulder.add_trace(go.Scatter(
                         x=interp_points, y=mean_curve,
                         mode="lines",
                         line=dict(color=color_s1, width=3, dash="solid"),
                         name=f"{session1_date} | {tt}",
-                        legendgroup=f"s1_{tt.lower()}"
+                        legendgroup=f"s1_{tt.lower()}",
+                        hovertemplate=f"{selected_pitcher_comp} | {tt} | Take Grouped<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
                     ))
-                grouped_s2_sh = _group_curves_by_throw_type(curves_s2["shoulder"], curves_s2["throw_types"])
-                for tt, curves in grouped_s2_sh.items():
+                grouped_s2_sh = _group_curves_by_throw_type(curves_s2["shoulder"], curves_s2["throw_types"], curves_s2["meta"])
+                for tt, payload in grouped_s2_sh.items():
                     color_s2 = get_session_color(session2_date) if tt == "Mound" else pulldown_color
-                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                    mean_curve = np.nanmean(np.vstack(payload["curves"]), axis=0)
                     fig_shoulder.add_trace(go.Scatter(
                         x=interp_points, y=mean_curve,
                         mode="lines",
                         line=dict(color=color_s2, width=3, dash="dash" if tt == "Pulldown" else "solid"),
                         name=f"{session2_date} | {tt}",
-                        legendgroup=f"s2_{tt.lower()}"
+                        legendgroup=f"s2_{tt.lower()}",
+                        hovertemplate=f"{selected_pitcher_comp} | {tt} | Take Grouped<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
                     ))
             # Reference group
             if mean_ref_shoulder is not None:
                 fig_shoulder.add_trace(go.Scatter(
                     x=interp_points, y=mean_ref_shoulder,
                     mode='lines', name="Reference (mean)",
-                    line=dict(color='red', width=3)
+                    line=dict(color='red', width=3),
+                    hoverinfo="skip"
                 ))
 
             # y-bounds for vertical markers
@@ -2384,9 +2446,10 @@ with tab2:
             if display_mode_tab2 == "Individual":
                 seen_legend_s1_to = set()
                 seen_legend_s2_to = set()
-                for i, (curve, tt) in enumerate(zip(curves_s1["torso"] or [], curves_s1["throw_types"] or []), start=1):
+                for curve, tt, m in zip(curves_s1["torso"] or [], curves_s1["throw_types"] or [], curves_s1["meta"] or []):
                     color_s1 = get_session_color(session1_date) if tt == "Mound" else pulldown_color
                     key_s1_to = f"{session1_date}_{tt}"
+                    hover_label = f"{m['player']} | {tt} | Take {m['take_number']}"
                     fig_torso.add_trace(go.Scatter(
                         x=interp_points, y=curve,
                         mode="lines",
@@ -2395,12 +2458,13 @@ with tab2:
                         name=f"{session1_date} | {tt}",
                         legendgroup=f"s1_{tt.lower()}",
                         showlegend=(key_s1_to not in seen_legend_s1_to),
-                        hovertemplate=f"{session1_date} | {tt} | Take {i}<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
+                        hovertemplate=f"{hover_label}<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
                     ))
                     seen_legend_s1_to.add(key_s1_to)
-                for i, (curve, tt) in enumerate(zip(curves_s2["torso"] or [], curves_s2["throw_types"] or []), start=1):
+                for curve, tt, m in zip(curves_s2["torso"] or [], curves_s2["throw_types"] or [], curves_s2["meta"] or []):
                     color_s2 = get_session_color(session2_date) if tt == "Mound" else pulldown_color
                     key_s2_to = f"{session2_date}_{tt}"
+                    hover_label = f"{m['player']} | {tt} | Take {m['take_number']}"
                     fig_torso.add_trace(go.Scatter(
                         x=interp_points, y=curve,
                         mode="lines",
@@ -2409,38 +2473,41 @@ with tab2:
                         name=f"{session2_date} | {tt}",
                         legendgroup=f"s2_{tt.lower()}",
                         showlegend=(key_s2_to not in seen_legend_s2_to),
-                        hovertemplate=f"{session2_date} | {tt} | Take {i}<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
+                        hovertemplate=f"{hover_label}<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
                     ))
                     seen_legend_s2_to.add(key_s2_to)
             else:
-                grouped_s1_to = _group_curves_by_throw_type(curves_s1["torso"], curves_s1["throw_types"])
-                for tt, curves in grouped_s1_to.items():
+                grouped_s1_to = _group_curves_by_throw_type(curves_s1["torso"], curves_s1["throw_types"], curves_s1["meta"])
+                for tt, payload in grouped_s1_to.items():
                     color_s1 = get_session_color(session1_date) if tt == "Mound" else pulldown_color
-                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                    mean_curve = np.nanmean(np.vstack(payload["curves"]), axis=0)
                     fig_torso.add_trace(go.Scatter(
                         x=interp_points, y=mean_curve,
                         mode="lines",
                         line=dict(color=color_s1, width=3, dash="solid"),
                         name=f"{session1_date} | {tt}",
-                        legendgroup=f"s1_{tt.lower()}"
+                        legendgroup=f"s1_{tt.lower()}",
+                        hovertemplate=f"{selected_pitcher_comp} | {tt} | Take Grouped<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
                     ))
-                grouped_s2_to = _group_curves_by_throw_type(curves_s2["torso"], curves_s2["throw_types"])
-                for tt, curves in grouped_s2_to.items():
+                grouped_s2_to = _group_curves_by_throw_type(curves_s2["torso"], curves_s2["throw_types"], curves_s2["meta"])
+                for tt, payload in grouped_s2_to.items():
                     color_s2 = get_session_color(session2_date) if tt == "Mound" else pulldown_color
-                    mean_curve = np.nanmean(np.vstack(curves), axis=0)
+                    mean_curve = np.nanmean(np.vstack(payload["curves"]), axis=0)
                     fig_torso.add_trace(go.Scatter(
                         x=interp_points, y=mean_curve,
                         mode="lines",
                         line=dict(color=color_s2, width=3, dash="dash" if tt == "Pulldown" else "solid"),
                         name=f"{session2_date} | {tt}",
-                        legendgroup=f"s2_{tt.lower()}"
+                        legendgroup=f"s2_{tt.lower()}",
+                        hovertemplate=f"{selected_pitcher_comp} | {tt} | Take Grouped<br>Time: %{{x:.1f}}%<br>Value: %{{y:.2f}}<extra></extra>"
                     ))
             # Reference group
             if mean_ref_torso is not None:
                 fig_torso.add_trace(go.Scatter(
                     x=interp_points, y=mean_ref_torso,
                     mode='lines', name="Reference (mean)",
-                    line=dict(color='red', width=3)
+                    line=dict(color='red', width=3),
+                    hoverinfo="skip"
                 ))
 
             yvals_to = []
