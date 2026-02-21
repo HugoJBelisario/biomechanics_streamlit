@@ -2068,7 +2068,7 @@ with tab2:
         peak_arm_time_pcts = []
 
         for tid, _velo in takes:
-            # Torso power (to find drive start and for torso curve)
+            # Torso power (for torso curve and Mound drive-start anchor)
             cur.execute("""
                 SELECT frame, x_data FROM time_series_data ts
                 JOIN segments s ON ts.segment_id = s.segment_id
@@ -2080,27 +2080,39 @@ with tab2:
             if df_power.empty:
                 continue
             df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
-            # Drive start (Mound only)
-            drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
-            if pd.isna(drive_start_frame):
-                continue
-
-            # Rear knee (to find max pre-drive knee flexion frame)
-            cur.execute("""
-                SELECT frame, x_data FROM time_series_data ts
-                JOIN segments s ON ts.segment_id = s.segment_id
-                JOIN categories c ON ts.category_id = c.category_id
-                WHERE ts.take_id = %s AND c.category_name = 'JOINT_ANGLES' AND s.segment_name = %s
-                ORDER BY frame
-            """, (tid, rear_knee_comp))
-            df_knee = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
-            if df_knee.empty:
-                continue
-            # Rear knee anchor (Mound only)
-            df_knee_pre = df_knee[df_knee["frame"] < drive_start_frame]
-            if df_knee_pre.empty:
-                continue
-            max_knee_frame = int(df_knee_pre.loc[df_knee_pre["x_data"].idxmin(), "frame"])
+            # Start anchor for normalization:
+            # - Mound: max rear knee flexion before drive start
+            # - Pulldown: Peak Knee Height frame (same Tab 3 helper/logic)
+            if selected_throw_type_comp == "Pulldown":
+                pd_fp = get_foot_plant_frame(tid, handedness_comp, cur)
+                pd_br = get_ball_release_frame_pulldown(tid, handedness_comp, pd_fp, cur)
+                max_knee_frame = get_pulldown_peak_knee_height_frame(
+                    tid,
+                    handedness_comp,
+                    pd_br,
+                    cur
+                )
+                if max_knee_frame is None:
+                    continue
+                max_knee_frame = int(max_knee_frame)
+            else:
+                drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
+                if pd.isna(drive_start_frame):
+                    continue
+                cur.execute("""
+                    SELECT frame, x_data FROM time_series_data ts
+                    JOIN segments s ON ts.segment_id = s.segment_id
+                    JOIN categories c ON ts.category_id = c.category_id
+                    WHERE ts.take_id = %s AND c.category_name = 'JOINT_ANGLES' AND s.segment_name = %s
+                    ORDER BY frame
+                """, (tid, rear_knee_comp))
+                df_knee = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
+                if df_knee.empty:
+                    continue
+                df_knee_pre = df_knee[df_knee["frame"] < drive_start_frame]
+                if df_knee_pre.empty:
+                    continue
+                max_knee_frame = int(df_knee_pre.loc[df_knee_pre["x_data"].idxmin(), "frame"])
 
             # Shoulder joint angles (x, y, z) to find layback (peak |z|)
             cur.execute("""
