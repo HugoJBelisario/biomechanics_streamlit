@@ -2782,6 +2782,8 @@ with tab3:
     for take_id_010, pitch_velo_010, handedness_local, throw_type_local in take_rows_010:
         scap_zero_frame_010 = np.nan
         max_scap_retraction_frame_010 = np.nan
+        torque_window_start_frame_010 = np.nan
+        torque_window_end_frame_010 = np.nan
         # Determine handedness-specific segment names for this take
         if handedness_local == "R":
             shoulder_velo_segment = "RT_SHOULDER_ANGULAR_VELOCITY"
@@ -3112,6 +3114,7 @@ with tab3:
                 max_scap_frame = int(mer_anchor)
 
             if max_scap_frame is not None:
+                torque_window_start_frame_010 = float(max_scap_frame)
                 after_mask = frames >= max_scap_frame
                 after_frames = frames[after_mask]
                 after_torque = torque_x[after_mask]
@@ -3133,6 +3136,7 @@ with tab3:
                         end_frame = int(post_frames[0])
                     else:
                         end_frame = int(after_frames[-1])
+                    torque_window_end_frame_010 = float(end_frame)
 
                     win_mask = (frames >= max_scap_frame) & (frames <= end_frame)
                     if np.any(win_mask):
@@ -4156,6 +4160,9 @@ with tab3:
             "Velocity": pitch_velo_010,
             selected_metric_010: metric_value
         }
+        if selected_metric_010 == "Peak Rotational Torque into Layback":
+            row_payload["Window Start Frame (Max Scap Retraction)"] = torque_window_start_frame_010
+            row_payload["Window End Frame (Post-Peak Zero Cross)"] = torque_window_end_frame_010
         rows_010.append(row_payload)
 
     if rows_010:
