@@ -2648,6 +2648,7 @@ with tab3:
         "Max Shoulder Internal Rotation Velocity",
         "Max Shoulder External Rotation Velocity",
         "Max Elbow Extension Velocity",
+        "Max Scap Retraction",
         "Max Shoulder Horizontal Abduction/Adduction Velocity",
         "Max Shoulder Horizontal Abduction",
         "Max Shoulder External Rotation",
@@ -2686,6 +2687,7 @@ with tab3:
             "Max Shoulder Internal Rotation Velocity",
             "Max Shoulder External Rotation Velocity",
             "Max Elbow Extension Velocity",
+            "Max Scap Retraction",
             "Max Shoulder Horizontal Abduction/Adduction Velocity",
             "Max Hand Speed",
         ],
@@ -2904,6 +2906,8 @@ with tab3:
             velo_segment = "PELVIS_ANGLE"
         elif selected_metric_010 == "Max Shoulder Horizontal Abduction/Adduction Velocity":
             velo_segment = shoulder_velo_segment
+        elif selected_metric_010 == "Max Scap Retraction":
+            velo_segment = shoulder_velo_segment
         elif selected_metric_010 == "Max Shoulder Horizontal Abduction":
             velo_segment = "RT_SHOULDER_ANGLE" if handedness_local == "R" else "LT_SHOULDER_ANGLE"
         elif selected_metric_010 == "Max Shoulder External Rotation":
@@ -2931,6 +2935,7 @@ with tab3:
                     ELSE 'ORIGINAL'
                 END
               AND s.segment_name = %s
+            ORDER BY ts.frame
         """, (take_id_010, velo_segment, velo_segment, velo_segment, velo_segment))
         data = cur.fetchall()
         if not data:
@@ -3776,6 +3781,88 @@ with tab3:
                     x_vals = x_vals[win_mask]
             # Always take the most negative value (both handedness)
             vals = np.array([np.nanmin(x_vals)])
+        elif selected_metric_010 == "Max Scap Retraction":
+            # Use shoulder horizontal abduction/adduction velocity (x_data) and
+            # compute peak negative velocity in the lead-up window from zero-cross
+            # to max scap retraction frame.
+            x_vel = arr[:, 0]
+
+            # Pulldown-safe MER anchor
+            if throw_type_local == "Pulldown":
+                mer_anchor = get_shoulder_er_max_frame(
+                    take_id_010,
+                    handedness_local,
+                    cur,
+                    throw_type="Pulldown"
+                )
+            else:
+                mer_anchor = sh_er_max_frame_010
+
+            # Query shoulder angle to find max scap retraction frame in the same window.
+            scap_angle_segment = "RT_SHOULDER_ANGLE" if handedness_local == "R" else "LT_SHOULDER_ANGLE"
+            cur.execute("""
+                SELECT ts.frame, ts.x_data
+                FROM time_series_data ts
+                JOIN segments s ON ts.segment_id = s.segment_id
+                JOIN categories c ON ts.category_id = c.category_id
+                WHERE ts.take_id = %s
+                  AND c.category_name = 'ORIGINAL'
+                  AND s.segment_name = %s
+                  AND ts.x_data IS NOT NULL
+                ORDER BY ts.frame
+            """, (take_id_010, scap_angle_segment))
+            scap_rows = cur.fetchall()
+
+            if scap_rows:
+                scap_arr = np.array(scap_rows, dtype=float)
+                scap_frames = scap_arr[:, 0].astype(int)
+                scap_x = scap_arr[:, 1]
+
+                if mer_anchor is not None:
+                    merf = int(mer_anchor)
+                    scap_win = (scap_frames >= merf - 50) & (scap_frames <= merf)
+                    if np.any(scap_win):
+                        scap_frames_w = scap_frames[scap_win]
+                        scap_x_w = scap_x[scap_win]
+                    else:
+                        scap_frames_w = scap_frames
+                        scap_x_w = scap_x
+                else:
+                    scap_frames_w = scap_frames
+                    scap_x_w = scap_x
+
+                if handedness_local == "R":
+                    scap_peak_idx = int(np.nanargmin(scap_x_w))
+                else:
+                    scap_peak_idx = int(np.nanargmax(scap_x_w))
+                max_scap_frame = int(scap_frames_w[scap_peak_idx])
+            else:
+                max_scap_frame = int(mer_anchor) if mer_anchor is not None else None
+
+            if max_scap_frame is not None:
+                pre_mask = frames <= max_scap_frame
+                pre_frames = frames[pre_mask]
+                pre_vel = x_vel[pre_mask]
+                if pre_vel.size > 0:
+                    # Last positive->negative zero-cross before max scap retraction.
+                    zc_candidates = np.where((pre_vel[:-1] >= 0) & (pre_vel[1:] < 0))[0]
+                    if zc_candidates.size > 0:
+                        start_frame = int(pre_frames[zc_candidates[-1] + 1])
+                    else:
+                        # Fallback: closest-to-zero frame before the max.
+                        start_frame = int(pre_frames[int(np.argmin(np.abs(pre_vel)))])
+
+                    leadup_mask = (frames >= start_frame) & (frames <= max_scap_frame)
+                    if np.any(leadup_mask):
+                        x_w = x_vel[leadup_mask]
+                    else:
+                        x_w = pre_vel
+                else:
+                    x_w = x_vel
+            else:
+                x_w = x_vel
+
+            vals = np.array([np.nanmin(x_w)])
         elif selected_metric_010 == "Max Shoulder Horizontal Abduction":
             x_vals = arr[:, 0]
 
