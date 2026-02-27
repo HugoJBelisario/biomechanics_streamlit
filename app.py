@@ -3849,30 +3849,31 @@ with tab3:
                 pre_frames = frames[pre_mask]
                 pre_vel = x_vel[pre_mask]
                 if pre_vel.size > 0:
-                    if handedness_local == "L" and scap_rows:
-                        # Lefty-specific request:
-                        # Start window at the last LT_SHOULDER_ANGLE X zero-crossing
-                        # before the positive max scap retraction frame.
-                        scap_pre_mask = scap_frames_w <= max_scap_frame
+                    if scap_rows:
+                        # Use shoulder-angle zero approach for all:
+                        # frame AFTER the closest negative shoulder-angle value
+                        # before max scap retraction.
+                        scap_pre_mask = scap_frames_w < max_scap_frame
                         scap_pre_frames = scap_frames_w[scap_pre_mask]
                         scap_pre_x = scap_x_w[scap_pre_mask]
-                        if scap_pre_x.size > 1:
-                            scap_zc = np.where((scap_pre_x[:-1] <= 0) & (scap_pre_x[1:] > 0))[0]
-                            if scap_zc.size > 0:
-                                start_frame = int(scap_pre_frames[scap_zc[-1] + 1])
+
+                        if scap_pre_x.size > 0:
+                            neg_idx = np.where(scap_pre_x <= 0)[0]
+                            if neg_idx.size > 0:
+                                # Closest negative to zero -> max among <= 0 values.
+                                local_idx = int(neg_idx[np.argmax(scap_pre_x[neg_idx])])
+                                if local_idx + 1 < scap_pre_frames.size:
+                                    start_frame = int(scap_pre_frames[local_idx + 1])
+                                else:
+                                    start_frame = int(scap_pre_frames[local_idx])
                             else:
+                                # Fallback: no negative before peak; closest-to-zero frame.
                                 start_frame = int(scap_pre_frames[int(np.argmin(np.abs(scap_pre_x)))])
-                        elif scap_pre_x.size == 1:
-                            start_frame = int(scap_pre_frames[0])
                         else:
                             start_frame = int(pre_frames[0])
                     else:
-                        # Righty behavior (existing): velocity zero-cross into negative.
-                        zc_candidates = np.where((pre_vel[:-1] >= 0) & (pre_vel[1:] < 0))[0]
-                        if zc_candidates.size > 0:
-                            start_frame = int(pre_frames[zc_candidates[-1] + 1])
-                        else:
-                            start_frame = int(pre_frames[int(np.argmin(np.abs(pre_vel)))])
+                        # Fallback if angle stream unavailable.
+                        start_frame = int(pre_frames[0])
                     scap_zero_frame_010 = float(start_frame)
 
                     leadup_mask = (frames >= start_frame) & (frames <= max_scap_frame)
