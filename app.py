@@ -3127,7 +3127,7 @@ with tab3:
 
                     post_peak_mask = frames >= neg_peak_frame
                     post_frames = frames[post_peak_mask]
-                    post_torque = torque_x[post_peak_mask]
+                    post_torque = torque_z[post_peak_mask]
 
                     if post_torque.size > 1:
                         zc_idx = np.where((post_torque[:-1] <= 0) & (post_torque[1:] > 0))[0]
