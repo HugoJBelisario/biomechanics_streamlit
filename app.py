@@ -3851,17 +3851,24 @@ with tab3:
                 if pre_vel.size > 0:
                     if scap_rows:
                         # Use shoulder-angle zero approach for all:
-                        # before max scap retraction, take the first
-                        # negative->positive crossing frame.
-                        scap_pre_mask = scap_frames_w < max_scap_frame
-                        scap_pre_frames = scap_frames_w[scap_pre_mask]
-                        scap_pre_x = scap_x_w[scap_pre_mask]
+                        # before max scap retraction, use the zero crossing
+                        # closest to the peak (last crossing before peak).
+                        # Use full angle timeline before max_scap_frame (not MER-limited)
+                        # so the true early zero-cross is not clipped.
+                        scap_pre_mask = scap_frames < max_scap_frame
+                        scap_pre_frames = scap_frames[scap_pre_mask]
+                        scap_pre_x = scap_x[scap_pre_mask]
 
                         if scap_pre_x.size > 1:
-                            zc_idx = np.where((scap_pre_x[:-1] < 0) & (scap_pre_x[1:] >= 0))[0]
+                            # Crossing direction follows peak sign:
+                            # positive peak -> neg->pos, negative peak -> pos->neg
+                            if handedness_local == "L":
+                                zc_idx = np.where((scap_pre_x[:-1] < 0) & (scap_pre_x[1:] >= 0))[0]
+                            else:
+                                zc_idx = np.where((scap_pre_x[:-1] > 0) & (scap_pre_x[1:] <= 0))[0]
                             if zc_idx.size > 0:
-                                # Positive-side frame at first crossing.
-                                start_frame = int(scap_pre_frames[int(zc_idx[0] + 1)])
+                                # Use crossing nearest to max scap frame.
+                                start_frame = int(scap_pre_frames[int(zc_idx[-1] + 1)])
                             else:
                                 # Fallback: no negative before peak; closest-to-zero frame.
                                 start_frame = int(scap_pre_frames[int(np.argmin(np.abs(scap_pre_x)))])
