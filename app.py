@@ -2648,6 +2648,7 @@ with tab3:
         "Max Shoulder Internal Rotation Velocity",
         "Max Shoulder External Rotation Velocity",
         "Max Elbow Extension Velocity",
+        "Peak Rotational Torque into Layback",
         "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction",
         "Max Shoulder Horizontal Abduction/Adduction Velocity",
         "Max Shoulder Horizontal Abduction",
@@ -2687,6 +2688,7 @@ with tab3:
             "Max Shoulder Internal Rotation Velocity",
             "Max Shoulder External Rotation Velocity",
             "Max Elbow Extension Velocity",
+            "Peak Rotational Torque into Layback",
             "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction",
             "Max Shoulder Horizontal Abduction/Adduction Velocity",
             "Max Hand Speed",
@@ -2870,6 +2872,8 @@ with tab3:
             velo_segment = shoulder_velo_segment
         elif selected_metric_010 == "Max Elbow Extension Velocity":
             velo_segment = elbow_velo_segment
+        elif selected_metric_010 == "Peak Rotational Torque into Layback":
+            velo_segment = "RT_SHOULDER_LAR_MMT" if handedness_local == "R" else "LT_SHOULDER_LAR_MMT"
         elif selected_metric_010 == "Max Torso Angular Velocity":
             velo_segment = "TORSO_ANGULAR_VELOCITY"
         elif selected_metric_010 == "Max Torso–Pelvis Angular Velocity":
@@ -3052,6 +3056,93 @@ with tab3:
                         x_vals = x_vals[win_mask]
             # Elbow extension velocity: always the most negative value (both handedness)
             vals = np.array([np.nanmin(x_vals)])
+        elif selected_metric_010 == "Peak Rotational Torque into Layback":
+            torque_x = arr[:, 0]
+
+            # Pulldown-safe MER anchor for identifying max scap retraction frame.
+            if throw_type_local == "Pulldown":
+                mer_anchor = get_shoulder_er_max_frame(
+                    take_id_010,
+                    handedness_local,
+                    cur,
+                    throw_type="Pulldown"
+                )
+            else:
+                mer_anchor = sh_er_max_frame_010
+
+            # Find max scap retraction frame from shoulder angle X (same system).
+            scap_angle_segment = "RT_SHOULDER_ANGLE" if handedness_local == "R" else "LT_SHOULDER_ANGLE"
+            cur.execute("""
+                SELECT ts.frame, ts.x_data
+                FROM time_series_data ts
+                JOIN segments s ON ts.segment_id = s.segment_id
+                JOIN categories c ON ts.category_id = c.category_id
+                WHERE ts.take_id = %s
+                  AND c.category_name = 'ORIGINAL'
+                  AND s.segment_name = %s
+                  AND ts.x_data IS NOT NULL
+                ORDER BY ts.frame
+            """, (take_id_010, scap_angle_segment))
+            scap_rows = cur.fetchall()
+
+            max_scap_frame = None
+            if scap_rows:
+                scap_arr = np.array(scap_rows, dtype=float)
+                scap_frames = scap_arr[:, 0].astype(int)
+                scap_x = scap_arr[:, 1]
+                if mer_anchor is not None:
+                    merf = int(mer_anchor)
+                    scap_win = (scap_frames >= merf - 50) & (scap_frames <= merf)
+                    if np.any(scap_win):
+                        scap_frames_w = scap_frames[scap_win]
+                        scap_x_w = scap_x[scap_win]
+                    else:
+                        scap_frames_w = scap_frames
+                        scap_x_w = scap_x
+                else:
+                    scap_frames_w = scap_frames
+                    scap_x_w = scap_x
+
+                if handedness_local == "R":
+                    peak_idx = int(np.nanargmin(scap_x_w))
+                else:
+                    peak_idx = int(np.nanargmax(scap_x_w))
+                max_scap_frame = int(scap_frames_w[peak_idx])
+            elif mer_anchor is not None:
+                max_scap_frame = int(mer_anchor)
+
+            if max_scap_frame is not None:
+                after_mask = frames >= max_scap_frame
+                after_frames = frames[after_mask]
+                after_torque = torque_x[after_mask]
+                if after_torque.size > 0:
+                    neg_peak_local_idx = int(np.nanargmin(after_torque))
+                    neg_peak_frame = int(after_frames[neg_peak_local_idx])
+
+                    post_peak_mask = frames >= neg_peak_frame
+                    post_frames = frames[post_peak_mask]
+                    post_torque = torque_x[post_peak_mask]
+
+                    if post_torque.size > 1:
+                        zc_idx = np.where((post_torque[:-1] <= 0) & (post_torque[1:] > 0))[0]
+                        if zc_idx.size > 0:
+                            end_frame = int(post_frames[int(zc_idx[0] + 1)])
+                        else:
+                            end_frame = int(post_frames[-1])
+                    elif post_torque.size == 1:
+                        end_frame = int(post_frames[0])
+                    else:
+                        end_frame = int(after_frames[-1])
+
+                    win_mask = (frames >= max_scap_frame) & (frames <= end_frame)
+                    if np.any(win_mask):
+                        vals = np.array([np.nanmin(torque_x[win_mask])])
+                    else:
+                        vals = np.array([np.nanmin(after_torque)])
+                else:
+                    vals = np.array([np.nan])
+            else:
+                vals = np.array([np.nanmin(torque_x)])
         elif selected_metric_010 == "Max Torso Angular Velocity":
             if torso_axis == "X (Extension)":
                 x_vals = arr[:, 0]
