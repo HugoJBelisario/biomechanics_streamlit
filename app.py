@@ -3851,24 +3851,22 @@ with tab3:
                 if pre_vel.size > 0:
                     if scap_rows:
                         # Use shoulder-angle zero approach for all:
-                        # frame AFTER the closest negative shoulder-angle value
-                        # before max scap retraction.
+                        # before max scap retraction, take the first
+                        # negative->positive crossing frame.
                         scap_pre_mask = scap_frames_w < max_scap_frame
                         scap_pre_frames = scap_frames_w[scap_pre_mask]
                         scap_pre_x = scap_x_w[scap_pre_mask]
 
-                        if scap_pre_x.size > 0:
-                            neg_idx = np.where(scap_pre_x <= 0)[0]
-                            if neg_idx.size > 0:
-                                # Closest negative to zero -> max among <= 0 values.
-                                local_idx = int(neg_idx[np.argmax(scap_pre_x[neg_idx])])
-                                if local_idx + 1 < scap_pre_frames.size:
-                                    start_frame = int(scap_pre_frames[local_idx + 1])
-                                else:
-                                    start_frame = int(scap_pre_frames[local_idx])
+                        if scap_pre_x.size > 1:
+                            zc_idx = np.where((scap_pre_x[:-1] < 0) & (scap_pre_x[1:] >= 0))[0]
+                            if zc_idx.size > 0:
+                                # Positive-side frame at first crossing.
+                                start_frame = int(scap_pre_frames[int(zc_idx[0] + 1)])
                             else:
                                 # Fallback: no negative before peak; closest-to-zero frame.
                                 start_frame = int(scap_pre_frames[int(np.argmin(np.abs(scap_pre_x)))])
+                        elif scap_pre_x.size == 1:
+                            start_frame = int(scap_pre_frames[0])
                         else:
                             start_frame = int(pre_frames[0])
                     else:
