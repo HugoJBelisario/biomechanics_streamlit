@@ -3844,8 +3844,13 @@ with tab3:
                 pre_frames = frames[pre_mask]
                 pre_vel = x_vel[pre_mask]
                 if pre_vel.size > 0:
-                    # Last positive->negative zero-cross before max scap retraction.
-                    zc_candidates = np.where((pre_vel[:-1] >= 0) & (pre_vel[1:] < 0))[0]
+                    # Zero-cross direction into max scap retraction is handedness-aware:
+                    # RHP (negative scap peak): + -> -
+                    # LHP (positive scap peak): - -> +
+                    if handedness_local == "R":
+                        zc_candidates = np.where((pre_vel[:-1] >= 0) & (pre_vel[1:] < 0))[0]
+                    else:
+                        zc_candidates = np.where((pre_vel[:-1] <= 0) & (pre_vel[1:] > 0))[0]
                     if zc_candidates.size > 0:
                         start_frame = int(pre_frames[zc_candidates[-1] + 1])
                     else:
@@ -3862,6 +3867,8 @@ with tab3:
             else:
                 x_w = x_vel
 
+            # Metric value is always the most negative velocity within the
+            # handedness-specific zero-cross -> max scap retraction window.
             vals = np.array([np.nanmin(x_w)])
         elif selected_metric_010 == "Max Shoulder Horizontal Abduction":
             x_vals = arr[:, 0]
