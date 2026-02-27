@@ -2648,7 +2648,7 @@ with tab3:
         "Max Shoulder Internal Rotation Velocity",
         "Max Shoulder External Rotation Velocity",
         "Max Elbow Extension Velocity",
-        "Max Scap Retraction",
+        "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction",
         "Max Shoulder Horizontal Abduction/Adduction Velocity",
         "Max Shoulder Horizontal Abduction",
         "Max Shoulder External Rotation",
@@ -2687,7 +2687,7 @@ with tab3:
             "Max Shoulder Internal Rotation Velocity",
             "Max Shoulder External Rotation Velocity",
             "Max Elbow Extension Velocity",
-            "Max Scap Retraction",
+            "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction",
             "Max Shoulder Horizontal Abduction/Adduction Velocity",
             "Max Hand Speed",
         ],
@@ -2906,7 +2906,7 @@ with tab3:
             velo_segment = "PELVIS_ANGLE"
         elif selected_metric_010 == "Max Shoulder Horizontal Abduction/Adduction Velocity":
             velo_segment = shoulder_velo_segment
-        elif selected_metric_010 == "Max Scap Retraction":
+        elif selected_metric_010 == "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction":
             velo_segment = shoulder_velo_segment
         elif selected_metric_010 == "Max Shoulder Horizontal Abduction":
             velo_segment = "RT_SHOULDER_ANGLE" if handedness_local == "R" else "LT_SHOULDER_ANGLE"
@@ -3781,7 +3781,7 @@ with tab3:
                     x_vals = x_vals[win_mask]
             # Always take the most negative value (both handedness)
             vals = np.array([np.nanmin(x_vals)])
-        elif selected_metric_010 == "Max Scap Retraction":
+        elif selected_metric_010 == "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction":
             # Use shoulder horizontal abduction/adduction velocity (x_data) and
             # compute peak negative velocity in the lead-up window from zero-cross
             # to max scap retraction frame.
