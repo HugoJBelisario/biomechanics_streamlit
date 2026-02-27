@@ -2875,7 +2875,9 @@ with tab3:
         elif selected_metric_010 == "Max Elbow Extension Velocity":
             velo_segment = elbow_velo_segment
         elif selected_metric_010 == "Peak Rotational Torque into Layback":
-            velo_segment = "RT_SHOULDER_LAR_MMT" if handedness_local == "R" else "LT_SHOULDER_LAR_MMT"
+            # Explicit handedness mapping:
+            # RHP -> RT_SHOULDER_RAR_MMT, LHP -> LT_SHOULDER_LAR_MMT
+            velo_segment = "RT_SHOULDER_RAR_MMT" if handedness_local == "R" else "LT_SHOULDER_LAR_MMT"
         elif selected_metric_010 == "Max Torso Angular Velocity":
             velo_segment = "TORSO_ANGULAR_VELOCITY"
         elif selected_metric_010 == "Max Torso–Pelvis Angular Velocity":
@@ -3059,7 +3061,8 @@ with tab3:
             # Elbow extension velocity: always the most negative value (both handedness)
             vals = np.array([np.nanmin(x_vals)])
         elif selected_metric_010 == "Peak Rotational Torque into Layback":
-            torque_x = arr[:, 0]
+            # Rotational torque uses SHOULDER_LAR_MMT Z.
+            torque_z = arr[:, 2]
 
             # Pulldown-safe MER anchor for identifying max scap retraction frame.
             if throw_type_local == "Pulldown":
@@ -3117,7 +3120,7 @@ with tab3:
                 torque_window_start_frame_010 = float(max_scap_frame)
                 after_mask = frames >= max_scap_frame
                 after_frames = frames[after_mask]
-                after_torque = torque_x[after_mask]
+                after_torque = torque_z[after_mask]
                 if after_torque.size > 0:
                     neg_peak_local_idx = int(np.nanargmin(after_torque))
                     neg_peak_frame = int(after_frames[neg_peak_local_idx])
@@ -3140,13 +3143,13 @@ with tab3:
 
                     win_mask = (frames >= max_scap_frame) & (frames <= end_frame)
                     if np.any(win_mask):
-                        vals = np.array([np.nanmin(torque_x[win_mask])])
+                        vals = np.array([np.nanmin(torque_z[win_mask])])
                     else:
                         vals = np.array([np.nanmin(after_torque)])
                 else:
                     vals = np.array([np.nan])
             else:
-                vals = np.array([np.nanmin(torque_x)])
+                vals = np.array([np.nanmin(torque_z)])
         elif selected_metric_010 == "Max Torso Angular Velocity":
             if torso_axis == "X (Extension)":
                 x_vals = arr[:, 0]
