@@ -2778,6 +2778,8 @@ with tab3:
 
     rows_010 = []
     for take_id_010, pitch_velo_010, handedness_local, throw_type_local in take_rows_010:
+        scap_zero_frame_010 = np.nan
+        max_scap_retraction_frame_010 = np.nan
         # Determine handedness-specific segment names for this take
         if handedness_local == "R":
             shoulder_velo_segment = "RT_SHOULDER_ANGULAR_VELOCITY"
@@ -3836,8 +3838,11 @@ with tab3:
                 else:
                     scap_peak_idx = int(np.nanargmax(scap_x_w))
                 max_scap_frame = int(scap_frames_w[scap_peak_idx])
+                max_scap_retraction_frame_010 = float(max_scap_frame)
             else:
                 max_scap_frame = int(mer_anchor) if mer_anchor is not None else None
+                if max_scap_frame is not None:
+                    max_scap_retraction_frame_010 = float(max_scap_frame)
 
             if max_scap_frame is not None:
                 pre_mask = frames <= max_scap_frame
@@ -3868,6 +3873,7 @@ with tab3:
                             start_frame = int(pre_frames[zc_candidates[-1] + 1])
                         else:
                             start_frame = int(pre_frames[int(np.argmin(np.abs(pre_vel)))])
+                    scap_zero_frame_010 = float(start_frame)
 
                     leadup_mask = (frames >= start_frame) & (frames <= max_scap_frame)
                     if np.any(leadup_mask):
@@ -4047,12 +4053,16 @@ with tab3:
         else:
             metric_value = abs(raw_value)
 
-        rows_010.append({
+        row_payload = {
             "take_id": take_id_010,
             "Throw Type": (throw_type_local if throw_type_local is not None else "Mound"),
             "Velocity": pitch_velo_010,
             selected_metric_010: metric_value
-        })
+        }
+        if selected_metric_010 == "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction":
+            row_payload["Scap 0 Frame"] = scap_zero_frame_010
+            row_payload["Max Scap Retraction Frame"] = max_scap_retraction_frame_010
+        rows_010.append(row_payload)
 
     if rows_010:
         # Rebuild dataframe including take_id so we can filter correctly
