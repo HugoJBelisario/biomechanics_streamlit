@@ -3891,9 +3891,9 @@ with tab3:
             else:
                 x_w = x_vel
 
-            # Metric value is always the most negative velocity within the
+            # Metric value is the most positive velocity within the
             # handedness-specific zero-cross -> max scap retraction window.
-            vals = np.array([np.nanmin(x_w)])
+            vals = np.array([np.nanmax(x_w)])
         elif selected_metric_010 == "Max Shoulder Horizontal Abduction":
             x_vals = arr[:, 0]
 
@@ -4065,9 +4065,6 @@ with tab3:
             "Velocity": pitch_velo_010,
             selected_metric_010: metric_value
         }
-        if selected_metric_010 == "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction":
-            row_payload["Scap 0 Frame"] = scap_zero_frame_010
-            row_payload["Max Scap Retraction Frame"] = max_scap_retraction_frame_010
         rows_010.append(row_payload)
 
     if rows_010:
