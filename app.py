@@ -3844,18 +3844,30 @@ with tab3:
                 pre_frames = frames[pre_mask]
                 pre_vel = x_vel[pre_mask]
                 if pre_vel.size > 0:
-                    # Zero-cross direction into max scap retraction is handedness-aware:
-                    # RHP (negative scap peak): + -> -
-                    # LHP (positive scap peak): - -> +
-                    if handedness_local == "R":
+                    if handedness_local == "L" and scap_rows:
+                        # Lefty-specific request:
+                        # Start window at the last LT_SHOULDER_ANGLE X zero-crossing
+                        # before the positive max scap retraction frame.
+                        scap_pre_mask = scap_frames_w <= max_scap_frame
+                        scap_pre_frames = scap_frames_w[scap_pre_mask]
+                        scap_pre_x = scap_x_w[scap_pre_mask]
+                        if scap_pre_x.size > 1:
+                            scap_zc = np.where((scap_pre_x[:-1] <= 0) & (scap_pre_x[1:] > 0))[0]
+                            if scap_zc.size > 0:
+                                start_frame = int(scap_pre_frames[scap_zc[-1] + 1])
+                            else:
+                                start_frame = int(scap_pre_frames[int(np.argmin(np.abs(scap_pre_x)))])
+                        elif scap_pre_x.size == 1:
+                            start_frame = int(scap_pre_frames[0])
+                        else:
+                            start_frame = int(pre_frames[0])
+                    else:
+                        # Righty behavior (existing): velocity zero-cross into negative.
                         zc_candidates = np.where((pre_vel[:-1] >= 0) & (pre_vel[1:] < 0))[0]
-                    else:
-                        zc_candidates = np.where((pre_vel[:-1] <= 0) & (pre_vel[1:] > 0))[0]
-                    if zc_candidates.size > 0:
-                        start_frame = int(pre_frames[zc_candidates[-1] + 1])
-                    else:
-                        # Fallback: closest-to-zero frame before the max.
-                        start_frame = int(pre_frames[int(np.argmin(np.abs(pre_vel)))])
+                        if zc_candidates.size > 0:
+                            start_frame = int(pre_frames[zc_candidates[-1] + 1])
+                        else:
+                            start_frame = int(pre_frames[int(np.argmin(np.abs(pre_vel)))])
 
                     leadup_mask = (frames >= start_frame) & (frames <= max_scap_frame)
                     if np.any(leadup_mask):
