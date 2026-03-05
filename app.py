@@ -4543,11 +4543,14 @@ with tab4:
                 )
             )
 
+        def _fmt_ms(ms_val):
+            return f"{ms_val:+.0f} ms"
+
         fig_ts.add_vline(
             x=0,
             line_dash="dot",
             line_color="green",
-            annotation_text="BR",
+            annotation_text="BR (0 ms)",
             annotation_position="top",
             annotation_font=dict(
                 size=13,
@@ -4563,7 +4566,7 @@ with tab4:
                 x=median_fp,
                 line_dash="dash",
                 line_color="orange",
-                annotation_text="FP",
+                annotation_text=f"FP ({_fmt_ms(median_fp)})",
                 annotation_position="top",
                 annotation_font=dict(
                     size=13,
@@ -4578,7 +4581,7 @@ with tab4:
                 x=median_er,
                 line_dash="dot",
                 line_color="purple",
-                annotation_text="MER",
+                annotation_text=f"MER ({_fmt_ms(median_er)})",
                 annotation_position="top",
                 annotation_font=dict(
                     size=13,
