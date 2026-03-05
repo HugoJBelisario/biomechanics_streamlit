@@ -4451,9 +4451,9 @@ with tab4:
         date_colors = {}
 
         fig_ts = go.Figure()
-        fp_aligned_frames = []
-        er_aligned_frames = []
-        max_x_aligned = None
+        fp_aligned_ms = []
+        er_aligned_ms = []
+        ms_per_frame = 1000.0 / 250.0  # capture sampled at 250 Hz
 
         for take_id, take_date in takes_ts:
             # --- Ball Release frame ---
@@ -4463,9 +4463,9 @@ with tab4:
 
             # --- Foot Plant frame (same logic as Tab 3) ---
             sh_er_max_frame = get_shoulder_er_max_frame(take_id, handedness_ts, cur)
-            # Store Shoulder ER aligned to Ball Release
+            # Store Shoulder ER aligned to Ball Release (ms)
             if sh_er_max_frame is not None:
-                er_aligned_frames.append(sh_er_max_frame - br_frame)
+                er_aligned_ms.append((sh_er_max_frame - br_frame) * ms_per_frame)
             fp_start_candidate = get_lead_ankle_prox_x_peak_frame(take_id, handedness_ts, cur)
 
             ankle_min_frame = None
@@ -4493,9 +4493,9 @@ with tab4:
             else:
                 fp_frame = fp_start_candidate
 
-            # Store FP aligned to Ball Release
+            # Store FP aligned to Ball Release (ms)
             if fp_frame is not None:
-                fp_aligned_frames.append(fp_frame - br_frame)
+                fp_aligned_ms.append((fp_frame - br_frame) * ms_per_frame)
 
             cur.execute(
                 """
@@ -4521,15 +4521,8 @@ with tab4:
             frames = df_ts["frame"].values
             vals   = df_ts["x_data"].values
 
-            # Align time so that Ball Release maps to 0
-            t_aligned = frames - br_frame
-            # Track the max aligned x so we can set a valid upper bound for x-axis range
-            try:
-                cur_max = float(np.nanmax(t_aligned))
-                if max_x_aligned is None or cur_max > max_x_aligned:
-                    max_x_aligned = cur_max
-            except Exception:
-                pass
+            # Align time so that Ball Release maps to 0 ms
+            t_aligned_ms = (frames - br_frame) * ms_per_frame
 
             date_str = take_date.strftime("%Y-%m-%d")
 
@@ -4539,7 +4532,7 @@ with tab4:
 
             fig_ts.add_trace(
                 go.Scatter(
-                    x=t_aligned,
+                    x=t_aligned_ms,
                     y=vals,
                     mode="lines",
                     line=dict(color=date_colors[date_str]),
@@ -4564,8 +4557,8 @@ with tab4:
         )
 
         # --- Median Foot Plant ---
-        if fp_aligned_frames:
-            median_fp = float(np.median(fp_aligned_frames))
+        if fp_aligned_ms:
+            median_fp = float(np.median(fp_aligned_ms))
             fig_ts.add_vline(
                 x=median_fp,
                 line_dash="dash",
@@ -4578,13 +4571,9 @@ with tab4:
                     family="Arial"
                 )
             )
-            x_start = median_fp - 50
-        else:
-            x_start = None
-
         # --- Median Shoulder ER ---
-        if er_aligned_frames:
-            median_er = float(np.median(er_aligned_frames))
+        if er_aligned_ms:
+            median_er = float(np.median(er_aligned_ms))
             fig_ts.add_vline(
                 x=median_er,
                 line_dash="dot",
@@ -4598,14 +4587,15 @@ with tab4:
                 )
             )
 
-        # End plot 50 frames after Ball Release
-        x_end = 50
+        # Fixed window requested: -450 ms to +150 ms from Ball Release
+        x_start = -450
+        x_end = 150
 
         fig_ts.update_layout(
-            title=f"Arm Proximal Energy Transfer — {arm_prox_segment} (Aligned to Ball Release)",
-            xaxis_title="Aligned Time (Ball Release = 0)",
+            title=f"Arm Proximal Energy Transfer — {arm_prox_segment} (Aligned to Ball Release, ms)",
+            xaxis_title="Aligned Time (ms, Ball Release = 0)",
             yaxis_title="Power",
-            xaxis=dict(range=[x_start, x_end]) if x_start is not None else {},
+            xaxis=dict(range=[x_start, x_end]),
             height=600,
             legend=dict(
                 orientation="h",
