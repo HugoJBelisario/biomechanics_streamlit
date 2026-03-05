@@ -4430,7 +4430,7 @@ with tab4:
     placeholders_tt = ",".join(["%s"] * len(selected_throw_types_ts))
     cur.execute(
         f"""
-        SELECT t.take_id, t.take_date
+        SELECT t.take_id, t.take_date, COALESCE(t.throw_type, 'Mound') AS throw_type
         FROM takes t
         JOIN athletes a ON t.athlete_id = a.athlete_id
         WHERE a.athlete_name = %s
@@ -4455,35 +4455,87 @@ with tab4:
         er_aligned_ms = []
         ms_per_frame = 1000.0 / 250.0  # capture sampled at 250 Hz
 
-        for take_id, take_date in takes_ts:
-            # --- Ball Release frame ---
-            br_frame = get_ball_release_frame(take_id, handedness_ts, cur)
+        fp_aligned_frames = []
+        mer_aligned_frames = []
+
+        def _pick_mer_frame_ts(take_id, br_frame, fp_frame=None, throw_type="Mound"):
+            shoulder_segment = "RT_SHOULDER" if handedness_ts == "R" else "LT_SHOULDER"
+
+            if throw_type == "Pulldown" and fp_frame is not None:
+                start_frame = int(fp_frame) - 30
+                end_frame = int(fp_frame) + 30
+                cur.execute(
+                    """
+                    SELECT ts.frame, ts.z_data
+                    FROM time_series_data ts
+                    JOIN categories c ON ts.category_id = c.category_id
+                    JOIN segments s   ON ts.segment_id  = s.segment_id
+                    WHERE ts.take_id = %s
+                      AND c.category_name = 'JOINT_ANGLES'
+                      AND s.segment_name = %s
+                      AND ts.frame BETWEEN %s AND %s
+                      AND ts.z_data IS NOT NULL
+                    ORDER BY ts.frame
+                    """,
+                    (take_id, shoulder_segment, start_frame, end_frame)
+                )
+                rows = cur.fetchall()
+                if rows:
+                    frames = np.array([r[0] for r in rows], dtype=int)
+                    z_vals = np.array([r[1] for r in rows], dtype=float)
+                    idx = int(np.nanargmin(z_vals)) if handedness_ts == "R" else int(np.nanargmax(z_vals))
+                    return int(frames[idx])
+
             if br_frame is None:
+                return None
+
+            cur.execute(
+                """
+                SELECT ts.frame, ts.z_data
+                FROM time_series_data ts
+                JOIN categories c ON ts.category_id = c.category_id
+                JOIN segments s   ON ts.segment_id  = s.segment_id
+                WHERE ts.take_id = %s
+                  AND c.category_name = 'JOINT_ANGLES'
+                  AND s.segment_name = %s
+                  AND ts.frame <= %s
+                  AND ts.z_data IS NOT NULL
+                ORDER BY ts.frame
+                """,
+                (take_id, shoulder_segment, int(br_frame))
+            )
+            rows = cur.fetchall()
+            if not rows:
+                return None
+
+            frames = np.array([r[0] for r in rows], dtype=int)
+            z_vals = np.array([r[1] for r in rows], dtype=float)
+            idx = int(np.nanargmin(z_vals)) if handedness_ts == "R" else int(np.nanargmax(z_vals))
+            return int(frames[idx])
+
+        for take_id, take_date, throw_type in takes_ts:
+            throw_type = throw_type or "Mound"
+
+            # 1) Preliminary BR from hand CGVel peak
+            br_prelim = get_ball_release_frame(take_id, handedness_ts, cur)
+            if br_prelim is None:
                 continue
 
-            # --- Foot Plant frame (same logic as Tab 3) ---
-            sh_er_max_frame = get_shoulder_er_max_frame(take_id, handedness_ts, cur)
-            # Store Shoulder ER aligned to Ball Release (ms)
-            if sh_er_max_frame is not None:
-                er_aligned_ms.append((sh_er_max_frame - br_frame) * ms_per_frame)
-            fp_start_candidate = get_lead_ankle_prox_x_peak_frame(take_id, handedness_ts, cur)
+            # 2) Preliminary MER (pre-BR) to bound refined FP search
+            mer_prelim = _pick_mer_frame_ts(take_id, br_prelim, fp_frame=None, throw_type="Mound")
 
+            # 3) Refined FP via ankle prox-x peak -> ankle z min -> zero-cross (Terra-style flow)
+            fp_start_candidate = get_lead_ankle_prox_x_peak_frame(take_id, handedness_ts, cur)
             ankle_min_frame = None
-            if fp_start_candidate is not None and sh_er_max_frame is not None:
+            if fp_start_candidate is not None and mer_prelim is not None:
                 ankle_min_frame = get_ankle_min_frame(
-                    take_id, handedness_ts,
-                    fp_start_candidate,
-                    sh_er_max_frame,
-                    cur
+                    take_id, handedness_ts, fp_start_candidate, mer_prelim, cur
                 )
 
             zero_cross_frame = None
-            if ankle_min_frame is not None:
+            if ankle_min_frame is not None and mer_prelim is not None:
                 zero_cross_frame = get_zero_cross_frame(
-                    take_id, handedness_ts,
-                    ankle_min_frame,
-                    sh_er_max_frame,
-                    cur
+                    take_id, handedness_ts, ankle_min_frame, mer_prelim, cur
                 )
 
             if zero_cross_frame is not None:
@@ -4493,9 +4545,25 @@ with tab4:
             else:
                 fp_frame = fp_start_candidate
 
-            # Store FP aligned to Ball Release (ms)
+            # 4) Throw-type-aware BR (Pulldown: anchor after FP)
+            if throw_type == "Pulldown":
+                br_frame = get_ball_release_frame_pulldown(take_id, handedness_ts, fp_frame, cur)
+                if br_frame is None:
+                    br_frame = br_prelim
+            else:
+                br_frame = br_prelim
+
+            # 5) Throw-type-aware MER (Pulldown: FP ±30; Mound: pre-BR)
+            sh_er_max_frame = _pick_mer_frame_ts(
+                take_id, br_frame, fp_frame=fp_frame, throw_type=throw_type
+            )
+
             if fp_frame is not None:
+                fp_aligned_frames.append(fp_frame - br_frame)
                 fp_aligned_ms.append((fp_frame - br_frame) * ms_per_frame)
+            if sh_er_max_frame is not None:
+                mer_aligned_frames.append(sh_er_max_frame - br_frame)
+                er_aligned_ms.append((sh_er_max_frame - br_frame) * ms_per_frame)
 
             cur.execute(
                 """
@@ -4543,57 +4611,48 @@ with tab4:
                 )
             )
 
-        fig_ts.add_vline(
-            x=0,
-            line_dash="dot",
-            line_color="green",
-            annotation_text="BR",
-            annotation_position="top",
-            annotation_font=dict(
-                size=13,
-                color="green",
-                family="Arial"
-            )
+        # Terra-style event lines/annotations
+        fig_ts.add_vline(x=0, line_width=3, line_dash="dash", line_color="blue")
+        fig_ts.add_annotation(
+            x=0, y=1.06, xref="x", yref="paper",
+            text="BR", showarrow=False,
+            font=dict(color="blue", size=13, family="Arial"),
+            align="center"
         )
 
         # --- Median Foot Plant ---
         if fp_aligned_ms:
             median_fp = float(np.median(fp_aligned_ms))
-            fig_ts.add_vline(
-                x=median_fp,
-                line_dash="dash",
-                line_color="orange",
-                annotation_text="FP",
-                annotation_position="top",
-                annotation_font=dict(
-                    size=13,
-                    color="orange",
-                    family="Arial"
-                )
+            fig_ts.add_vline(x=median_fp, line_width=3, line_dash="dash", line_color="green")
+            fig_ts.add_annotation(
+                x=median_fp, y=1.06, xref="x", yref="paper",
+                text="FP", showarrow=False,
+                font=dict(color="green", size=13, family="Arial"),
+                align="center"
             )
         # --- Median Shoulder ER ---
         if er_aligned_ms:
             median_er = float(np.median(er_aligned_ms))
-            fig_ts.add_vline(
-                x=median_er,
-                line_dash="dot",
-                line_color="purple",
-                annotation_text="MER",
-                annotation_position="top",
-                annotation_font=dict(
-                    size=13,
-                    color="purple",
-                    family="Arial"
-                )
+            fig_ts.add_vline(x=median_er, line_width=3, line_dash="dash", line_color="red")
+            fig_ts.add_annotation(
+                x=median_er, y=1.06, xref="x", yref="paper",
+                text="MER", showarrow=False,
+                font=dict(color="red", size=13, family="Arial"),
+                align="center"
             )
 
-        # Fixed window requested: -450 ms to +150 ms from Ball Release
-        x_start = -450
-        x_end = 150
+        # Terra-style window: start at median FP - 50 frames, end at +50 frames
+        if fp_aligned_frames:
+            window_start_frame = int(np.median(fp_aligned_frames)) - 50
+        else:
+            window_start_frame = -100
+        window_end_frame = 50
+        x_start = window_start_frame * ms_per_frame
+        x_end = window_end_frame * ms_per_frame
 
         fig_ts.update_layout(
             title=f"Arm Proximal Energy Transfer — {arm_prox_segment} (Aligned to Ball Release, ms)",
-            xaxis_title="Aligned Time (ms, Ball Release = 0)",
+            xaxis_title="Time Relative to Ball Release (ms)",
             yaxis_title="Power",
             xaxis=dict(range=[x_start, x_end]),
             height=600,
