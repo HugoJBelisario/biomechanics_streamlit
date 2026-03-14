@@ -1424,15 +1424,15 @@ with tab1:
                 if not df_rot_to_peak.empty:
                     auc_stp_rot_to_peak = float(np.trapezoid(df_rot_to_peak["x_data"], df_rot_to_peak["frame"]))
 
-            auc_stp_rot_ball, ball_end_frame = compute_negative_lobe_auc(
+            auc_stp_rot_layback, layback_end_frame = compute_negative_lobe_auc(
                 df_stp_rot,
                 threshold=-500,
                 min_frame=max_knee_frame
             )
-            auc_stp_rot_layback, _ = compute_positive_lobe_auc(
+            auc_stp_rot_ball, _ = compute_positive_lobe_auc(
                 df_stp_rot,
                 min_frame=max_knee_frame,
-                start_after_frame=ball_end_frame
+                start_after_frame=layback_end_frame
             )
 
         rows.append({
