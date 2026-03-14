@@ -25,6 +25,107 @@ def normalize_time(df, start_frame, end_frame):
     df["time_pct"] = (df["frame"] - start_frame) / (end_frame - start_frame) * 100
     return df
 
+def interpolate_zero_crossing(frame0, value0, frame1, value1):
+    """Linearly interpolate the frame where the signal crosses zero."""
+    if value0 == 0:
+        return float(frame0)
+    if value1 == 0:
+        return float(frame1)
+    if value1 == value0:
+        return float(frame0)
+    return float(frame0 + ((0.0 - value0) * (frame1 - frame0) / (value1 - value0)))
+
+def compute_positive_lobe_auc(df, min_frame=None, start_after_frame=None):
+    """Return AUC for the first positive lobe bounded by zero crossings."""
+    if df.empty:
+        return np.nan, np.nan
+
+    work = df.copy()
+    work["x_data"] = pd.to_numeric(work["x_data"], errors="coerce")
+    work = work.dropna(subset=["frame", "x_data"]).sort_values("frame").reset_index(drop=True)
+    if min_frame is not None and not np.isnan(min_frame):
+        work = work[work["frame"] >= float(min_frame)].reset_index(drop=True)
+    if start_after_frame is not None and not np.isnan(start_after_frame):
+        work = work[work["frame"] >= float(start_after_frame)].reset_index(drop=True)
+    if len(work) < 2:
+        return np.nan, np.nan
+
+    frames = work["frame"].to_numpy(dtype=float)
+    values = work["x_data"].to_numpy(dtype=float)
+
+    for start_idx in range(1, len(work)):
+        if values[start_idx - 1] <= 0 and values[start_idx] > 0:
+            for end_idx in range(start_idx, len(work) - 1):
+                if values[end_idx] > 0 and values[end_idx + 1] <= 0:
+                    start_frame = interpolate_zero_crossing(
+                        frames[start_idx - 1], values[start_idx - 1],
+                        frames[start_idx], values[start_idx]
+                    )
+                    end_frame = interpolate_zero_crossing(
+                        frames[end_idx], values[end_idx],
+                        frames[end_idx + 1], values[end_idx + 1]
+                    )
+                    seg_frames = np.concatenate((
+                        [start_frame],
+                        frames[start_idx:end_idx + 1],
+                        [end_frame]
+                    ))
+                    seg_values = np.concatenate((
+                        [0.0],
+                        values[start_idx:end_idx + 1],
+                        [0.0]
+                    ))
+                    return float(np.trapezoid(seg_values, seg_frames)), float(end_frame)
+
+    return np.nan, np.nan
+
+def compute_negative_lobe_auc(df, threshold=-500, min_frame=None, start_after_frame=None):
+    """Return AUC for the first negative lobe that crosses the threshold."""
+    if df.empty:
+        return np.nan, np.nan
+
+    work = df.copy()
+    work["x_data"] = pd.to_numeric(work["x_data"], errors="coerce")
+    work = work.dropna(subset=["frame", "x_data"]).sort_values("frame").reset_index(drop=True)
+    if min_frame is not None and not np.isnan(min_frame):
+        work = work[work["frame"] >= float(min_frame)].reset_index(drop=True)
+    if start_after_frame is not None and not np.isnan(start_after_frame):
+        work = work[work["frame"] >= float(start_after_frame)].reset_index(drop=True)
+    if len(work) < 2:
+        return np.nan, np.nan
+
+    frames = work["frame"].to_numpy(dtype=float)
+    values = work["x_data"].to_numpy(dtype=float)
+
+    for start_idx in range(1, len(work)):
+        if values[start_idx - 1] >= 0 and values[start_idx] < 0:
+            for end_idx in range(start_idx, len(work) - 1):
+                if values[end_idx] < 0 and values[end_idx + 1] >= 0:
+                    if np.nanmin(values[start_idx:end_idx + 1]) > threshold:
+                        break
+                    start_frame = interpolate_zero_crossing(
+                        frames[start_idx - 1], values[start_idx - 1],
+                        frames[start_idx], values[start_idx]
+                    )
+                    end_frame = interpolate_zero_crossing(
+                        frames[end_idx], values[end_idx],
+                        frames[end_idx + 1], values[end_idx + 1]
+                    )
+                    seg_frames = np.concatenate((
+                        [start_frame],
+                        frames[start_idx:end_idx + 1],
+                        [end_frame]
+                    ))
+                    seg_values = np.concatenate((
+                        [0.0],
+                        values[start_idx:end_idx + 1],
+                        [0.0]
+                    ))
+                    return float(np.trapezoid(seg_values, seg_frames)), float(end_frame)
+            continue
+
+    return np.nan, np.nan
+
 # Helper: Ball release frame by peak |hand CGVel X|
 # Helper: Ball release frame by peak |hand CGVel X|
 def get_ball_release_frame(take_id, handedness, cur):
@@ -993,7 +1094,9 @@ with tab1:
             "Torso Power",
             "STP Elevation",
             "STP Horizontal Abduction",
-            "STP Rotational"
+            "STP Rotational",
+            "STP Rotational into Layback",
+            "STP Rotational into Ball",
         ],
         default=["Torso Power"],
         key="tab1_energy_plot_options"
@@ -1104,6 +1207,8 @@ with tab1:
         auc_stp_habd_to_peak = np.nan
         auc_stp_rot_total = np.nan
         auc_stp_rot_to_peak = np.nan
+        auc_stp_rot_layback = np.nan
+        auc_stp_rot_ball = np.nan
         pelvis_peak_frame = np.nan
         pelvis_peak_value = np.nan
         fp_frame = np.nan
@@ -1319,6 +1424,17 @@ with tab1:
                 if not df_rot_to_peak.empty:
                     auc_stp_rot_to_peak = float(np.trapezoid(df_rot_to_peak["x_data"], df_rot_to_peak["frame"]))
 
+            auc_stp_rot_ball, ball_end_frame = compute_negative_lobe_auc(
+                df_stp_rot,
+                threshold=-500,
+                min_frame=max_knee_frame
+            )
+            auc_stp_rot_layback, _ = compute_positive_lobe_auc(
+                df_stp_rot,
+                min_frame=max_knee_frame,
+                start_after_frame=ball_end_frame
+            )
+
         rows.append({
             "take_id": tid,
             "label": label,
@@ -1336,6 +1452,8 @@ with tab1:
             "STP HorizAbd AUC (Drive → Peak Arm Energy)": (round(auc_stp_habd_to_peak, 2) if pd.notna(auc_stp_habd_to_peak) else np.nan),
             "STP Rotational AUC (Drive → 0)": (round(auc_stp_rot_total, 2) if pd.notna(auc_stp_rot_total) else np.nan),
             "STP Rotational AUC (Drive → Peak Arm Energy)": (round(auc_stp_rot_to_peak, 2) if pd.notna(auc_stp_rot_to_peak) else np.nan),
+            "STP Rotational AUC (Into Layback)": (round(auc_stp_rot_layback, 2) if pd.notna(auc_stp_rot_layback) else np.nan),
+            "STP Rotational AUC (Into Ball)": (round(auc_stp_rot_ball, 2) if pd.notna(auc_stp_rot_ball) else np.nan),
         })
 
 # Guard for empty rows
@@ -1366,6 +1484,12 @@ if rows:
     df_tab1["STP Rotational AUC (Drive → Peak Arm Energy)"] = pd.to_numeric(
         df_tab1["STP Rotational AUC (Drive → Peak Arm Energy)"], errors="coerce"
     )
+    df_tab1["STP Rotational AUC (Into Layback)"] = pd.to_numeric(
+        df_tab1["STP Rotational AUC (Into Layback)"], errors="coerce"
+    )
+    df_tab1["STP Rotational AUC (Into Ball)"] = pd.to_numeric(
+        df_tab1["STP Rotational AUC (Into Ball)"], errors="coerce"
+    )
     # --- Normalize Throw Type: ensure always present and filled ---
     df_tab1["Throw Type"] = df_tab1["Throw Type"].fillna("Mound")
 
@@ -1392,6 +1516,8 @@ with tab1:
         "STP Elevation": ["diamond"],
         "STP Horizontal Abduction": ["square"],
         "STP Rotational": ["pentagon"],
+        "STP Rotational into Layback": ["hexagon"],
+        "STP Rotational into Ball": ["hexagon-open"],
     }
     # For regression line dashes per metric
     metric_dash_map = {
@@ -1399,6 +1525,8 @@ with tab1:
         "STP Elevation": ["longdash"],
         "STP Horizontal Abduction": [None],
         "STP Rotational": ["dot"],
+        "STP Rotational into Layback": ["dash"],
+        "STP Rotational into Ball": ["dashdot"],
     }
     # For legend names per metric
     metric_trace_names = {
@@ -1416,9 +1544,8 @@ with tab1:
 
     # --- Group by Session Date and Throw Type ---
     for i, ((date, throw_type), sub) in enumerate(df_tab1.groupby(["Session Date", "Throw Type"])):
-        # Only use valid rows for regression/plotting
-        sub_valid = sub.dropna(subset=["Velocity", "AUC (Drive → 0)", "AUC (Drive → Peak Arm Energy)"])
-        if len(sub_valid) < 2:
+        sub = sub.dropna(subset=["Velocity"]).copy()
+        if len(sub) < 2:
             continue
         color = date_color_cycle[i % len(date_color_cycle)]
         x = sub["Velocity"]
@@ -1622,6 +1749,54 @@ with tab1:
                         line=dict(color=color, dash="dot"),
                         name=f"R²={r1**2:.2f}",
                         hovertext=[f"{date} | {throw_type} | R²={r1**2:.2f}"] * len(x_fit),
+                        hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
+                    ))
+            elif energy_plot_option == "STP Rotational into Layback":
+                y0 = sub["STP Rotational AUC (Into Layback)"].dropna()
+                if y0.size >= 2:
+                    slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
+                    x_fit = np.linspace(x.min(), x.max(), 100)
+                    y_fit0 = slope0 * x_fit + intercept0
+                    fig.add_trace(go.Scatter(
+                        x=x.loc[y0.index],
+                        y=y0,
+                        mode="markers",
+                        marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][0]),
+                        name=f"{date} | {throw_type} | STP Rot → Layback",
+                        hovertext=[f"{date} | {throw_type} | STP Rot → Layback"] * len(y0),
+                        hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=x_fit,
+                        y=y_fit0,
+                        mode="lines",
+                        line=dict(color=color, dash=metric_dash_map[energy_plot_option][0]),
+                        name=f"R²={r0**2:.2f}",
+                        hovertext=[f"{date} | {throw_type} | R²={r0**2:.2f}"] * len(x_fit),
+                        hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
+                    ))
+            elif energy_plot_option == "STP Rotational into Ball":
+                y0 = sub["STP Rotational AUC (Into Ball)"].dropna()
+                if y0.size >= 2:
+                    slope0, intercept0, r0, _, _ = linregress(x.loc[y0.index], y0)
+                    x_fit = np.linspace(x.min(), x.max(), 100)
+                    y_fit0 = slope0 * x_fit + intercept0
+                    fig.add_trace(go.Scatter(
+                        x=x.loc[y0.index],
+                        y=y0,
+                        mode="markers",
+                        marker=dict(color=color, symbol=metric_symbol_map[energy_plot_option][0]),
+                        name=f"{date} | {throw_type} | STP Rot → Ball",
+                        hovertext=[f"{date} | {throw_type} | STP Rot → Ball"] * len(y0),
+                        hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Value: %{y:.2f}<extra></extra>",
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=x_fit,
+                        y=y_fit0,
+                        mode="lines",
+                        line=dict(color=color, dash=metric_dash_map[energy_plot_option][0]),
+                        name=f"R²={r0**2:.2f}",
+                        hovertext=[f"{date} | {throw_type} | R²={r0**2:.2f}"] * len(x_fit),
                         hovertemplate="%{hovertext}<br>Velocity: %{x:.1f} mph<br>Predicted: %{y:.2f}<extra></extra>",
                     ))
 
