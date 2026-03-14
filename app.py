@@ -1406,7 +1406,7 @@ with tab1:
               AND c.category_name = 'JCS_STP_ROT'
               AND s.segment_name = %s
             ORDER BY frame
-        """, (tid, shoulder_stp_segment))
+        """, (tid, arm_segment))
         df_stp_rot = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
         if not df_stp_rot.empty and not np.isnan(max_knee_frame) and not np.isnan(torso_end_frame):
             df_stp_rot["x_data"] = pd.to_numeric(df_stp_rot["x_data"], errors="coerce").fillna(0)
