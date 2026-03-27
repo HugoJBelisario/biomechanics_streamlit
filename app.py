@@ -4,6 +4,7 @@ import pandas as pd
 import psycopg2
 import numpy as np
 from scipy.stats import linregress
+from scipy.signal import savgol_filter
 import plotly.graph_objects as go
 import plotly.express as px
 
@@ -157,6 +158,30 @@ def prepare_biodex_dataframe(uploaded_file):
     start_time = df["Time"].iloc[0]
     df["Elapsed Seconds"] = (df["Time"] - start_time).dt.total_seconds()
     return df, numeric_columns
+
+def get_valid_savgol_window(window_length, series_length, polyorder):
+    """Clamp the Savitzky-Golay window to a valid odd length for the series."""
+    max_window = series_length if series_length % 2 == 1 else series_length - 1
+    if max_window <= polyorder:
+        return None
+
+    valid_window = min(window_length, max_window)
+    if valid_window % 2 == 0:
+        valid_window -= 1
+    if valid_window <= polyorder:
+        valid_window = polyorder + 2 if polyorder % 2 == 1 else polyorder + 1
+    if valid_window % 2 == 0:
+        valid_window += 1
+
+    return valid_window if valid_window <= max_window else None
+
+def downsample_biodex_plot(plot_df, max_points):
+    """Reduce plotted points while preserving overall curve shape for display."""
+    if len(plot_df) <= max_points:
+        return plot_df
+
+    step = max(1, int(np.ceil(len(plot_df) / max_points)))
+    return plot_df.iloc[::step].copy()
 
 # Helper: Ball release frame by peak |hand CGVel X|
 # Helper: Ball release frame by peak |hand CGVel X|
@@ -4922,12 +4947,56 @@ with tab5:
             if not available_metrics:
                 st.warning("The uploaded files do not share a common numeric measurement column to plot together.")
             else:
-                selected_biodex_metric = st.selectbox(
-                    "Measurement",
-                    options=available_metrics,
-                    index=0,
-                    key="biodex_metric",
-                )
+                controls_col1, controls_col2 = st.columns(2)
+                with controls_col1:
+                    selected_biodex_metric = st.selectbox(
+                        "Measurement",
+                        options=available_metrics,
+                        index=0,
+                        key="biodex_metric",
+                    )
+                    show_raw_overlay = st.toggle("Show raw trace overlay", value=True, key="biodex_show_raw")
+                    apply_rolling_median = st.toggle("Apply rolling median", value=False, key="biodex_apply_median")
+                    median_window = st.slider(
+                        "Rolling median window",
+                        min_value=3,
+                        max_value=51,
+                        value=7,
+                        step=2,
+                        key="biodex_median_window",
+                        disabled=not apply_rolling_median,
+                    )
+
+                with controls_col2:
+                    apply_savgol = st.toggle("Apply Savitzky-Golay smoothing", value=False, key="biodex_apply_savgol")
+                    savgol_window = st.slider(
+                        "Savitzky-Golay window",
+                        min_value=5,
+                        max_value=301,
+                        value=101,
+                        step=2,
+                        key="biodex_savgol_window",
+                        disabled=not apply_savgol,
+                    )
+                    savgol_polyorder = st.slider(
+                        "Savitzky-Golay polynomial order",
+                        min_value=2,
+                        max_value=5,
+                        value=3,
+                        step=1,
+                        key="biodex_savgol_polyorder",
+                        disabled=not apply_savgol,
+                    )
+                    apply_downsampling = st.toggle("Downsample for display", value=False, key="biodex_apply_downsampling")
+                    max_plot_points = st.slider(
+                        "Max plotted points per file",
+                        min_value=250,
+                        max_value=5000,
+                        value=1000,
+                        step=250,
+                        key="biodex_max_points",
+                        disabled=not apply_downsampling,
+                    )
 
                 fig_biodex = go.Figure()
                 for item in biodex_data:
@@ -4935,12 +5004,55 @@ with tab5:
                     if plot_df.empty:
                         continue
 
+                    processed_df = plot_df[["Elapsed Seconds", selected_biodex_metric]].copy()
+                    processed_df = processed_df.rename(columns={selected_biodex_metric: "value"})
+
+                    if apply_rolling_median:
+                        processed_df["value"] = (
+                            processed_df["value"]
+                            .rolling(window=median_window, center=True, min_periods=1)
+                            .median()
+                        )
+
+                    if apply_savgol and len(processed_df) > savgol_polyorder + 2:
+                        valid_window = get_valid_savgol_window(
+                            savgol_window,
+                            len(processed_df),
+                            savgol_polyorder,
+                        )
+                        if valid_window is not None:
+                            processed_df["value"] = savgol_filter(
+                                processed_df["value"].to_numpy(),
+                                window_length=valid_window,
+                                polyorder=savgol_polyorder,
+                            )
+
+                    if apply_downsampling:
+                        processed_df = downsample_biodex_plot(processed_df, max_plot_points)
+
+                    if show_raw_overlay:
+                        raw_df = plot_df[["Elapsed Seconds", selected_biodex_metric]].copy()
+                        if apply_downsampling:
+                            raw_df = downsample_biodex_plot(raw_df, max_plot_points)
+
+                        fig_biodex.add_trace(
+                            go.Scatter(
+                                x=raw_df["Elapsed Seconds"],
+                                y=raw_df[selected_biodex_metric],
+                                mode="lines",
+                                name=f"{item['name']} (Raw)",
+                                line=dict(width=1),
+                                opacity=0.2,
+                            )
+                        )
+
                     fig_biodex.add_trace(
                         go.Scatter(
-                            x=plot_df["Elapsed Seconds"],
-                            y=plot_df[selected_biodex_metric],
+                            x=processed_df["Elapsed Seconds"],
+                            y=processed_df["value"],
                             mode="lines",
                             name=item["name"],
+                            line=dict(width=2.5),
                         )
                     )
 
