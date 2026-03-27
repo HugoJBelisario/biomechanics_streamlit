@@ -858,7 +858,13 @@ st.title("Biomechanics Viewer")
 conn = get_connection()
 cur = conn.cursor()
 
-tab1, tab2, tab3, tab4 = st.tabs(["Compensation Analysis", "Session Comparison", "0-10 Report", "Time-Series"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "Compensation Analysis",
+    "Session Comparison",
+    "0-10 Report",
+    "Time-Series",
+    "Biodex",
+])
 def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment, arm_segment, velocity_min, velocity_max):
     # Get all take_ids on that date within velocity range
     cur.execute("""
@@ -2962,6 +2968,7 @@ with tab3:
         # Determine handedness-specific segment names for this take
         if handedness_local == "R":
             shoulder_velo_segment = "RT_SHOULDER_ANGULAR_VELOCITY"
+            shoulder_rta_velo_segment = "RT_SHOULDER_RTA_ANGULAR_VELOCITY"
             hip_velo_segment   = "RT_HIP_ANGULAR_VELOCITY"
             knee_velo_segment  = "RT_KNEE_ANGULAR_VELOCITY"
             ankle_velo_segment = "RT_ANKLE_ANGULAR_VELOCITY"
@@ -2971,6 +2978,7 @@ with tab3:
             hand_segment = "RHA"
         else:
             shoulder_velo_segment = "LT_SHOULDER_ANGULAR_VELOCITY"
+            shoulder_rta_velo_segment = "LT_SHOULDER_RTA_ANGULAR_VELOCITY"
             hip_velo_segment   = "LT_HIP_ANGULAR_VELOCITY"
             knee_velo_segment  = "LT_KNEE_ANGULAR_VELOCITY"
             ankle_velo_segment = "LT_ANKLE_ANGULAR_VELOCITY"
@@ -3090,9 +3098,9 @@ with tab3:
         elif selected_metric_010 == "Pelvis Anterior Tilt at Ball Release":
             velo_segment = "PELVIS_ANGLE"
         elif selected_metric_010 == "Max Shoulder Horizontal Abduction/Adduction Velocity":
-            velo_segment = shoulder_velo_segment
+            velo_segment = shoulder_rta_velo_segment
         elif selected_metric_010 == "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction":
-            velo_segment = shoulder_velo_segment
+            velo_segment = shoulder_rta_velo_segment
         elif selected_metric_010 == "Max Shoulder Horizontal Abduction":
             velo_segment = "RT_SHOULDER_ANGLE" if handedness_local == "R" else "LT_SHOULDER_ANGLE"
         elif selected_metric_010 == "Max Shoulder External Rotation":
@@ -4841,3 +4849,7 @@ with tab4:
         )
 
         st.plotly_chart(fig_ts, use_container_width=True)
+
+with tab5:
+    st.subheader("Biodex")
+    st.info("Biodex content coming soon.")
