@@ -126,6 +126,38 @@ def compute_negative_lobe_auc(df, threshold=-500, min_frame=None, start_after_fr
 
     return np.nan, np.nan
 
+def prepare_biodex_dataframe(uploaded_file):
+    """Parse a Biodex CSV upload into a plottable time-series dataframe."""
+    df = pd.read_csv(uploaded_file)
+    df.columns = [str(col).strip() for col in df.columns]
+
+    if df.empty:
+        raise ValueError("The uploaded Biodex file is empty.")
+
+    if "Time" not in df.columns:
+        raise ValueError("The uploaded Biodex file must include a 'Time' column.")
+
+    df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
+    df = df.dropna(subset=["Time"]).sort_values("Time").reset_index(drop=True)
+
+    if df.empty:
+        raise ValueError("The uploaded Biodex file does not contain any valid timestamps.")
+
+    numeric_columns = []
+    for col in df.columns:
+        if col == "Time":
+            continue
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+        if df[col].notna().any():
+            numeric_columns.append(col)
+
+    if not numeric_columns:
+        raise ValueError("The uploaded Biodex file does not contain any numeric measurement columns.")
+
+    start_time = df["Time"].iloc[0]
+    df["Elapsed Seconds"] = (df["Time"] - start_time).dt.total_seconds()
+    return df, numeric_columns
+
 # Helper: Ball release frame by peak |hand CGVel X|
 # Helper: Ball release frame by peak |hand CGVel X|
 def get_ball_release_frame(take_id, handedness, cur):
@@ -4852,4 +4884,89 @@ with tab4:
 
 with tab5:
     st.subheader("Biodex")
-    st.info("Biodex content coming soon.")
+    st.caption("Upload Biodex CSV exports to visualize a measurement over time.")
+
+    uploaded_biodex_files = st.file_uploader(
+        "Upload Biodex CSV file(s)",
+        type=["csv"],
+        accept_multiple_files=True,
+        key="biodex_upload",
+    )
+
+    if not uploaded_biodex_files:
+        st.info("Upload one or more Biodex CSV files to display a time-series plot.")
+    else:
+        biodex_data = []
+        common_numeric_columns = None
+
+        for uploaded_file in uploaded_biodex_files:
+            try:
+                biodex_df, numeric_columns = prepare_biodex_dataframe(uploaded_file)
+                biodex_data.append({
+                    "name": uploaded_file.name,
+                    "df": biodex_df,
+                    "numeric_columns": numeric_columns,
+                })
+                numeric_set = set(numeric_columns)
+                common_numeric_columns = (
+                    numeric_set
+                    if common_numeric_columns is None
+                    else common_numeric_columns & numeric_set
+                )
+            except Exception as exc:
+                st.error(f"{uploaded_file.name}: {exc}")
+
+        if biodex_data:
+            available_metrics = sorted(common_numeric_columns) if common_numeric_columns else []
+
+            if not available_metrics:
+                st.warning("The uploaded files do not share a common numeric measurement column to plot together.")
+            else:
+                selected_biodex_metric = st.selectbox(
+                    "Measurement",
+                    options=available_metrics,
+                    index=0,
+                    key="biodex_metric",
+                )
+
+                fig_biodex = go.Figure()
+                for item in biodex_data:
+                    plot_df = item["df"].dropna(subset=[selected_biodex_metric])
+                    if plot_df.empty:
+                        continue
+
+                    fig_biodex.add_trace(
+                        go.Scatter(
+                            x=plot_df["Elapsed Seconds"],
+                            y=plot_df[selected_biodex_metric],
+                            mode="lines",
+                            name=item["name"],
+                        )
+                    )
+
+                fig_biodex.update_layout(
+                    title=f"Biodex Time-Series: {selected_biodex_metric}",
+                    xaxis_title="Elapsed Time (s)",
+                    yaxis_title=selected_biodex_metric,
+                    height=600,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="center",
+                        x=0.5,
+                    ),
+                )
+
+                st.plotly_chart(fig_biodex, use_container_width=True)
+
+                show_biodex_table = st.checkbox("Show uploaded data table", key="biodex_show_table")
+                if show_biodex_table:
+                    preview_frames = []
+                    for item in biodex_data:
+                        preview_df = item["df"][["Time", "Elapsed Seconds"] + item["numeric_columns"]].copy()
+                        preview_df.insert(0, "File", item["name"])
+                        preview_frames.append(preview_df)
+
+                    if preview_frames:
+                        st.dataframe(pd.concat(preview_frames, ignore_index=True), use_container_width=True)
