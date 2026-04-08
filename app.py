@@ -183,6 +183,97 @@ def downsample_biodex_plot(plot_df, max_points):
     step = max(1, int(np.ceil(len(plot_df) / max_points)))
     return plot_df.iloc[::step].copy()
 
+def _build_contiguous_regions(index_values):
+    if not index_values:
+        return []
+
+    regions = []
+    start = prev = int(index_values[0])
+    for idx in index_values[1:]:
+        idx = int(idx)
+        if idx == prev + 1:
+            prev = idx
+            continue
+        regions.append((start, prev))
+        start = prev = idx
+    regions.append((start, prev))
+    return regions
+
+def detect_biodex_reps(df, value_col="Torque_Nm", threshold=20.0, min_samples=15, buffer_samples=20):
+    if df.empty or value_col not in df.columns:
+        return []
+
+    signal = pd.to_numeric(df[value_col], errors="coerce").to_numpy()
+    active_idx = np.flatnonzero(np.abs(signal) >= float(threshold))
+    if active_idx.size == 0:
+        return []
+
+    regions = _build_contiguous_regions(active_idx.tolist())
+    rep_windows = []
+    n_rows = len(df)
+
+    for start_idx, end_idx in regions:
+        if (end_idx - start_idx + 1) < int(min_samples):
+            continue
+        buffered_start = max(0, int(start_idx) - int(buffer_samples))
+        buffered_end = min(n_rows - 1, int(end_idx) + int(buffer_samples))
+        rep_windows.append((buffered_start, buffered_end))
+
+    return rep_windows
+
+def extract_normalized_biodex_reps(df, rep_windows, time_col="Elapsed Seconds", value_col="Torque_Nm", n_points=101):
+    normalized_curves = []
+    rep_rows = []
+
+    if df.empty or not rep_windows:
+        return pd.DataFrame(), pd.DataFrame()
+
+    percent_axis = np.linspace(0.0, 100.0, int(n_points))
+
+    for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
+        rep_df = df.iloc[int(start_idx):int(end_idx) + 1].copy()
+        if rep_df.empty:
+            continue
+
+        rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
+        rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
+        rep_df = rep_df.dropna(subset=[time_col, value_col]).reset_index(drop=True)
+        if len(rep_df) < 3:
+            continue
+
+        time_values = rep_df[time_col].to_numpy(dtype=float)
+        torque_values = rep_df[value_col].to_numpy(dtype=float)
+
+        peak_neg_idx = int(np.argmin(torque_values))
+        time_aligned = time_values - time_values[peak_neg_idx]
+
+        raw_percent = np.linspace(0.0, 100.0, len(rep_df))
+        interp_torque = np.interp(percent_axis, raw_percent, torque_values)
+
+        normalized_curves.append(interp_torque)
+        rep_rows.append(pd.DataFrame({
+            "rep_number": rep_number,
+            "movement_pct": percent_axis,
+            "torque_nm": interp_torque,
+            "time_aligned": np.interp(percent_axis, raw_percent, time_aligned),
+        }))
+
+    if not normalized_curves:
+        return pd.DataFrame(), pd.DataFrame()
+
+    curves_arr = np.vstack(normalized_curves)
+    reps_long_df = pd.concat(rep_rows, ignore_index=True)
+
+    mean_df = pd.DataFrame({
+        "movement_pct": percent_axis,
+        "mean_torque_nm": np.nanmean(curves_arr, axis=0),
+        "std_torque_nm": np.nanstd(curves_arr, axis=0),
+    })
+    mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
+    mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
+
+    return reps_long_df, mean_df
+
 # Helper: Ball release frame by peak |hand CGVel X|
 # Helper: Ball release frame by peak |hand CGVel X|
 def get_ball_release_frame(take_id, handedness, cur):
@@ -5071,6 +5162,200 @@ with tab5:
                 )
 
                 st.plotly_chart(fig_biodex, use_container_width=True)
+
+                torque_ready_files = [
+                    item for item in biodex_data
+                    if "Torque_Nm" in item["numeric_columns"]
+                ]
+
+                if torque_ready_files:
+                    st.markdown("### Biodex Rep Averaging")
+                    st.caption(
+                        "Detect visible torque reps, normalize them to a shared movement axis, and compute an average torque curve."
+                    )
+
+                    rep_controls_col, rep_plot_col = st.columns([0.35, 1.0], vertical_alignment="top")
+
+                    with rep_controls_col:
+                        selected_rep_file_name = st.selectbox(
+                            "Rep averaging file",
+                            options=[item["name"] for item in torque_ready_files],
+                            key="biodex_rep_file",
+                        )
+                        threshold = st.number_input(
+                            "Rep detection threshold (|Torque|)",
+                            min_value=1.0,
+                            max_value=500.0,
+                            value=20.0,
+                            step=1.0,
+                            key="biodex_threshold",
+                        )
+                        min_samples = st.number_input(
+                            "Minimum active samples per rep",
+                            min_value=1,
+                            max_value=500,
+                            value=15,
+                            step=1,
+                            key="biodex_min_samples",
+                        )
+                        buffer_samples = st.number_input(
+                            "Buffer samples before/after rep",
+                            min_value=0,
+                            max_value=500,
+                            value=20,
+                            step=1,
+                            key="biodex_buffer_samples",
+                        )
+                        n_points = st.number_input(
+                            "Normalized points per rep",
+                            min_value=25,
+                            max_value=500,
+                            value=101,
+                            step=1,
+                            key="biodex_n_points",
+                        )
+
+                    selected_rep_item = next(
+                        item for item in torque_ready_files
+                        if item["name"] == selected_rep_file_name
+                    )
+                    rep_df_source = selected_rep_item["df"].copy()
+
+                    rep_windows = detect_biodex_reps(
+                        rep_df_source,
+                        value_col="Torque_Nm",
+                        threshold=float(threshold),
+                        min_samples=int(min_samples),
+                        buffer_samples=int(buffer_samples),
+                    )
+
+                    reps_long_df, mean_df = extract_normalized_biodex_reps(
+                        rep_df_source,
+                        rep_windows,
+                        time_col="Elapsed Seconds",
+                        value_col="Torque_Nm",
+                        n_points=int(n_points),
+                    )
+
+                    with rep_plot_col:
+                        raw_fig = go.Figure()
+                        raw_fig.add_trace(go.Scatter(
+                            x=rep_df_source["Elapsed Seconds"],
+                            y=rep_df_source["Torque_Nm"],
+                            mode="lines",
+                            name=f"{selected_rep_file_name} (Raw)",
+                        ))
+
+                        shapes = []
+                        for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
+                            x0 = float(rep_df_source.iloc[start_idx]["Elapsed Seconds"])
+                            x1 = float(rep_df_source.iloc[end_idx]["Elapsed Seconds"])
+
+                            shapes.append(dict(
+                                type="rect",
+                                xref="x",
+                                yref="paper",
+                                x0=x0,
+                                x1=x1,
+                                y0=0,
+                                y1=1,
+                                fillcolor="rgba(0, 123, 255, 0.12)",
+                                line=dict(width=0),
+                                layer="below",
+                            ))
+
+                            raw_fig.add_annotation(
+                                x=(x0 + x1) / 2.0,
+                                y=1.02,
+                                xref="x",
+                                yref="paper",
+                                text=f"Rep {rep_number}",
+                                showarrow=False,
+                            )
+
+                        raw_fig.update_layout(
+                            title="Detected Torque Reps",
+                            xaxis_title="Elapsed Time (s)",
+                            yaxis_title="Torque_Nm",
+                            shapes=shapes,
+                            height=500,
+                        )
+                        st.plotly_chart(raw_fig, use_container_width=True)
+
+                        if reps_long_df.empty or mean_df.empty:
+                            st.warning("No visible reps were detected with the current settings.")
+                        else:
+                            avg_fig = go.Figure()
+
+                            for rep_number, rep_df in reps_long_df.groupby("rep_number"):
+                                avg_fig.add_trace(go.Scatter(
+                                    x=rep_df["movement_pct"],
+                                    y=rep_df["torque_nm"],
+                                    mode="lines",
+                                    line=dict(width=1),
+                                    opacity=0.35,
+                                    name=f"Rep {rep_number}",
+                                ))
+
+                            avg_fig.add_trace(go.Scatter(
+                                x=mean_df["movement_pct"],
+                                y=mean_df["upper_band"],
+                                mode="lines",
+                                line=dict(width=0),
+                                showlegend=False,
+                                hoverinfo="skip",
+                            ))
+                            avg_fig.add_trace(go.Scatter(
+                                x=mean_df["movement_pct"],
+                                y=mean_df["lower_band"],
+                                mode="lines",
+                                line=dict(width=0),
+                                fill="tonexty",
+                                name="±1 SD",
+                            ))
+                            avg_fig.add_trace(go.Scatter(
+                                x=mean_df["movement_pct"],
+                                y=mean_df["mean_torque_nm"],
+                                mode="lines",
+                                line=dict(width=4),
+                                name="Mean Torque",
+                            ))
+
+                            avg_fig.update_layout(
+                                title="Average Torque Curve Across Detected Reps",
+                                xaxis_title="Movement Cycle (%)",
+                                yaxis_title="Torque_Nm",
+                                height=500,
+                            )
+                            st.plotly_chart(avg_fig, use_container_width=True)
+
+                    if rep_windows:
+                        summary_rows = []
+                        for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
+                            rep_df = rep_df_source.iloc[start_idx:end_idx + 1].copy()
+                            rep_df["Elapsed Seconds"] = pd.to_numeric(rep_df["Elapsed Seconds"], errors="coerce")
+                            rep_df["Torque_Nm"] = pd.to_numeric(rep_df["Torque_Nm"], errors="coerce")
+                            rep_df = rep_df.dropna(subset=["Elapsed Seconds", "Torque_Nm"])
+                            if rep_df.empty:
+                                continue
+
+                            summary_rows.append({
+                                "Rep": rep_number,
+                                "Start Time (s)": float(rep_df["Elapsed Seconds"].iloc[0]),
+                                "End Time (s)": float(rep_df["Elapsed Seconds"].iloc[-1]),
+                                "Duration (s)": float(rep_df["Elapsed Seconds"].iloc[-1] - rep_df["Elapsed Seconds"].iloc[0]),
+                                "Peak Positive Torque": float(rep_df["Torque_Nm"].max()),
+                                "Peak Negative Torque": float(rep_df["Torque_Nm"].min()),
+                                "Torque Impulse": float(np.trapezoid(rep_df["Torque_Nm"], rep_df["Elapsed Seconds"])),
+                            })
+
+                        if summary_rows:
+                            st.markdown("### Rep Summary")
+                            st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
+
+                    if not mean_df.empty:
+                        st.markdown("### Mean Curve Preview")
+                        st.dataframe(mean_df, use_container_width=True)
 
                 show_biodex_table = st.checkbox("Show uploaded data table", key="biodex_show_table")
                 if show_biodex_table:
