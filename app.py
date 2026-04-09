@@ -5218,6 +5218,8 @@ with tab5:
 
     if "show_biodex_add_athlete" not in st.session_state:
         st.session_state["show_biodex_add_athlete"] = False
+    if "biodex_pending_selected_athlete_id" in st.session_state:
+        st.session_state["biodex_selected_athlete_id"] = st.session_state.pop("biodex_pending_selected_athlete_id")
     if "biodex_selected_athlete_id" not in st.session_state:
         st.session_state["biodex_selected_athlete_id"] = next(iter(athlete_options), None)
 
@@ -5278,7 +5280,7 @@ with tab5:
                             conn.rollback()
                             st.error(f"Could not add athlete: {exc}")
                         else:
-                            st.session_state["biodex_selected_athlete_id"] = int(new_athlete_id)
+                            st.session_state["biodex_pending_selected_athlete_id"] = int(new_athlete_id)
                             st.session_state["show_biodex_add_athlete"] = False
                             st.success(f"Added {inserted_athlete_name}.")
                             st.rerun()
