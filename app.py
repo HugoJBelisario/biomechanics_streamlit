@@ -160,6 +160,35 @@ def prepare_biodex_dataframe(uploaded_file):
     df["Elapsed Seconds"] = (df["Time"] - start_time).dt.total_seconds()
     return df, numeric_columns
 
+def fetch_all_athletes(cur):
+    cur.execute(
+        """
+        SELECT
+            athlete_id,
+            athlete_name,
+            COALESCE(first_name, '') AS first_name,
+            COALESCE(last_name, '') AS last_name,
+            COALESCE(handedness, '') AS handedness
+        FROM athletes
+        ORDER BY athlete_name
+        """
+    )
+    return cur.fetchall()
+
+def insert_athlete(cur, conn, first_name, last_name, handedness):
+    athlete_name = f"{first_name.strip()} {last_name.strip()}".strip()
+    cur.execute(
+        """
+        INSERT INTO athletes (athlete_name, first_name, last_name, handedness)
+        VALUES (%s, %s, %s, %s)
+        RETURNING athlete_id
+        """,
+        (athlete_name, first_name.strip(), last_name.strip(), handedness.strip().upper()),
+    )
+    athlete_id = cur.fetchone()[0]
+    conn.commit()
+    return athlete_id, athlete_name
+
 def get_valid_savgol_window(window_length, series_length, polyorder):
     """Clamp the Savitzky-Golay window to a valid odd length for the series."""
     max_window = series_length if series_length % 2 == 1 else series_length - 1
@@ -5173,12 +5202,106 @@ with tab5:
     st.subheader("Biodex")
     st.caption("Upload Biodex CSV exports to visualize a measurement over time.")
 
+    athlete_rows = fetch_all_athletes(cur)
+    athlete_options = {}
+    athlete_labels = {}
+    for athlete_id, athlete_name, first_name, last_name, handedness in athlete_rows:
+        display_name = athlete_name or " ".join(part for part in [first_name, last_name] if part).strip() or f"Athlete {athlete_id}"
+        handedness_suffix = f" ({handedness})" if handedness else ""
+        athlete_options[int(athlete_id)] = {
+            "athlete_name": display_name,
+            "first_name": first_name,
+            "last_name": last_name,
+            "handedness": handedness,
+        }
+        athlete_labels[int(athlete_id)] = f"{display_name}{handedness_suffix}"
+
+    if "show_biodex_add_athlete" not in st.session_state:
+        st.session_state["show_biodex_add_athlete"] = False
+    if "biodex_selected_athlete_id" not in st.session_state:
+        st.session_state["biodex_selected_athlete_id"] = next(iter(athlete_options), None)
+
+    selector_col, add_col = st.columns([1.0, 0.28], vertical_alignment="bottom")
+    with selector_col:
+        if athlete_options:
+            selected_athlete_id = st.selectbox(
+                "Athlete",
+                options=list(athlete_options.keys()),
+                format_func=lambda athlete_id: athlete_labels.get(athlete_id, f"Athlete {athlete_id}"),
+                key="biodex_selected_athlete_id",
+                index=(
+                    list(athlete_options.keys()).index(st.session_state["biodex_selected_athlete_id"])
+                    if st.session_state["biodex_selected_athlete_id"] in athlete_options
+                    else 0
+                ),
+            )
+        else:
+            selected_athlete_id = None
+            st.text_input("Athlete", value="No athletes found yet", disabled=True)
+    with add_col:
+        if st.button("Add New Athlete", key="biodex_add_athlete_button", use_container_width=True):
+            st.session_state["show_biodex_add_athlete"] = not st.session_state["show_biodex_add_athlete"]
+
+    if st.session_state["show_biodex_add_athlete"]:
+        with st.form("biodex_add_athlete_form", clear_on_submit=True):
+            add_col1, add_col2, add_col3 = st.columns([1.0, 1.0, 0.6])
+            with add_col1:
+                new_first_name = st.text_input("First Name")
+            with add_col2:
+                new_last_name = st.text_input("Last Name")
+            with add_col3:
+                new_handedness = st.selectbox("Handedness", options=["R", "L"], index=0)
+
+            submitted_new_athlete = st.form_submit_button("Add Athlete", use_container_width=True)
+            if submitted_new_athlete:
+                first_name_clean = new_first_name.strip()
+                last_name_clean = new_last_name.strip()
+                handedness_clean = new_handedness.strip().upper()
+
+                if not first_name_clean or not last_name_clean:
+                    st.error("Enter both a first name and a last name before adding the athlete.")
+                else:
+                    new_athlete_name = f"{first_name_clean} {last_name_clean}"
+                    existing_names = {details["athlete_name"].strip().lower() for details in athlete_options.values()}
+                    if new_athlete_name.strip().lower() in existing_names:
+                        st.error("That athlete already exists in the database.")
+                    else:
+                        try:
+                            new_athlete_id, inserted_athlete_name = insert_athlete(
+                                cur,
+                                conn,
+                                first_name_clean,
+                                last_name_clean,
+                                handedness_clean,
+                            )
+                        except Exception as exc:
+                            conn.rollback()
+                            st.error(f"Could not add athlete: {exc}")
+                        else:
+                            st.session_state["biodex_selected_athlete_id"] = int(new_athlete_id)
+                            st.session_state["show_biodex_add_athlete"] = False
+                            st.success(f"Added {inserted_athlete_name}.")
+                            st.rerun()
+
+    selected_athlete = athlete_options.get(selected_athlete_id) if athlete_options else None
+    if selected_athlete:
+        st.caption(
+            f"Uploading Biodex data for {selected_athlete['athlete_name']}"
+            + (f" ({selected_athlete['handedness']})" if selected_athlete["handedness"] else "")
+        )
+    else:
+        st.info("Select an athlete or add a new athlete before uploading a Biodex file.")
+
     uploaded_biodex_files = st.file_uploader(
         "Upload Biodex CSV file(s)",
         type=["csv"],
         accept_multiple_files=True,
         key="biodex_upload",
+        disabled=selected_athlete is None,
     )
+
+    if selected_athlete is None:
+        uploaded_biodex_files = []
 
     if not uploaded_biodex_files:
         st.info("Upload one or more Biodex CSV files to display a time-series plot.")
