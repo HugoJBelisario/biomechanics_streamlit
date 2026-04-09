@@ -184,6 +184,14 @@ def downsample_biodex_plot(plot_df, max_points):
     step = max(1, int(np.ceil(len(plot_df) / max_points)))
     return plot_df.iloc[::step].copy()
 
+def smooth_biodex_display_curve(values, window_length=9, polyorder=3):
+    """Lightly smooth a display-only curve without changing underlying stats."""
+    arr = np.asarray(values, dtype=float)
+    valid_window = get_valid_savgol_window(window_length, len(arr), polyorder)
+    if valid_window is None:
+        return arr
+    return savgol_filter(arr, window_length=valid_window, polyorder=polyorder)
+
 def _build_contiguous_regions(index_values):
     if not index_values:
         return []
@@ -5385,6 +5393,29 @@ with tab5:
                             step=0.01,
                             key="biodex_landmark_prominence",
                         )
+                        smooth_mean_display = st.toggle(
+                            "Smooth mean curve for display only",
+                            value=False,
+                            key="biodex_smooth_mean_display",
+                        )
+                        mean_display_window = st.slider(
+                            "Display smoothing window",
+                            min_value=5,
+                            max_value=31,
+                            value=9,
+                            step=2,
+                            key="biodex_mean_display_window",
+                            disabled=not smooth_mean_display,
+                        )
+                        mean_display_polyorder = st.slider(
+                            "Display smoothing polynomial order",
+                            min_value=2,
+                            max_value=5,
+                            value=3,
+                            step=1,
+                            key="biodex_mean_display_polyorder",
+                            disabled=not smooth_mean_display,
+                        )
 
                     selected_rep_item = next(
                         item for item in torque_ready_files
@@ -5493,6 +5524,13 @@ with tab5:
                             st.warning("No visible reps were detected with the current settings.")
                         else:
                             avg_fig = go.Figure()
+                            mean_display_values = mean_df["mean_torque_nm"].to_numpy(dtype=float)
+                            if smooth_mean_display:
+                                mean_display_values = smooth_biodex_display_curve(
+                                    mean_display_values,
+                                    window_length=int(mean_display_window),
+                                    polyorder=int(mean_display_polyorder),
+                                )
 
                             for rep_number, rep_df in reps_long_df.groupby("rep_number"):
                                 avg_fig.add_trace(go.Scatter(
@@ -5520,12 +5558,21 @@ with tab5:
                                 fill="tonexty",
                                 name="±1 SD",
                             ))
+                            if smooth_mean_display:
+                                avg_fig.add_trace(go.Scatter(
+                                    x=mean_df["movement_pct"],
+                                    y=mean_df["mean_torque_nm"],
+                                    mode="lines",
+                                    line=dict(width=2, dash="dash"),
+                                    opacity=0.55,
+                                    name="Mean Torque (Raw)",
+                                ))
                             avg_fig.add_trace(go.Scatter(
                                 x=mean_df["movement_pct"],
-                                y=mean_df["mean_torque_nm"],
+                                y=mean_display_values,
                                 mode="lines",
                                 line=dict(width=4),
-                                name="Mean Torque",
+                                name="Mean Torque" if not smooth_mean_display else "Mean Torque (Display-Smoothed)",
                             ))
 
                             for boundary_pct, label in zip(
