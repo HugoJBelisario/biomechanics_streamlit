@@ -200,16 +200,63 @@ def _build_contiguous_regions(index_values):
     regions.append((start, prev))
     return regions
 
+def _merge_close_regions(regions, max_gap):
+    if not regions:
+        return []
+
+    merged = [regions[0]]
+    for start_idx, end_idx in regions[1:]:
+        prev_start, prev_end = merged[-1]
+        if int(start_idx) <= int(prev_end) + int(max_gap) + 1:
+            merged[-1] = (prev_start, max(prev_end, end_idx))
+        else:
+            merged.append((start_idx, end_idx))
+    return merged
+
 def detect_biodex_reps(df, value_col="Torque_Nm", threshold=20.0, min_samples=15, buffer_samples=20):
     if df.empty or value_col not in df.columns:
         return []
 
-    signal = pd.to_numeric(df[value_col], errors="coerce").to_numpy()
-    active_idx = np.flatnonzero(np.abs(signal) >= float(threshold))
+    signal = pd.to_numeric(df[value_col], errors="coerce").to_numpy(dtype=float)
+    if len(signal) == 0:
+        return []
+
+    finite_mask = np.isfinite(signal)
+    if not finite_mask.any():
+        return []
+
+    clean_signal = signal.copy()
+    if not finite_mask.all():
+        valid_idx = np.flatnonzero(finite_mask)
+        clean_signal[~finite_mask] = np.interp(
+            np.flatnonzero(~finite_mask),
+            valid_idx,
+            signal[finite_mask],
+        )
+
+    envelope_window = max(5, int(min_samples) * 2 + 1)
+    envelope_window = min(envelope_window, len(clean_signal))
+    if envelope_window % 2 == 0:
+        envelope_window = max(1, envelope_window - 1)
+
+    abs_signal = np.abs(clean_signal)
+    envelope_series = pd.Series(abs_signal)
+    smoothed_envelope = (
+        envelope_series
+        .rolling(window=envelope_window, center=True, min_periods=1)
+        .max()
+        .rolling(window=envelope_window, center=True, min_periods=1)
+        .mean()
+        .to_numpy(dtype=float)
+    )
+
+    active_idx = np.flatnonzero(smoothed_envelope >= float(threshold))
     if active_idx.size == 0:
         return []
 
     regions = _build_contiguous_regions(active_idx.tolist())
+    merge_gap = max(int(buffer_samples) * 2, int(min_samples) * 2)
+    regions = _merge_close_regions(regions, merge_gap)
     rep_windows = []
     n_rows = len(df)
 
@@ -5287,7 +5334,7 @@ with tab5:
                 if torque_ready_files:
                     st.markdown("### Biodex Rep Averaging")
                     st.caption(
-                        "Detect visible torque reps, normalize them to a shared movement axis, and compute an average torque curve."
+                        "Detect full torque bursts from a smoothed |torque| envelope, align reps by repeated peak landmarks, and compute an average torque curve."
                     )
 
                     rep_controls_col, rep_plot_col = st.columns([0.35, 1.0], vertical_alignment="top")
@@ -5299,7 +5346,7 @@ with tab5:
                             key="biodex_rep_file",
                         )
                         threshold = st.number_input(
-                            "Rep detection threshold (|Torque|)",
+                            "Rep detection threshold (smoothed |Torque| envelope)",
                             min_value=1.0,
                             max_value=500.0,
                             value=20.0,
