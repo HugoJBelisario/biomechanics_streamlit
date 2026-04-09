@@ -5,6 +5,7 @@ import psycopg2
 import numpy as np
 from scipy.stats import linregress
 from scipy.signal import savgol_filter
+from scipy.signal import find_peaks
 import plotly.graph_objects as go
 import plotly.express as px
 
@@ -221,14 +222,81 @@ def detect_biodex_reps(df, value_col="Torque_Nm", threshold=20.0, min_samples=15
 
     return rep_windows
 
-def extract_normalized_biodex_reps(df, rep_windows, time_col="Elapsed Seconds", value_col="Torque_Nm", n_points=101):
-    normalized_curves = []
-    rep_rows = []
+def detect_biodex_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.12):
+    if rep_df.empty or value_col not in rep_df.columns:
+        return None
 
+    torque_values = pd.to_numeric(rep_df[value_col], errors="coerce").to_numpy(dtype=float)
+    if len(torque_values) < 7 or np.all(np.isnan(torque_values)):
+        return None
+
+    finite_mask = np.isfinite(torque_values)
+    if not finite_mask.any():
+        return None
+
+    clean_values = torque_values.copy()
+    if not finite_mask.all():
+        valid_idx = np.flatnonzero(finite_mask)
+        clean_values[~finite_mask] = np.interp(
+            np.flatnonzero(~finite_mask),
+            valid_idx,
+            torque_values[finite_mask],
+        )
+
+    smooth_window = get_valid_savgol_window(11, len(clean_values), 3)
+    if smooth_window is not None:
+        smooth_values = savgol_filter(clean_values, window_length=smooth_window, polyorder=3)
+    else:
+        smooth_values = clean_values
+
+    amplitude_span = float(np.nanmax(smooth_values) - np.nanmin(smooth_values))
+    if amplitude_span <= 0:
+        return None
+
+    min_distance = max(1, len(smooth_values) // 12)
+    prominence = max(1.0, amplitude_span * float(prominence_ratio))
+
+    pos_peaks, pos_props = find_peaks(smooth_values, prominence=prominence, distance=min_distance)
+    neg_peaks, neg_props = find_peaks(-smooth_values, prominence=prominence, distance=min_distance)
+
+    if len(pos_peaks) < 2 or len(neg_peaks) < 2:
+        return None
+
+    top_pos_idx = np.argsort(pos_props["prominences"])[-2:]
+    top_neg_idx = np.argsort(neg_props["prominences"])[-2:]
+
+    candidates = []
+    for idx in top_pos_idx:
+        candidates.append((int(pos_peaks[idx]), "pos"))
+    for idx in top_neg_idx:
+        candidates.append((int(neg_peaks[idx]), "neg"))
+
+    candidates = sorted(candidates, key=lambda item: item[0])
+    landmark_indices = [idx for idx, _kind in candidates]
+
+    if len(landmark_indices) != 4 or any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
+        return None
+
+    return {
+        "indices": landmark_indices,
+        "kinds": [kind for _idx, kind in candidates],
+        "smooth_values": smooth_values,
+    }
+
+def extract_landmark_aligned_biodex_reps(
+    df,
+    rep_windows,
+    time_col="Elapsed Seconds",
+    value_col="Torque_Nm",
+    n_points=101,
+    prominence_ratio=0.12,
+):
     if df.empty or not rep_windows:
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), []
 
     percent_axis = np.linspace(0.0, 100.0, int(n_points))
+    valid_reps = []
+    phase_fraction_rows = []
 
     for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
         rep_df = df.iloc[int(start_idx):int(end_idx) + 1].copy()
@@ -238,28 +306,69 @@ def extract_normalized_biodex_reps(df, rep_windows, time_col="Elapsed Seconds", 
         rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
         rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
         rep_df = rep_df.dropna(subset=[time_col, value_col]).reset_index(drop=True)
-        if len(rep_df) < 3:
+        if len(rep_df) < 7:
             continue
 
+        landmark_info = detect_biodex_rep_landmarks(
+            rep_df,
+            value_col=value_col,
+            prominence_ratio=prominence_ratio,
+        )
+        if landmark_info is None:
+            continue
+
+        boundary_idx = [0] + landmark_info["indices"] + [len(rep_df) - 1]
+        if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
+            continue
+
+        phase_lengths = np.diff(boundary_idx).astype(float)
+        if np.any(phase_lengths <= 0):
+            continue
+
+        phase_fraction_rows.append(phase_lengths / phase_lengths.sum())
+        valid_reps.append({
+            "rep_number": rep_number,
+            "rep_df": rep_df,
+            "boundary_idx": boundary_idx,
+            "landmark_indices": landmark_info["indices"],
+            "landmark_kinds": landmark_info["kinds"],
+        })
+
+    if not valid_reps:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    median_phase_fractions = np.nanmedian(np.vstack(phase_fraction_rows), axis=0)
+    median_phase_fractions = median_phase_fractions / median_phase_fractions.sum()
+    boundary_pct = np.concatenate(([0.0], np.cumsum(median_phase_fractions) * 100.0))
+
+    normalized_curves = []
+    rep_rows = []
+    aligned_rep_metadata = []
+
+    for rep_info in valid_reps:
+        rep_df = rep_info["rep_df"]
         time_values = rep_df[time_col].to_numpy(dtype=float)
         torque_values = rep_df[value_col].to_numpy(dtype=float)
+        sample_idx = np.arange(len(rep_df), dtype=float)
+        mapped_pct = np.interp(sample_idx, rep_info["boundary_idx"], boundary_pct)
+        interp_torque = np.interp(percent_axis, mapped_pct, torque_values)
 
-        peak_neg_idx = int(np.argmin(torque_values))
-        time_aligned = time_values - time_values[peak_neg_idx]
-
-        raw_percent = np.linspace(0.0, 100.0, len(rep_df))
-        interp_torque = np.interp(percent_axis, raw_percent, torque_values)
+        landmark_times = [float(time_values[idx]) for idx in rep_info["landmark_indices"]]
+        landmark_torques = [float(torque_values[idx]) for idx in rep_info["landmark_indices"]]
 
         normalized_curves.append(interp_torque)
         rep_rows.append(pd.DataFrame({
-            "rep_number": rep_number,
+            "rep_number": rep_info["rep_number"],
             "movement_pct": percent_axis,
             "torque_nm": interp_torque,
-            "time_aligned": np.interp(percent_axis, raw_percent, time_aligned),
         }))
-
-    if not normalized_curves:
-        return pd.DataFrame(), pd.DataFrame()
+        aligned_rep_metadata.append({
+            "rep_number": rep_info["rep_number"],
+            "landmark_indices": rep_info["landmark_indices"],
+            "landmark_kinds": rep_info["landmark_kinds"],
+            "landmark_times": landmark_times,
+            "landmark_torques": landmark_torques,
+        })
 
     curves_arr = np.vstack(normalized_curves)
     reps_long_df = pd.concat(rep_rows, ignore_index=True)
@@ -272,7 +381,14 @@ def extract_normalized_biodex_reps(df, rep_windows, time_col="Elapsed Seconds", 
     mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
     mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
 
-    return reps_long_df, mean_df
+    landmark_labels = [
+        f"{kind.upper()}{i + 1}"
+        for i, kind in enumerate(aligned_rep_metadata[0]["landmark_kinds"])
+    ]
+    mean_df.attrs["landmark_boundary_pct"] = boundary_pct[1:-1].tolist()
+    mean_df.attrs["landmark_labels"] = landmark_labels
+
+    return reps_long_df, mean_df, aligned_rep_metadata
 
 # Helper: Ball release frame by peak |hand CGVel X|
 # Helper: Ball release frame by peak |hand CGVel X|
@@ -5214,6 +5330,14 @@ with tab5:
                             step=1,
                             key="biodex_n_points",
                         )
+                        landmark_prominence = st.slider(
+                            "Landmark prominence ratio",
+                            min_value=0.05,
+                            max_value=0.40,
+                            value=0.12,
+                            step=0.01,
+                            key="biodex_landmark_prominence",
+                        )
 
                     selected_rep_item = next(
                         item for item in torque_ready_files
@@ -5229,12 +5353,13 @@ with tab5:
                         buffer_samples=int(buffer_samples),
                     )
 
-                    reps_long_df, mean_df = extract_normalized_biodex_reps(
+                    reps_long_df, mean_df, aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
                         rep_df_source,
                         rep_windows,
                         time_col="Elapsed Seconds",
                         value_col="Torque_Nm",
                         n_points=int(n_points),
+                        prominence_ratio=float(landmark_prominence),
                     )
 
                     with rep_plot_col:
@@ -5272,6 +5397,41 @@ with tab5:
                                 text=f"Rep {rep_number}",
                                 showarrow=False,
                             )
+
+                        landmark_symbol_map = {
+                            "pos": "triangle-up",
+                            "neg": "triangle-down",
+                        }
+                        landmark_color_map = {
+                            "pos": "#f59e0b",
+                            "neg": "#ef4444",
+                        }
+                        for rep_meta in aligned_rep_metadata:
+                            for idx, kind, x_val, y_val in zip(
+                                rep_meta["landmark_indices"],
+                                rep_meta["landmark_kinds"],
+                                rep_meta["landmark_times"],
+                                rep_meta["landmark_torques"],
+                            ):
+                                raw_fig.add_trace(go.Scatter(
+                                    x=[x_val],
+                                    y=[y_val],
+                                    mode="markers",
+                                    marker=dict(
+                                        size=10,
+                                        symbol=landmark_symbol_map.get(kind, "circle"),
+                                        color=landmark_color_map.get(kind, "#ffffff"),
+                                    ),
+                                    name=f"{kind.upper()} landmark",
+                                    legendgroup=f"{kind}_landmark",
+                                    showlegend=False,
+                                    hovertemplate=(
+                                        f"Rep {rep_meta['rep_number']}<br>"
+                                        f"{kind.upper()} landmark<br>"
+                                        "Time: %{x:.2f}s<br>"
+                                        "Torque: %{y:.2f}<extra></extra>"
+                                    ),
+                                ))
 
                         raw_fig.update_layout(
                             title="Detected Torque Reps",
@@ -5321,8 +5481,28 @@ with tab5:
                                 name="Mean Torque",
                             ))
 
+                            for boundary_pct, label in zip(
+                                mean_df.attrs.get("landmark_boundary_pct", []),
+                                mean_df.attrs.get("landmark_labels", []),
+                            ):
+                                avg_fig.add_vline(
+                                    x=float(boundary_pct),
+                                    line_width=2,
+                                    line_dash="dot",
+                                    line_color="rgba(255,255,255,0.45)",
+                                )
+                                avg_fig.add_annotation(
+                                    x=float(boundary_pct),
+                                    y=1.03,
+                                    xref="x",
+                                    yref="paper",
+                                    text=label,
+                                    showarrow=False,
+                                    font=dict(size=11),
+                                )
+
                             avg_fig.update_layout(
-                                title="Average Torque Curve Across Detected Reps",
+                                title="Landmark-Aligned Average Torque Curve Across Detected Reps",
                                 xaxis_title="Movement Cycle (%)",
                                 yaxis_title="Torque_Nm",
                                 height=500,
@@ -5348,6 +5528,22 @@ with tab5:
                                 "Peak Negative Torque": float(rep_df["Torque_Nm"].min()),
                                 "Torque Impulse": float(np.trapezoid(rep_df["Torque_Nm"], rep_df["Elapsed Seconds"])),
                             })
+
+                            rep_meta = next(
+                                (item for item in aligned_rep_metadata if item["rep_number"] == rep_number),
+                                None,
+                            )
+                            if rep_meta is not None:
+                                for landmark_idx, (kind, x_val, y_val) in enumerate(
+                                    zip(
+                                        rep_meta["landmark_kinds"],
+                                        rep_meta["landmark_times"],
+                                        rep_meta["landmark_torques"],
+                                    ),
+                                    start=1,
+                                ):
+                                    summary_rows[-1][f"{kind.upper()}{landmark_idx} Time (s)"] = x_val
+                                    summary_rows[-1][f"{kind.upper()}{landmark_idx} Torque"] = y_val
 
                         if summary_rows:
                             st.markdown("### Rep Summary")
