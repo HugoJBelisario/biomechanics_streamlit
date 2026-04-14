@@ -5341,6 +5341,17 @@ with tab5:
         key="biodex_speed_deg_per_sec",
         disabled=selected_athlete is None,
     )
+    selected_test_date = st.date_input(
+        "Test Date",
+        key="biodex_test_date",
+        disabled=selected_athlete is None,
+    )
+    entered_biodex_notes = st.text_area(
+        "Notes",
+        key="biodex_notes",
+        placeholder="Optional notes about the Biodex session",
+        disabled=selected_athlete is None,
+    )
 
     uploaded_biodex_files = st.file_uploader(
         "Upload Biodex CSV file(s)",
