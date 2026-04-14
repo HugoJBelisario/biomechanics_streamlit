@@ -5352,6 +5352,23 @@ with tab5:
         placeholder="Optional notes about the Biodex session",
         disabled=selected_athlete is None,
     )
+    biodex_plot_label_parts = []
+    if selected_athlete:
+        biodex_plot_label_parts.append(selected_athlete["athlete_name"])
+    if selected_protocol_type:
+        biodex_plot_label_parts.append(selected_protocol_type.replace("_", " ").title())
+    if selected_limb:
+        biodex_plot_label_parts.append(selected_limb.title())
+    if selected_movement:
+        biodex_plot_label_parts.append({
+            "d2_shoulder_pattern": "D2 Shoulder Pattern",
+            "shoulder_er_ir": "Shoulder ER/IR",
+        }.get(selected_movement, selected_movement.replace("_", " ").title()))
+    if selected_speed_deg_per_sec:
+        biodex_plot_label_parts.append(f"{selected_speed_deg_per_sec} deg/s")
+    if selected_test_date:
+        biodex_plot_label_parts.append(selected_test_date.strftime("%Y-%m-%d"))
+    biodex_plot_label = " | ".join(biodex_plot_label_parts) or "Biodex Upload"
 
     uploaded_biodex_files = st.file_uploader(
         "Upload Biodex CSV file(s)",
@@ -5368,7 +5385,6 @@ with tab5:
         st.info("Upload one or more Biodex CSV files to display a time-series plot.")
     else:
         biodex_data = []
-        common_numeric_columns = None
 
         for uploaded_file in uploaded_biodex_files:
             try:
@@ -5378,134 +5394,41 @@ with tab5:
                     "df": biodex_df,
                     "numeric_columns": numeric_columns,
                 })
-                numeric_set = set(numeric_columns)
-                common_numeric_columns = (
-                    numeric_set
-                    if common_numeric_columns is None
-                    else common_numeric_columns & numeric_set
-                )
             except Exception as exc:
                 st.error(f"{uploaded_file.name}: {exc}")
 
         if biodex_data:
-            available_metrics = sorted(common_numeric_columns) if common_numeric_columns else []
+            torque_ready_files = [
+                item for item in biodex_data
+                if "Torque_Nm" in item["numeric_columns"]
+            ]
 
-            if not available_metrics:
-                st.warning("The uploaded files do not share a common numeric measurement column to plot together.")
+            if not torque_ready_files:
+                st.warning("The uploaded file(s) do not contain a `Torque_Nm` column to plot.")
             else:
-                controls_col1, controls_col2 = st.columns(2)
-                with controls_col1:
-                    selected_biodex_metric = st.selectbox(
-                        "Measurement",
-                        options=available_metrics,
-                        index=0,
-                        key="biodex_metric",
-                    )
-                    show_raw_overlay = st.toggle("Show raw trace overlay", value=True, key="biodex_show_raw")
-                    apply_rolling_median = st.toggle("Apply rolling median", value=False, key="biodex_apply_median")
-                    median_window = st.slider(
-                        "Rolling median window",
-                        min_value=3,
-                        max_value=51,
-                        value=7,
-                        step=2,
-                        key="biodex_median_window",
-                        disabled=not apply_rolling_median,
-                    )
-
-                with controls_col2:
-                    apply_savgol = st.toggle("Apply Savitzky-Golay smoothing", value=False, key="biodex_apply_savgol")
-                    savgol_window = st.slider(
-                        "Savitzky-Golay window",
-                        min_value=5,
-                        max_value=301,
-                        value=101,
-                        step=2,
-                        key="biodex_savgol_window",
-                        disabled=not apply_savgol,
-                    )
-                    savgol_polyorder = st.slider(
-                        "Savitzky-Golay polynomial order",
-                        min_value=2,
-                        max_value=5,
-                        value=3,
-                        step=1,
-                        key="biodex_savgol_polyorder",
-                        disabled=not apply_savgol,
-                    )
-                    apply_downsampling = st.toggle("Downsample for display", value=False, key="biodex_apply_downsampling")
-                    max_plot_points = st.slider(
-                        "Max plotted points per file",
-                        min_value=250,
-                        max_value=5000,
-                        value=1000,
-                        step=250,
-                        key="biodex_max_points",
-                        disabled=not apply_downsampling,
-                    )
-
                 fig_biodex = go.Figure()
-                for item in biodex_data:
-                    plot_df = item["df"].dropna(subset=[selected_biodex_metric])
+                for item_index, item in enumerate(torque_ready_files, start=1):
+                    plot_df = item["df"].dropna(subset=["Torque_Nm"])
                     if plot_df.empty:
                         continue
 
-                    processed_df = plot_df[["Elapsed Seconds", selected_biodex_metric]].copy()
-                    processed_df = processed_df.rename(columns={selected_biodex_metric: "value"})
-
-                    if apply_rolling_median:
-                        processed_df["value"] = (
-                            processed_df["value"]
-                            .rolling(window=median_window, center=True, min_periods=1)
-                            .median()
-                        )
-
-                    if apply_savgol and len(processed_df) > savgol_polyorder + 2:
-                        valid_window = get_valid_savgol_window(
-                            savgol_window,
-                            len(processed_df),
-                            savgol_polyorder,
-                        )
-                        if valid_window is not None:
-                            processed_df["value"] = savgol_filter(
-                                processed_df["value"].to_numpy(),
-                                window_length=valid_window,
-                                polyorder=savgol_polyorder,
-                            )
-
-                    if apply_downsampling:
-                        processed_df = downsample_biodex_plot(processed_df, max_plot_points)
-
-                    if show_raw_overlay:
-                        raw_df = plot_df[["Elapsed Seconds", selected_biodex_metric]].copy()
-                        if apply_downsampling:
-                            raw_df = downsample_biodex_plot(raw_df, max_plot_points)
-
-                        fig_biodex.add_trace(
-                            go.Scatter(
-                                x=raw_df["Elapsed Seconds"],
-                                y=raw_df[selected_biodex_metric],
-                                mode="lines",
-                                name=f"{item['name']} (Raw)",
-                                line=dict(width=1),
-                                opacity=0.2,
-                            )
-                        )
+                    trace_name = biodex_plot_label
+                    if len(torque_ready_files) > 1:
+                        trace_name = f"{trace_name} ({item_index})"
 
                     fig_biodex.add_trace(
                         go.Scatter(
-                            x=processed_df["Elapsed Seconds"],
-                            y=processed_df["value"],
+                            x=plot_df["Elapsed Seconds"],
+                            y=plot_df["Torque_Nm"],
                             mode="lines",
-                            name=item["name"],
-                            line=dict(width=2.5),
+                            name=trace_name,
                         )
                     )
 
                 fig_biodex.update_layout(
-                    title=f"Biodex Time-Series: {selected_biodex_metric}",
+                    title="Biodex Time-Series: Torque_Nm",
                     xaxis_title="Elapsed Time (s)",
-                    yaxis_title=selected_biodex_metric,
+                    yaxis_title="Torque_Nm",
                     height=600,
                     legend=dict(
                         orientation="h",
@@ -5517,11 +5440,6 @@ with tab5:
                 )
 
                 st.plotly_chart(fig_biodex, use_container_width=True)
-
-                torque_ready_files = [
-                    item for item in biodex_data
-                    if "Torque_Nm" in item["numeric_columns"]
-                ]
 
                 if torque_ready_files:
                     st.markdown("### Biodex Rep Averaging")
