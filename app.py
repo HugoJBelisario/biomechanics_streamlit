@@ -5294,6 +5294,20 @@ with tab5:
     else:
         st.info("Select an athlete or add a new athlete before uploading a Biodex file.")
 
+    protocol_type_options = [
+        "aerobic",
+        "reactive_eccentric",
+        "speed",
+        "strength",
+    ]
+    selected_protocol_type = st.selectbox(
+        "Protocol Type",
+        options=protocol_type_options,
+        format_func=lambda value: value.replace("_", " ").title(),
+        key="biodex_protocol_type",
+        disabled=selected_athlete is None,
+    )
+
     uploaded_biodex_files = st.file_uploader(
         "Upload Biodex CSV file(s)",
         type=["csv"],
