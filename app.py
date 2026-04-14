@@ -5332,6 +5332,15 @@ with tab5:
         key="biodex_movement",
         disabled=selected_athlete is None,
     )
+    selected_speed_deg_per_sec = st.number_input(
+        "Speed (deg/s)",
+        min_value=0,
+        max_value=1000,
+        value=75,
+        step=1,
+        key="biodex_speed_deg_per_sec",
+        disabled=selected_athlete is None,
+    )
 
     uploaded_biodex_files = st.file_uploader(
         "Upload Biodex CSV file(s)",
