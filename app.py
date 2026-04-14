@@ -5307,6 +5307,31 @@ with tab5:
         key="biodex_protocol_type",
         disabled=selected_athlete is None,
     )
+    limb_options = [
+        "right",
+        "left",
+    ]
+    selected_limb = st.selectbox(
+        "Limb",
+        options=limb_options,
+        format_func=lambda value: value.title(),
+        key="biodex_limb",
+        disabled=selected_athlete is None,
+    )
+    movement_options = [
+        "d2_shoulder_pattern",
+        "shoulder_er_ir",
+    ]
+    selected_movement = st.selectbox(
+        "Movement",
+        options=movement_options,
+        format_func=lambda value: {
+            "d2_shoulder_pattern": "D2 Shoulder Pattern",
+            "shoulder_er_ir": "Shoulder ER/IR",
+        }.get(value, value.replace("_", " ").title()),
+        key="biodex_movement",
+        disabled=selected_athlete is None,
+    )
 
     uploaded_biodex_files = st.file_uploader(
         "Upload Biodex CSV file(s)",
