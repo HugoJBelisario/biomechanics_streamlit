@@ -21,13 +21,15 @@ def render_plotly_line_reveal(
     chunk_count=40,
     frame_delay=0.02,
 ):
-    """Render a Plotly figure, optionally revealing line traces from left to right."""
+    """Render a Plotly figure, optionally revealing line traces in a fixed plot window."""
     if not animate:
         st.plotly_chart(fig, use_container_width=use_container_width)
         return
 
     trace_points = {}
     max_points = 0
+    all_x_values = []
+    all_y_values = []
     for trace_index, trace in enumerate(fig.data):
         if getattr(trace, "type", None) != "scatter":
             continue
@@ -44,12 +46,34 @@ def render_plotly_line_reveal(
 
         trace_points[trace_index] = (x_values, y_values, point_count)
         max_points = max(max_points, point_count)
+        all_x_values.extend(val for val in x_values if pd.notna(val))
+        all_y_values.extend(val for val in y_values if pd.notna(val))
 
     if not trace_points or max_points <= 1:
         st.plotly_chart(fig, use_container_width=use_container_width)
         return
 
     animated_fig = go.Figure(fig)
+    if all_x_values and animated_fig.layout.xaxis.range is None:
+        x_min = min(all_x_values)
+        x_max = max(all_x_values)
+        if x_min == x_max:
+            x_min -= 1
+            x_max += 1
+        animated_fig.update_xaxes(range=[x_min, x_max])
+
+    if all_y_values and animated_fig.layout.yaxis.range is None:
+        y_min = min(all_y_values)
+        y_max = max(all_y_values)
+        if y_min == y_max:
+            y_min -= 1
+            y_max += 1
+        else:
+            y_padding = (y_max - y_min) * 0.05
+            y_min -= y_padding
+            y_max += y_padding
+        animated_fig.update_yaxes(range=[y_min, y_max])
+
     chart_placeholder = st.empty()
     total_steps = max(2, min(int(chunk_count), int(max_points)))
 
@@ -5467,7 +5491,7 @@ with tab5:
                 with animation_controls_col:
                     animate_biodex_lines = st.toggle(
                         "Animate Biodex line draw",
-                        value=True,
+                        value=False,
                         key="biodex_animate_lines",
                     )
                     biodex_animation_speed = st.slider(
@@ -5480,6 +5504,14 @@ with tab5:
                         key="biodex_animation_speed",
                         disabled=not animate_biodex_lines,
                     )
+                    play_biodex_animation = st.button(
+                        "Play animation",
+                        key="biodex_play_animation",
+                        disabled=not animate_biodex_lines,
+                        use_container_width=True,
+                    )
+
+                animate_biodex_now = animate_biodex_lines and play_biodex_animation
 
                 fig_biodex = go.Figure()
                 for item_index, item in enumerate(torque_ready_files, start=1):
@@ -5516,7 +5548,7 @@ with tab5:
 
                 render_plotly_line_reveal(
                     fig_biodex,
-                    animate=animate_biodex_lines,
+                    animate=animate_biodex_now,
                     use_container_width=True,
                     frame_delay=float(biodex_animation_speed),
                 )
@@ -5702,7 +5734,7 @@ with tab5:
                         )
                         render_plotly_line_reveal(
                             raw_fig,
-                            animate=animate_biodex_lines,
+                            animate=animate_biodex_now,
                             use_container_width=True,
                             frame_delay=float(biodex_animation_speed),
                         )
@@ -5790,7 +5822,7 @@ with tab5:
                             )
                             render_plotly_line_reveal(
                                 avg_fig,
-                                animate=animate_biodex_lines,
+                                animate=animate_biodex_now,
                                 use_container_width=True,
                                 frame_delay=float(biodex_animation_speed),
                             )
