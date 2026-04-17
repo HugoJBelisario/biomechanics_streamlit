@@ -1,5 +1,6 @@
 import streamlit as st
 st.set_page_config(layout="wide")
+import time
 import pandas as pd
 import psycopg2
 import numpy as np
@@ -10,6 +11,62 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 interp_points = np.linspace(0, 100, 100)
+
+
+def render_plotly_line_reveal(
+    fig,
+    *,
+    animate=False,
+    use_container_width=True,
+    chunk_count=40,
+    frame_delay=0.02,
+):
+    """Render a Plotly figure, optionally revealing line traces from left to right."""
+    if not animate:
+        st.plotly_chart(fig, use_container_width=use_container_width)
+        return
+
+    trace_points = {}
+    max_points = 0
+    for trace_index, trace in enumerate(fig.data):
+        if getattr(trace, "type", None) != "scatter":
+            continue
+
+        mode = getattr(trace, "mode", "") or ""
+        if "lines" not in mode:
+            continue
+
+        x_values = list(trace.x) if trace.x is not None else []
+        y_values = list(trace.y) if trace.y is not None else []
+        point_count = min(len(x_values), len(y_values))
+        if point_count <= 1:
+            continue
+
+        trace_points[trace_index] = (x_values, y_values, point_count)
+        max_points = max(max_points, point_count)
+
+    if not trace_points or max_points <= 1:
+        st.plotly_chart(fig, use_container_width=use_container_width)
+        return
+
+    animated_fig = go.Figure(fig)
+    chart_placeholder = st.empty()
+    total_steps = max(2, min(int(chunk_count), int(max_points)))
+
+    for step in range(1, total_steps + 1):
+        progress_points = max(1, int(np.ceil((step / total_steps) * max_points)))
+        for trace_index, (x_values, y_values, point_count) in trace_points.items():
+            visible_points = min(progress_points, point_count)
+            animated_fig.data[trace_index].x = x_values[:visible_points]
+            animated_fig.data[trace_index].y = y_values[:visible_points]
+
+        chart_placeholder.plotly_chart(
+            animated_fig,
+            use_container_width=use_container_width,
+        )
+
+        if step < total_steps:
+            time.sleep(frame_delay)
 
 # Database connection settings
 def get_connection():
@@ -5406,6 +5463,24 @@ with tab5:
             if not torque_ready_files:
                 st.warning("The uploaded file(s) do not contain a `Torque_Nm` column to plot.")
             else:
+                animation_controls_col, _ = st.columns([0.35, 1.0], vertical_alignment="center")
+                with animation_controls_col:
+                    animate_biodex_lines = st.toggle(
+                        "Animate Biodex line draw",
+                        value=True,
+                        key="biodex_animate_lines",
+                    )
+                    biodex_animation_speed = st.slider(
+                        "Animation speed",
+                        min_value=0.005,
+                        max_value=0.08,
+                        value=0.02,
+                        step=0.005,
+                        format="%.3f s/frame",
+                        key="biodex_animation_speed",
+                        disabled=not animate_biodex_lines,
+                    )
+
                 fig_biodex = go.Figure()
                 for item_index, item in enumerate(torque_ready_files, start=1):
                     plot_df = item["df"].dropna(subset=["Torque_Nm"])
@@ -5439,7 +5514,12 @@ with tab5:
                     ),
                 )
 
-                st.plotly_chart(fig_biodex, use_container_width=True)
+                render_plotly_line_reveal(
+                    fig_biodex,
+                    animate=animate_biodex_lines,
+                    use_container_width=True,
+                    frame_delay=float(biodex_animation_speed),
+                )
 
                 if torque_ready_files:
                     st.markdown("### Biodex Rep Averaging")
@@ -5620,7 +5700,12 @@ with tab5:
                             shapes=shapes,
                             height=500,
                         )
-                        st.plotly_chart(raw_fig, use_container_width=True)
+                        render_plotly_line_reveal(
+                            raw_fig,
+                            animate=animate_biodex_lines,
+                            use_container_width=True,
+                            frame_delay=float(biodex_animation_speed),
+                        )
 
                         if reps_long_df.empty or mean_df.empty:
                             st.warning("No visible reps were detected with the current settings.")
@@ -5703,7 +5788,12 @@ with tab5:
                                 yaxis_title="Torque_Nm",
                                 height=500,
                             )
-                            st.plotly_chart(avg_fig, use_container_width=True)
+                            render_plotly_line_reveal(
+                                avg_fig,
+                                animate=animate_biodex_lines,
+                                use_container_width=True,
+                                frame_delay=float(biodex_animation_speed),
+                            )
 
                     if rep_windows:
                         summary_rows = []
