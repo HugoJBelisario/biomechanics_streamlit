@@ -5570,6 +5570,29 @@ with tab5:
                     )
                     if animate_biodex_lines:
                         st.caption("Use the chart's Play/Pause controls to run the line animation.")
+                    smooth_biodex_first_plot = st.toggle(
+                        "Smooth first plot for display only",
+                        value=False,
+                        key="biodex_smooth_first_plot",
+                    )
+                    biodex_first_plot_window = st.slider(
+                        "First plot smoothing window",
+                        min_value=5,
+                        max_value=31,
+                        value=9,
+                        step=2,
+                        key="biodex_first_plot_window",
+                        disabled=not smooth_biodex_first_plot,
+                    )
+                    biodex_first_plot_polyorder = st.slider(
+                        "First plot smoothing polynomial order",
+                        min_value=2,
+                        max_value=5,
+                        value=3,
+                        step=1,
+                        key="biodex_first_plot_polyorder",
+                        disabled=not smooth_biodex_first_plot,
+                    )
 
                 fig_biodex = go.Figure()
                 for item_index, item in enumerate(torque_ready_files, start=1):
@@ -5577,14 +5600,24 @@ with tab5:
                     if plot_df.empty:
                         continue
 
+                    y_values = plot_df["Torque_Nm"].to_numpy(dtype=float)
+                    if smooth_biodex_first_plot:
+                        y_values = smooth_biodex_display_curve(
+                            y_values,
+                            window_length=int(biodex_first_plot_window),
+                            polyorder=int(biodex_first_plot_polyorder),
+                        )
+
                     trace_name = biodex_plot_label
                     if len(torque_ready_files) > 1:
                         trace_name = f"{trace_name} ({item_index})"
+                    if smooth_biodex_first_plot:
+                        trace_name = f"{trace_name} (Display-Smoothed)"
 
                     fig_biodex.add_trace(
                         go.Scatter(
                             x=plot_df["Elapsed Seconds"],
-                            y=plot_df["Torque_Nm"],
+                            y=y_values,
                             mode="lines",
                             name=trace_name,
                         )
