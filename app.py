@@ -1,6 +1,5 @@
 import streamlit as st
 st.set_page_config(layout="wide")
-import time
 import pandas as pd
 import psycopg2
 import numpy as np
@@ -22,10 +21,6 @@ def render_plotly_line_reveal(
     frame_delay=0.02,
 ):
     """Render a Plotly figure, optionally revealing line traces in a fixed plot window."""
-    if not animate:
-        st.plotly_chart(fig, use_container_width=use_container_width)
-        return
-
     trace_points = {}
     max_points = 0
     all_x_values = []
@@ -49,20 +44,16 @@ def render_plotly_line_reveal(
         all_x_values.extend(val for val in x_values if pd.notna(val))
         all_y_values.extend(val for val in y_values if pd.notna(val))
 
-    if not trace_points or max_points <= 1:
-        st.plotly_chart(fig, use_container_width=use_container_width)
-        return
-
-    animated_fig = go.Figure(fig)
-    if all_x_values and animated_fig.layout.xaxis.range is None:
+    rendered_fig = go.Figure(fig)
+    if all_x_values and rendered_fig.layout.xaxis.range is None:
         x_min = min(all_x_values)
         x_max = max(all_x_values)
         if x_min == x_max:
             x_min -= 1
             x_max += 1
-        animated_fig.update_xaxes(range=[x_min, x_max])
+        rendered_fig.update_xaxes(range=[x_min, x_max])
 
-    if all_y_values and animated_fig.layout.yaxis.range is None:
+    if all_y_values and rendered_fig.layout.yaxis.range is None:
         y_min = min(all_y_values)
         y_max = max(all_y_values)
         if y_min == y_max:
@@ -72,25 +63,98 @@ def render_plotly_line_reveal(
             y_padding = (y_max - y_min) * 0.05
             y_min -= y_padding
             y_max += y_padding
-        animated_fig.update_yaxes(range=[y_min, y_max])
+        rendered_fig.update_yaxes(range=[y_min, y_max])
 
-    chart_placeholder = st.empty()
+    if not animate or not trace_points or max_points <= 1:
+        st.plotly_chart(rendered_fig, use_container_width=use_container_width)
+        return
+
     total_steps = max(2, min(int(chunk_count), int(max_points)))
+    frame_duration_ms = max(10, int(float(frame_delay) * 1000))
+    trace_indices = list(trace_points.keys())
+    frames = []
 
-    for step in range(1, total_steps + 1):
-        progress_points = max(1, int(np.ceil((step / total_steps) * max_points)))
-        for trace_index, (x_values, y_values, point_count) in trace_points.items():
-            visible_points = min(progress_points, point_count)
-            animated_fig.data[trace_index].x = x_values[:visible_points]
-            animated_fig.data[trace_index].y = y_values[:visible_points]
+    for active_trace_position, trace_index in enumerate(trace_indices):
+        x_values, y_values, point_count = trace_points[trace_index]
+        active_steps = max(2, min(int(chunk_count), int(point_count)))
 
-        chart_placeholder.plotly_chart(
-            animated_fig,
-            use_container_width=use_container_width,
-        )
+        for step in range(1, active_steps + 1):
+            progress_points = max(1, int(np.ceil((step / active_steps) * point_count)))
+            frame_traces = []
 
-        if step < total_steps:
-            time.sleep(frame_delay)
+            for candidate_position, candidate_trace_index in enumerate(trace_indices):
+                candidate_x, candidate_y, candidate_count = trace_points[candidate_trace_index]
+
+                if candidate_position < active_trace_position:
+                    visible_points = candidate_count
+                elif candidate_position == active_trace_position:
+                    visible_points = min(progress_points, candidate_count)
+                else:
+                    visible_points = 1
+
+                frame_traces.append(
+                    go.Scatter(
+                        x=candidate_x[:visible_points],
+                        y=candidate_y[:visible_points],
+                    )
+                )
+
+            frames.append(
+                go.Frame(
+                    data=frame_traces,
+                    traces=trace_indices,
+                    name=f"trace_{active_trace_position}_frame_{step}",
+                )
+            )
+
+    first_frame = frames[0]
+    for local_trace_index, trace_index in enumerate(trace_indices):
+        rendered_fig.data[trace_index].x = first_frame.data[local_trace_index].x
+        rendered_fig.data[trace_index].y = first_frame.data[local_trace_index].y
+
+    rendered_fig.frames = frames
+    rendered_fig.update_layout(
+        updatemenus=[
+            dict(
+                type="buttons",
+                direction="left",
+                x=1.0,
+                y=1.15,
+                xanchor="right",
+                yanchor="top",
+                pad=dict(r=8, t=0),
+                buttons=[
+                    dict(
+                        label="Play",
+                        method="animate",
+                        args=[
+                            None,
+                            dict(
+                                frame=dict(duration=frame_duration_ms, redraw=False),
+                                transition=dict(duration=0),
+                                fromcurrent=False,
+                                mode="immediate",
+                            ),
+                        ],
+                    ),
+                    dict(
+                        label="Pause",
+                        method="animate",
+                        args=[
+                            [None],
+                            dict(
+                                frame=dict(duration=0, redraw=False),
+                                transition=dict(duration=0),
+                                mode="immediate",
+                            ),
+                        ],
+                    ),
+                ],
+            )
+        ]
+    )
+
+    st.plotly_chart(rendered_fig, use_container_width=use_container_width)
 
 # Database connection settings
 def get_connection():
@@ -5491,7 +5555,7 @@ with tab5:
                 with animation_controls_col:
                     animate_biodex_lines = st.toggle(
                         "Animate Biodex line draw",
-                        value=False,
+                        value=True,
                         key="biodex_animate_lines",
                     )
                     biodex_animation_speed = st.slider(
@@ -5504,14 +5568,8 @@ with tab5:
                         key="biodex_animation_speed",
                         disabled=not animate_biodex_lines,
                     )
-                    play_biodex_animation = st.button(
-                        "Play animation",
-                        key="biodex_play_animation",
-                        disabled=not animate_biodex_lines,
-                        use_container_width=True,
-                    )
-
-                animate_biodex_now = animate_biodex_lines and play_biodex_animation
+                    if animate_biodex_lines:
+                        st.caption("Use the chart's Play/Pause controls to run the line animation.")
 
                 fig_biodex = go.Figure()
                 for item_index, item in enumerate(torque_ready_files, start=1):
@@ -5548,7 +5606,7 @@ with tab5:
 
                 render_plotly_line_reveal(
                     fig_biodex,
-                    animate=animate_biodex_now,
+                    animate=animate_biodex_lines,
                     use_container_width=True,
                     frame_delay=float(biodex_animation_speed),
                 )
@@ -5734,7 +5792,7 @@ with tab5:
                         )
                         render_plotly_line_reveal(
                             raw_fig,
-                            animate=animate_biodex_now,
+                            animate=animate_biodex_lines,
                             use_container_width=True,
                             frame_delay=float(biodex_animation_speed),
                         )
@@ -5822,7 +5880,7 @@ with tab5:
                             )
                             render_plotly_line_reveal(
                                 avg_fig,
-                                animate=animate_biodex_now,
+                                animate=animate_biodex_lines,
                                 use_container_width=True,
                                 frame_delay=float(biodex_animation_speed),
                             )
