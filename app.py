@@ -1351,12 +1351,13 @@ st.title("Biomechanics Viewer")
 conn = get_connection()
 cur = conn.cursor()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Compensation Analysis",
     "Session Comparison",
     "0-10 Report",
     "Time-Series",
     "Biodex",
+    "Biodex (Test)",
 ])
 def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment, arm_segment, velocity_min, velocity_max):
     # Get all take_ids on that date within velocity range
@@ -5972,3 +5973,140 @@ with tab5:
 
                     if preview_frames:
                         st.dataframe(pd.concat(preview_frames, ignore_index=True), use_container_width=True)
+
+with tab6:
+    st.subheader("Biodex (Test)")
+    st.caption("Separate workspace for designing the long-term Biodex upload, processing, and comparison flow.")
+
+    biodex_test_tab1, biodex_test_tab2, biodex_test_tab3 = st.tabs([
+        "Upload & Process",
+        "Compare Sessions",
+        "Review Reps",
+    ])
+
+    with biodex_test_tab1:
+        st.markdown("### Upload & Process")
+        st.caption("Use this area for new Biodex uploads, metadata capture, raw storage, rep detection, and saving processed outputs.")
+
+        upload_col1, upload_col2 = st.columns(2)
+        with upload_col1:
+            st.selectbox(
+                "Athlete",
+                options=["Select athlete in future workflow"],
+                index=0,
+                key="biodex_test_upload_athlete_placeholder",
+                disabled=True,
+            )
+            st.selectbox(
+                "Protocol Type",
+                options=["Aerobic", "Reactive Eccentric", "Speed", "Strength"],
+                index=0,
+                key="biodex_test_upload_protocol_placeholder",
+                disabled=True,
+            )
+            st.selectbox(
+                "Movement",
+                options=["D2 Shoulder Pattern", "Shoulder ER/IR"],
+                index=0,
+                key="biodex_test_upload_movement_placeholder",
+                disabled=True,
+            )
+        with upload_col2:
+            st.selectbox(
+                "Limb",
+                options=["Right", "Left"],
+                index=0,
+                key="biodex_test_upload_limb_placeholder",
+                disabled=True,
+            )
+            st.number_input(
+                "Speed (deg/s)",
+                min_value=0,
+                value=75,
+                key="biodex_test_upload_speed_placeholder",
+                disabled=True,
+            )
+            st.date_input(
+                "Test Date",
+                key="biodex_test_upload_date_placeholder",
+                disabled=True,
+            )
+
+        st.text_area(
+            "Notes",
+            value="This section will handle raw upload, metadata capture, rep detection preview, and processed-save actions.",
+            key="biodex_test_upload_notes_placeholder",
+            disabled=True,
+        )
+        st.file_uploader(
+            "Upload Biodex CSV file(s)",
+            type=["csv"],
+            key="biodex_test_upload_file_placeholder",
+            disabled=True,
+        )
+        st.info("Next build step: connect this sub-tab to `biodex_tests` and `biodex_time_series` so uploads store raw data first, then preview rep detection.")
+
+    with biodex_test_tab2:
+        st.markdown("### Compare Sessions")
+        st.caption("Use this area to compare saved Biodex sessions from different days for the same exercise type.")
+
+        compare_col1, compare_col2 = st.columns(2)
+        with compare_col1:
+            st.selectbox(
+                "Athlete",
+                options=["Select athlete in future workflow"],
+                index=0,
+                key="biodex_test_compare_athlete_placeholder",
+                disabled=True,
+            )
+            st.selectbox(
+                "Protocol Type",
+                options=["Aerobic", "Reactive Eccentric", "Speed", "Strength"],
+                index=0,
+                key="biodex_test_compare_protocol_placeholder",
+                disabled=True,
+            )
+            st.selectbox(
+                "Movement",
+                options=["D2 Shoulder Pattern", "Shoulder ER/IR"],
+                index=0,
+                key="biodex_test_compare_movement_placeholder",
+                disabled=True,
+            )
+        with compare_col2:
+            st.selectbox(
+                "Limb",
+                options=["Right", "Left"],
+                index=0,
+                key="biodex_test_compare_limb_placeholder",
+                disabled=True,
+            )
+            st.number_input(
+                "Speed (deg/s)",
+                min_value=0,
+                value=75,
+                key="biodex_test_compare_speed_placeholder",
+                disabled=True,
+            )
+            st.multiselect(
+                "Sessions",
+                options=["Saved sessions will appear here"],
+                default=[],
+                key="biodex_test_compare_sessions_placeholder",
+                disabled=True,
+            )
+
+        st.info("Next build step: query saved Biodex tests by athlete + metadata, then overlay landmark-aligned average torque curves across dates.")
+
+    with biodex_test_tab3:
+        st.markdown("### Review Reps")
+        st.caption("Use this area to inspect auto-detected reps, adjust windows or landmarks, and save reviewed processing for future comparisons.")
+
+        st.selectbox(
+            "Processed Biodex Test",
+            options=["Processed tests will appear here"],
+            index=0,
+            key="biodex_test_review_test_placeholder",
+            disabled=True,
+        )
+        st.info("Next build step: load one saved test, show detected rep windows and landmarks, and allow manual correction before saving reviewed outputs.")
