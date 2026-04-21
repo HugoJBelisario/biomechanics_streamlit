@@ -489,6 +489,155 @@ def get_most_recent_biodex_test(cur):
     )
     return cur.fetchone()
 
+def insert_biodex_processing_run(
+    cur,
+    biodex_test_id,
+    processing_version,
+    threshold,
+    min_samples,
+    buffer_samples,
+    n_points,
+    landmark_prominence_ratio,
+    is_reviewed=False,
+):
+    cur.execute(
+        """
+        INSERT INTO biodex_processing_runs (
+            biodex_test_id,
+            processing_version,
+            threshold,
+            min_samples,
+            buffer_samples,
+            n_points,
+            landmark_prominence_ratio,
+            is_reviewed
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING biodex_processing_run_id
+        """,
+        (
+            int(biodex_test_id),
+            processing_version,
+            float(threshold),
+            int(min_samples),
+            int(buffer_samples),
+            int(n_points),
+            float(landmark_prominence_ratio),
+            bool(is_reviewed),
+        ),
+    )
+    return int(cur.fetchone()[0])
+
+def insert_biodex_rep_windows(cur, biodex_processing_run_id, rep_windows, rep_df_source):
+    inserted_windows = []
+    for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
+        start_time = float(rep_df_source.iloc[int(start_idx)]["Elapsed Seconds"])
+        end_time = float(rep_df_source.iloc[int(end_idx)]["Elapsed Seconds"])
+        cur.execute(
+            """
+            INSERT INTO biodex_rep_windows (
+                biodex_processing_run_id,
+                rep_number,
+                start_sample_index,
+                end_sample_index,
+                start_time_seconds,
+                end_time_seconds
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING biodex_rep_window_id
+            """,
+            (
+                int(biodex_processing_run_id),
+                int(rep_number),
+                int(start_idx),
+                int(end_idx),
+                start_time,
+                end_time,
+            ),
+        )
+        inserted_windows.append({
+            "rep_number": int(rep_number),
+            "biodex_rep_window_id": int(cur.fetchone()[0]),
+        })
+    return inserted_windows
+
+def insert_biodex_rep_landmarks(cur, rep_window_rows, aligned_rep_metadata):
+    rep_window_id_by_number = {
+        int(item["rep_number"]): int(item["biodex_rep_window_id"])
+        for item in rep_window_rows
+    }
+    rows = []
+    for rep_meta in aligned_rep_metadata:
+        rep_window_id = rep_window_id_by_number.get(int(rep_meta["rep_number"]))
+        if rep_window_id is None:
+            continue
+
+        kind_counts = {}
+        for sample_index, kind, time_seconds, torque_nm in zip(
+            rep_meta["landmark_indices"],
+            rep_meta["landmark_kinds"],
+            rep_meta["landmark_times"],
+            rep_meta["landmark_torques"],
+        ):
+            kind_counts[kind] = kind_counts.get(kind, 0) + 1
+            landmark_name = f"{kind}{kind_counts[kind]}"
+            rows.append((
+                rep_window_id,
+                landmark_name,
+                int(sample_index),
+                float(time_seconds),
+                float(torque_nm),
+            ))
+
+    if rows:
+        execute_values(
+            cur,
+            """
+            INSERT INTO biodex_rep_landmarks (
+                biodex_rep_window_id,
+                landmark_name,
+                sample_index,
+                time_seconds,
+                torque_nm
+            )
+            VALUES %s
+            """,
+            rows,
+            page_size=len(rows),
+        )
+    return len(rows)
+
+def insert_biodex_mean_curve(cur, biodex_processing_run_id, mean_df):
+    rows = [
+        (
+            int(biodex_processing_run_id),
+            float(row["movement_pct"]),
+            float(row["mean_torque_nm"]),
+            float(row["std_torque_nm"]),
+            float(row["upper_band"]),
+            float(row["lower_band"]),
+        )
+        for _, row in mean_df.iterrows()
+    ]
+    if rows:
+        execute_values(
+            cur,
+            """
+            INSERT INTO biodex_mean_curves (
+                biodex_processing_run_id,
+                movement_pct,
+                mean_torque_nm,
+                std_torque_nm,
+                upper_band,
+                lower_band
+            )
+            VALUES %s
+            """,
+            rows,
+            page_size=len(rows),
+        )
+    return len(rows)
+
 def get_valid_savgol_window(window_length, series_length, polyorder):
     """Clamp the Savitzky-Golay window to a valid odd length for the series."""
     max_window = series_length if series_length % 2 == 1 else series_length - 1
@@ -6564,6 +6713,52 @@ with tab6:
                             height=500,
                         )
                         st.plotly_chart(preview_avg_fig, use_container_width=True)
+
+                        if st.button(
+                            "Save Detection Results",
+                            key=f"biodex_test_save_detection_{preview_item['biodex_test_id']}",
+                            use_container_width=True,
+                        ):
+                            try:
+                                biodex_processing_run_id = insert_biodex_processing_run(
+                                    cur,
+                                    biodex_test_id=int(preview_item["biodex_test_id"]),
+                                    processing_version="shoulder_er_ir_landmark_v1",
+                                    threshold=float(preview_threshold),
+                                    min_samples=int(preview_min_samples),
+                                    buffer_samples=int(preview_buffer_samples),
+                                    n_points=int(preview_n_points),
+                                    landmark_prominence_ratio=float(preview_landmark_prominence),
+                                    is_reviewed=False,
+                                )
+                                rep_window_rows = insert_biodex_rep_windows(
+                                    cur,
+                                    biodex_processing_run_id=biodex_processing_run_id,
+                                    rep_windows=preview_rep_windows,
+                                    rep_df_source=preview_df,
+                                )
+                                inserted_landmark_count = insert_biodex_rep_landmarks(
+                                    cur,
+                                    rep_window_rows=rep_window_rows,
+                                    aligned_rep_metadata=preview_aligned_rep_metadata,
+                                )
+                                inserted_mean_curve_points = insert_biodex_mean_curve(
+                                    cur,
+                                    biodex_processing_run_id=biodex_processing_run_id,
+                                    mean_df=preview_mean_df,
+                                )
+                                conn.commit()
+                            except Exception as exc:
+                                conn.rollback()
+                                st.error(f"Could not save detection results: {exc}")
+                            else:
+                                st.success(
+                                    "Saved detection results "
+                                    f"(processing run {biodex_processing_run_id}, "
+                                    f"{len(rep_window_rows)} rep windows, "
+                                    f"{inserted_landmark_count} landmarks, "
+                                    f"{inserted_mean_curve_points} mean-curve points)."
+                                )
             else:
                 st.warning("The stored upload does not contain a `Torque_Nm` column for rep detection preview.")
 
