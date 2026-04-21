@@ -334,6 +334,106 @@ def insert_athlete(cur, conn, first_name, last_name, handedness):
     conn.commit()
     return athlete_id, athlete_name
 
+def get_first_existing_biodex_column(df, candidates):
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+def insert_biodex_test(
+    cur,
+    athlete_id,
+    test_name,
+    protocol_type,
+    limb,
+    movement,
+    speed_deg_per_sec,
+    test_date,
+    source_file_name,
+    notes,
+):
+    cur.execute(
+        """
+        INSERT INTO biodex_tests (
+            athlete_id,
+            test_name,
+            protocol_type,
+            limb,
+            movement,
+            speed_deg_per_sec,
+            test_date,
+            source_file_name,
+            notes
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING biodex_test_id
+        """,
+        (
+            int(athlete_id),
+            test_name,
+            protocol_type,
+            limb,
+            movement,
+            int(speed_deg_per_sec) if speed_deg_per_sec is not None else None,
+            test_date,
+            source_file_name,
+            notes,
+        ),
+    )
+    return int(cur.fetchone()[0])
+
+def insert_biodex_time_series(cur, biodex_test_id, biodex_df):
+    angular_velocity_col = get_first_existing_biodex_column(
+        biodex_df,
+        ["Angular_Velocity_Deg_Sec", "Angular_Velocity_Deg/Sec"],
+    )
+    rows_to_insert = []
+
+    for sample_index, row in enumerate(biodex_df.itertuples(index=False), start=1):
+        row_dict = row._asdict()
+        time_raw = row_dict.get("Time")
+        if pd.isna(time_raw):
+            time_raw = None
+        elif hasattr(time_raw, "to_pydatetime"):
+            time_raw = time_raw.to_pydatetime()
+
+        time_seconds = row_dict.get("Elapsed Seconds")
+        if pd.isna(time_seconds):
+            time_seconds = None
+        else:
+            time_seconds = float(time_seconds)
+
+        angular_velocity = row_dict.get(angular_velocity_col) if angular_velocity_col else None
+        position_deg = row_dict.get("Position_Deg")
+        torque_nm = row_dict.get("Torque_Nm")
+
+        rows_to_insert.append((
+            int(biodex_test_id),
+            int(sample_index),
+            time_seconds,
+            time_raw,
+            float(angular_velocity) if pd.notna(angular_velocity) else None,
+            float(position_deg) if pd.notna(position_deg) else None,
+            float(torque_nm) if pd.notna(torque_nm) else None,
+        ))
+
+    cur.executemany(
+        """
+        INSERT INTO biodex_time_series (
+            biodex_test_id,
+            sample_index,
+            time_seconds,
+            time_raw,
+            angular_velocity_deg_sec,
+            position_deg,
+            torque_nm
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        rows_to_insert,
+    )
+    return len(rows_to_insert)
+
 def get_valid_savgol_window(window_length, series_length, polyorder):
     """Clamp the Savitzky-Golay window to a valid odd length for the series."""
     max_window = series_length if series_length % 2 == 1 else series_length - 1
@@ -5987,64 +6087,326 @@ with tab6:
     with biodex_test_tab1:
         st.markdown("### Upload & Process")
         st.caption("Use this area for new Biodex uploads, metadata capture, raw storage, rep detection, and saving processed outputs.")
+        athlete_rows_test = fetch_all_athletes(cur)
+        athlete_options_test = {}
+        athlete_labels_test = {}
+        for athlete_id, athlete_name, first_name, last_name, handedness in athlete_rows_test:
+            display_name = athlete_name or " ".join(part for part in [first_name, last_name] if part).strip() or f"Athlete {athlete_id}"
+            handedness_suffix = f" ({handedness})" if handedness else ""
+            athlete_options_test[int(athlete_id)] = {
+                "athlete_name": display_name,
+                "handedness": handedness,
+            }
+            athlete_labels_test[int(athlete_id)] = f"{display_name}{handedness_suffix}"
 
         upload_col1, upload_col2 = st.columns(2)
         with upload_col1:
-            st.selectbox(
-                "Athlete",
-                options=["Select athlete in future workflow"],
-                index=0,
-                key="biodex_test_upload_athlete_placeholder",
-                disabled=True,
-            )
-            st.selectbox(
+            if athlete_options_test:
+                selected_biodex_test_athlete_id = st.selectbox(
+                    "Athlete",
+                    options=list(athlete_options_test.keys()),
+                    format_func=lambda athlete_id: athlete_labels_test.get(athlete_id, f"Athlete {athlete_id}"),
+                    key="biodex_test_upload_athlete",
+                )
+            else:
+                selected_biodex_test_athlete_id = None
+                st.text_input("Athlete", value="No athletes found yet", disabled=True)
+
+            selected_biodex_test_protocol = st.selectbox(
                 "Protocol Type",
-                options=["Aerobic", "Reactive Eccentric", "Speed", "Strength"],
-                index=0,
-                key="biodex_test_upload_protocol_placeholder",
-                disabled=True,
+                options=["aerobic", "reactive_eccentric", "speed", "strength"],
+                format_func=lambda value: value.replace("_", " ").title(),
+                key="biodex_test_upload_protocol",
+                disabled=selected_biodex_test_athlete_id is None,
             )
-            st.selectbox(
+            selected_biodex_test_movement = st.selectbox(
                 "Movement",
-                options=["D2 Shoulder Pattern", "Shoulder ER/IR"],
-                index=0,
-                key="biodex_test_upload_movement_placeholder",
-                disabled=True,
+                options=["d2_shoulder_pattern", "shoulder_er_ir"],
+                format_func=lambda value: {
+                    "d2_shoulder_pattern": "D2 Shoulder Pattern",
+                    "shoulder_er_ir": "Shoulder ER/IR",
+                }.get(value, value.replace("_", " ").title()),
+                key="biodex_test_upload_movement",
+                disabled=selected_biodex_test_athlete_id is None,
             )
         with upload_col2:
-            st.selectbox(
+            selected_biodex_test_limb = st.selectbox(
                 "Limb",
-                options=["Right", "Left"],
-                index=0,
-                key="biodex_test_upload_limb_placeholder",
-                disabled=True,
+                options=["right", "left"],
+                format_func=lambda value: value.title(),
+                key="biodex_test_upload_limb",
+                disabled=selected_biodex_test_athlete_id is None,
             )
-            st.number_input(
+            selected_biodex_test_speed = st.number_input(
                 "Speed (deg/s)",
                 min_value=0,
                 value=75,
-                key="biodex_test_upload_speed_placeholder",
-                disabled=True,
+                step=1,
+                key="biodex_test_upload_speed",
+                disabled=selected_biodex_test_athlete_id is None,
             )
-            st.date_input(
+            selected_biodex_test_date = st.date_input(
                 "Test Date",
-                key="biodex_test_upload_date_placeholder",
-                disabled=True,
+                key="biodex_test_upload_date",
+                disabled=selected_biodex_test_athlete_id is None,
             )
 
-        st.text_area(
+        entered_biodex_test_notes = st.text_area(
             "Notes",
-            value="This section will handle raw upload, metadata capture, rep detection preview, and processed-save actions.",
-            key="biodex_test_upload_notes_placeholder",
-            disabled=True,
+            key="biodex_test_upload_notes",
+            placeholder="Optional notes about the Biodex session",
+            disabled=selected_biodex_test_athlete_id is None,
         )
-        st.file_uploader(
+        uploaded_biodex_test_files = st.file_uploader(
             "Upload Biodex CSV file(s)",
             type=["csv"],
-            key="biodex_test_upload_file_placeholder",
-            disabled=True,
+            accept_multiple_files=True,
+            key="biodex_test_upload_files",
+            disabled=selected_biodex_test_athlete_id is None,
         )
-        st.info("Next build step: connect this sub-tab to `biodex_tests` and `biodex_time_series` so uploads store raw data first, then preview rep detection.")
+
+        if st.button(
+            "Store Raw Upload(s) & Preview Detection",
+            key="biodex_test_store_uploads",
+            disabled=selected_biodex_test_athlete_id is None or not uploaded_biodex_test_files,
+            use_container_width=True,
+        ):
+            stored_uploads = []
+            for uploaded_file in uploaded_biodex_test_files:
+                try:
+                    biodex_df, numeric_columns = prepare_biodex_dataframe(uploaded_file)
+                    selected_athlete_name = athlete_options_test[int(selected_biodex_test_athlete_id)]["athlete_name"]
+                    test_name = " | ".join([
+                        selected_athlete_name,
+                        selected_biodex_test_protocol.replace("_", " ").title(),
+                        {
+                            "d2_shoulder_pattern": "D2 Shoulder Pattern",
+                            "shoulder_er_ir": "Shoulder ER/IR",
+                        }.get(selected_biodex_test_movement, selected_biodex_test_movement.replace("_", " ").title()),
+                        str(int(selected_biodex_test_speed)) + " deg/s",
+                    ])
+                    biodex_test_id = insert_biodex_test(
+                        cur,
+                        athlete_id=int(selected_biodex_test_athlete_id),
+                        test_name=test_name,
+                        protocol_type=selected_biodex_test_protocol,
+                        limb=selected_biodex_test_limb,
+                        movement=selected_biodex_test_movement,
+                        speed_deg_per_sec=int(selected_biodex_test_speed),
+                        test_date=selected_biodex_test_date,
+                        source_file_name=uploaded_file.name,
+                        notes=entered_biodex_test_notes,
+                    )
+                    inserted_row_count = insert_biodex_time_series(cur, biodex_test_id, biodex_df)
+                    conn.commit()
+                except Exception as exc:
+                    conn.rollback()
+                    st.error(f"Could not store {uploaded_file.name}: {exc}")
+                    continue
+
+                stored_uploads.append({
+                    "biodex_test_id": biodex_test_id,
+                    "name": uploaded_file.name,
+                    "row_count": inserted_row_count,
+                    "df": biodex_df,
+                    "numeric_columns": numeric_columns,
+                    "test_name": test_name,
+                })
+
+            if stored_uploads:
+                st.session_state["biodex_test_uploaded_previews"] = stored_uploads
+                st.success(f"Stored {len(stored_uploads)} Biodex upload(s) in the database and loaded them for preview below.")
+
+        uploaded_previews = st.session_state.get("biodex_test_uploaded_previews", [])
+        if uploaded_previews:
+            summary_df = pd.DataFrame([
+                {
+                    "biodex_test_id": item["biodex_test_id"],
+                    "source_file_name": item["name"],
+                    "stored_rows": item["row_count"],
+                    "test_name": item["test_name"],
+                }
+                for item in uploaded_previews
+            ])
+            st.markdown("### Stored Upload Summary")
+            st.dataframe(summary_df, use_container_width=True)
+
+            preview_file_name = st.selectbox(
+                "Preview stored upload",
+                options=[item["name"] for item in uploaded_previews],
+                key="biodex_test_preview_file",
+            )
+            preview_item = next(
+                item for item in uploaded_previews
+                if item["name"] == preview_file_name
+            )
+            preview_df = preview_item["df"].copy()
+
+            if "Torque_Nm" in preview_item["numeric_columns"]:
+                preview_fig = go.Figure()
+                preview_fig.add_trace(go.Scatter(
+                    x=preview_df["Elapsed Seconds"],
+                    y=preview_df["Torque_Nm"],
+                    mode="lines",
+                    name=preview_item["test_name"],
+                ))
+                preview_fig.update_layout(
+                    title="Stored Raw Torque Preview",
+                    xaxis_title="Elapsed Time (s)",
+                    yaxis_title="Torque_Nm",
+                    height=500,
+                )
+                st.plotly_chart(preview_fig, use_container_width=True)
+
+                st.markdown("### Rep Detection Preview")
+                preview_controls_col, preview_plot_col = st.columns([0.35, 1.0], vertical_alignment="top")
+
+                with preview_controls_col:
+                    preview_threshold = st.number_input(
+                        "Rep detection threshold (smoothed |Torque| envelope)",
+                        min_value=1.0,
+                        max_value=500.0,
+                        value=20.0,
+                        step=1.0,
+                        key="biodex_test_preview_threshold",
+                    )
+                    preview_min_samples = st.number_input(
+                        "Minimum active samples per rep",
+                        min_value=1,
+                        max_value=500,
+                        value=15,
+                        step=1,
+                        key="biodex_test_preview_min_samples",
+                    )
+                    preview_buffer_samples = st.number_input(
+                        "Buffer samples before/after rep",
+                        min_value=0,
+                        max_value=500,
+                        value=20,
+                        step=1,
+                        key="biodex_test_preview_buffer",
+                    )
+                    preview_n_points = st.number_input(
+                        "Normalized points per rep",
+                        min_value=25,
+                        max_value=500,
+                        value=101,
+                        step=1,
+                        key="biodex_test_preview_n_points",
+                    )
+                    preview_landmark_prominence = st.slider(
+                        "Landmark prominence ratio",
+                        min_value=0.05,
+                        max_value=0.40,
+                        value=0.12,
+                        step=0.01,
+                        key="biodex_test_preview_prominence",
+                    )
+
+                preview_rep_windows = detect_biodex_reps(
+                    preview_df,
+                    value_col="Torque_Nm",
+                    threshold=float(preview_threshold),
+                    min_samples=int(preview_min_samples),
+                    buffer_samples=int(preview_buffer_samples),
+                )
+                preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
+                    preview_df,
+                    preview_rep_windows,
+                    time_col="Elapsed Seconds",
+                    value_col="Torque_Nm",
+                    n_points=int(preview_n_points),
+                    prominence_ratio=float(preview_landmark_prominence),
+                )
+
+                with preview_plot_col:
+                    preview_raw_fig = go.Figure()
+                    preview_raw_fig.add_trace(go.Scatter(
+                        x=preview_df["Elapsed Seconds"],
+                        y=preview_df["Torque_Nm"],
+                        mode="lines",
+                        name=f"{preview_item['name']} (Raw)",
+                    ))
+
+                    preview_shapes = []
+                    for rep_number, (start_idx, end_idx) in enumerate(preview_rep_windows, start=1):
+                        x0 = float(preview_df.iloc[start_idx]["Elapsed Seconds"])
+                        x1 = float(preview_df.iloc[end_idx]["Elapsed Seconds"])
+                        preview_shapes.append(dict(
+                            type="rect",
+                            xref="x",
+                            yref="paper",
+                            x0=x0,
+                            x1=x1,
+                            y0=0,
+                            y1=1,
+                            fillcolor="rgba(0, 123, 255, 0.12)",
+                            line=dict(width=0),
+                            layer="below",
+                        ))
+                        preview_raw_fig.add_annotation(
+                            x=(x0 + x1) / 2.0,
+                            y=1.02,
+                            xref="x",
+                            yref="paper",
+                            text=f"Rep {rep_number}",
+                            showarrow=False,
+                        )
+
+                    preview_raw_fig.update_layout(
+                        title="Detected Torque Reps",
+                        xaxis_title="Elapsed Time (s)",
+                        yaxis_title="Torque_Nm",
+                        shapes=preview_shapes,
+                        height=500,
+                    )
+                    st.plotly_chart(preview_raw_fig, use_container_width=True)
+
+                    if preview_reps_long_df.empty or preview_mean_df.empty:
+                        st.warning("No visible reps were detected with the current settings.")
+                    else:
+                        preview_avg_fig = go.Figure()
+                        for rep_number, rep_df in preview_reps_long_df.groupby("rep_number"):
+                            preview_avg_fig.add_trace(go.Scatter(
+                                x=rep_df["movement_pct"],
+                                y=rep_df["torque_nm"],
+                                mode="lines",
+                                line=dict(width=1),
+                                opacity=0.35,
+                                name=f"Rep {rep_number}",
+                            ))
+                        preview_avg_fig.add_trace(go.Scatter(
+                            x=preview_mean_df["movement_pct"],
+                            y=preview_mean_df["upper_band"],
+                            mode="lines",
+                            line=dict(width=0),
+                            showlegend=False,
+                            hoverinfo="skip",
+                        ))
+                        preview_avg_fig.add_trace(go.Scatter(
+                            x=preview_mean_df["movement_pct"],
+                            y=preview_mean_df["lower_band"],
+                            mode="lines",
+                            line=dict(width=0),
+                            fill="tonexty",
+                            name="±1 SD",
+                        ))
+                        preview_avg_fig.add_trace(go.Scatter(
+                            x=preview_mean_df["movement_pct"],
+                            y=preview_mean_df["mean_torque_nm"],
+                            mode="lines",
+                            line=dict(width=4),
+                            name="Mean Torque",
+                        ))
+                        preview_avg_fig.update_layout(
+                            title="Landmark-Aligned Average Torque Curve Across Detected Reps",
+                            xaxis_title="Movement Cycle (%)",
+                            yaxis_title="Torque_Nm",
+                            height=500,
+                        )
+                        st.plotly_chart(preview_avg_fig, use_container_width=True)
+            else:
+                st.warning("The stored upload does not contain a `Torque_Nm` column for rep detection preview.")
 
     with biodex_test_tab2:
         st.markdown("### Compare Sessions")
