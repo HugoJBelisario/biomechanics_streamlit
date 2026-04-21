@@ -438,6 +438,57 @@ def insert_biodex_time_series(cur, biodex_test_id, biodex_df, chunk_size=2000, p
             progress_callback(min(total_rows, start_idx + len(chunk)), total_rows)
     return len(rows_to_insert)
 
+def reset_postgres_sequence(cur, table_name, id_column):
+    cur.execute(
+        """
+        SELECT setval(
+            pg_get_serial_sequence(%s, %s),
+            COALESCE((SELECT MAX(value_col) FROM (SELECT {id_column} AS value_col FROM {table_name}) seq_vals), 1),
+            (SELECT COUNT(*) > 0 FROM {table_name})
+        )
+        """.format(table_name=table_name, id_column=id_column),
+        (table_name, id_column),
+    )
+
+def delete_biodex_tests_by_ids(cur, conn, biodex_test_ids):
+    biodex_test_ids = [int(test_id) for test_id in biodex_test_ids]
+    if not biodex_test_ids:
+        return 0
+
+    cur.execute(
+        "DELETE FROM biodex_time_series WHERE biodex_test_id = ANY(%s)",
+        (biodex_test_ids,),
+    )
+    cur.execute(
+        "DELETE FROM biodex_tests WHERE biodex_test_id = ANY(%s)",
+        (biodex_test_ids,),
+    )
+    deleted_count = cur.rowcount
+    reset_postgres_sequence(cur, "biodex_time_series", "biodex_time_series_id")
+    reset_postgres_sequence(cur, "biodex_tests", "biodex_test_id")
+    conn.commit()
+    return deleted_count
+
+def delete_biodex_tests_by_source_file_name(cur, conn, source_file_name):
+    cur.execute(
+        "SELECT biodex_test_id FROM biodex_tests WHERE source_file_name = %s ORDER BY biodex_test_id",
+        (source_file_name,),
+    )
+    test_ids = [row[0] for row in cur.fetchall()]
+    deleted_count = delete_biodex_tests_by_ids(cur, conn, test_ids)
+    return deleted_count, test_ids
+
+def get_most_recent_biodex_test(cur):
+    cur.execute(
+        """
+        SELECT biodex_test_id, source_file_name
+        FROM biodex_tests
+        ORDER BY biodex_test_id DESC
+        LIMIT 1
+        """
+    )
+    return cur.fetchone()
+
 def get_valid_savgol_window(window_length, series_length, polyorder):
     """Clamp the Savitzky-Golay window to a valid odd length for the series."""
     max_window = series_length if series_length % 2 == 1 else series_length - 1
@@ -6260,6 +6311,70 @@ with tab6:
             else:
                 upload_progress.empty()
                 upload_status.empty()
+
+        with st.expander("Admin Test Tools"):
+            st.caption("Testing utilities for deleting Biodex uploads from `biodex_tests` and `biodex_time_series`.")
+
+            delete_file_name = st.text_input(
+                "Delete by source_file_name",
+                key="biodex_test_delete_source_file_name",
+                placeholder="Enter exact uploaded file name",
+            )
+            if st.button(
+                "Delete Upload(s) by File Name",
+                key="biodex_test_delete_by_file_name",
+                disabled=not delete_file_name.strip(),
+                use_container_width=True,
+            ):
+                try:
+                    deleted_count, deleted_ids = delete_biodex_tests_by_source_file_name(
+                        cur,
+                        conn,
+                        delete_file_name.strip(),
+                    )
+                except Exception as exc:
+                    conn.rollback()
+                    st.error(f"Could not delete uploads for {delete_file_name}: {exc}")
+                else:
+                    st.session_state["biodex_test_uploaded_previews"] = [
+                        item for item in st.session_state.get("biodex_test_uploaded_previews", [])
+                        if int(item["biodex_test_id"]) not in set(deleted_ids)
+                    ]
+                    if deleted_count:
+                        st.success(f"Deleted {deleted_count} Biodex upload(s) matching `{delete_file_name}` and reset the sequences.")
+                    else:
+                        st.info(f"No Biodex uploads were found for `{delete_file_name}`.")
+
+            most_recent_biodex_test = get_most_recent_biodex_test(cur)
+            if most_recent_biodex_test:
+                st.caption(
+                    f"Most recent upload: ID {most_recent_biodex_test[0]} | {most_recent_biodex_test[1]}"
+                )
+                if st.button(
+                    "Delete Most Recent Upload",
+                    key="biodex_test_delete_most_recent",
+                    use_container_width=True,
+                ):
+                    try:
+                        deleted_count = delete_biodex_tests_by_ids(
+                            cur,
+                            conn,
+                            [most_recent_biodex_test[0]],
+                        )
+                    except Exception as exc:
+                        conn.rollback()
+                        st.error(f"Could not delete the most recent upload: {exc}")
+                    else:
+                        st.session_state["biodex_test_uploaded_previews"] = [
+                            item for item in st.session_state.get("biodex_test_uploaded_previews", [])
+                            if int(item["biodex_test_id"]) != int(most_recent_biodex_test[0])
+                        ]
+                        if deleted_count:
+                            st.success(
+                                f"Deleted most recent Biodex upload `{most_recent_biodex_test[1]}` (ID {most_recent_biodex_test[0]}) and reset the sequences."
+                            )
+            else:
+                st.caption("No Biodex uploads are currently stored.")
 
         uploaded_previews = st.session_state.get("biodex_test_uploaded_previews", [])
         if uploaded_previews:
