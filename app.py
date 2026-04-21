@@ -2,6 +2,7 @@ import streamlit as st
 st.set_page_config(layout="wide")
 import pandas as pd
 import psycopg2
+from psycopg2.extras import execute_values
 import numpy as np
 from scipy.stats import linregress
 from scipy.signal import savgol_filter
@@ -382,7 +383,7 @@ def insert_biodex_test(
     )
     return int(cur.fetchone()[0])
 
-def insert_biodex_time_series(cur, biodex_test_id, biodex_df):
+def insert_biodex_time_series(cur, biodex_test_id, biodex_df, chunk_size=2000, progress_callback=None):
     angular_velocity_col = get_first_existing_biodex_column(
         biodex_df,
         ["Angular_Velocity_Deg_Sec", "Angular_Velocity_Deg/Sec"],
@@ -417,8 +418,8 @@ def insert_biodex_time_series(cur, biodex_test_id, biodex_df):
             float(torque_nm) if pd.notna(torque_nm) else None,
         ))
 
-    cur.executemany(
-        """
+    total_rows = len(rows_to_insert)
+    insert_sql = """
         INSERT INTO biodex_time_series (
             biodex_test_id,
             sample_index,
@@ -428,10 +429,13 @@ def insert_biodex_time_series(cur, biodex_test_id, biodex_df):
             position_deg,
             torque_nm
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """,
-        rows_to_insert,
-    )
+        VALUES %s
+    """
+    for start_idx in range(0, total_rows, int(chunk_size)):
+        chunk = rows_to_insert[start_idx:start_idx + int(chunk_size)]
+        execute_values(cur, insert_sql, chunk, page_size=len(chunk))
+        if progress_callback is not None:
+            progress_callback(min(total_rows, start_idx + len(chunk)), total_rows)
     return len(rows_to_insert)
 
 def get_valid_savgol_window(window_length, series_length, polyorder):
@@ -6172,8 +6176,19 @@ with tab6:
             use_container_width=True,
         ):
             stored_uploads = []
-            for uploaded_file in uploaded_biodex_test_files:
+            upload_progress = st.progress(0, text="Preparing Biodex upload...")
+            upload_status = st.empty()
+            total_files = len(uploaded_biodex_test_files)
+
+            for file_index, uploaded_file in enumerate(uploaded_biodex_test_files, start=1):
+                file_base_progress = (file_index - 1) / total_files
+                file_weight = 1 / total_files
                 try:
+                    upload_status.info(f"Reading file {file_index} of {total_files}: {uploaded_file.name}")
+                    upload_progress.progress(
+                        min(100, int(file_base_progress * 100 + file_weight * 8)),
+                        text=f"Reading file {file_index} of {total_files}: {uploaded_file.name}",
+                    )
                     biodex_df, numeric_columns = prepare_biodex_dataframe(uploaded_file)
                     selected_athlete_name = athlete_options_test[int(selected_biodex_test_athlete_id)]["athlete_name"]
                     test_name = " | ".join([
@@ -6185,6 +6200,11 @@ with tab6:
                         }.get(selected_biodex_test_movement, selected_biodex_test_movement.replace("_", " ").title()),
                         str(int(selected_biodex_test_speed)) + " deg/s",
                     ])
+                    upload_status.info(f"Creating biodex_tests row for {uploaded_file.name}")
+                    upload_progress.progress(
+                        min(100, int(file_base_progress * 100 + file_weight * 18)),
+                        text=f"Creating metadata row for {uploaded_file.name}",
+                    )
                     biodex_test_id = insert_biodex_test(
                         cur,
                         athlete_id=int(selected_biodex_test_athlete_id),
@@ -6197,7 +6217,26 @@ with tab6:
                         source_file_name=uploaded_file.name,
                         notes=entered_biodex_test_notes,
                     )
-                    inserted_row_count = insert_biodex_time_series(cur, biodex_test_id, biodex_df)
+                    upload_status.info(f"Inserting raw time-series rows for {uploaded_file.name}")
+                    def _update_insert_progress(inserted_rows, total_rows, *, _file_name=uploaded_file.name, _base=file_base_progress, _weight=file_weight):
+                        inner_fraction = inserted_rows / total_rows if total_rows else 1.0
+                        overall_fraction = _base + _weight * (0.18 + inner_fraction * 0.72)
+                        upload_progress.progress(
+                            min(100, int(overall_fraction * 100)),
+                            text=f"Inserting {_file_name}: {inserted_rows:,} / {total_rows:,} rows",
+                        )
+
+                    inserted_row_count = insert_biodex_time_series(
+                        cur,
+                        biodex_test_id,
+                        biodex_df,
+                        progress_callback=_update_insert_progress,
+                    )
+                    upload_status.info(f"Committing {uploaded_file.name} to the database")
+                    upload_progress.progress(
+                        min(100, int(file_base_progress * 100 + file_weight * 96)),
+                        text=f"Committing {uploaded_file.name}",
+                    )
                     conn.commit()
                 except Exception as exc:
                     conn.rollback()
@@ -6215,7 +6254,12 @@ with tab6:
 
             if stored_uploads:
                 st.session_state["biodex_test_uploaded_previews"] = stored_uploads
+                upload_progress.progress(100, text="Biodex upload complete.")
+                upload_status.success("Raw uploads stored successfully. Preview is ready below.")
                 st.success(f"Stored {len(stored_uploads)} Biodex upload(s) in the database and loaded them for preview below.")
+            else:
+                upload_progress.empty()
+                upload_status.empty()
 
         uploaded_previews = st.session_state.get("biodex_test_uploaded_previews", [])
         if uploaded_previews:
