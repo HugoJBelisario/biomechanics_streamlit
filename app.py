@@ -390,23 +390,22 @@ def insert_biodex_time_series(cur, biodex_test_id, biodex_df, chunk_size=2000, p
     )
     rows_to_insert = []
 
-    for sample_index, row in enumerate(biodex_df.itertuples(index=False), start=1):
-        row_dict = row._asdict()
-        time_raw = row_dict.get("Time")
+    for sample_index, (_, row) in enumerate(biodex_df.iterrows(), start=1):
+        time_raw = row.get("Time")
         if pd.isna(time_raw):
             time_raw = None
         elif hasattr(time_raw, "to_pydatetime"):
             time_raw = time_raw.to_pydatetime()
 
-        time_seconds = row_dict.get("Elapsed Seconds")
+        time_seconds = row.get("Elapsed Seconds")
         if pd.isna(time_seconds):
             time_seconds = None
         else:
             time_seconds = float(time_seconds)
 
-        angular_velocity = row_dict.get(angular_velocity_col) if angular_velocity_col else None
-        position_deg = row_dict.get("Position_Deg")
-        torque_nm = row_dict.get("Torque_Nm")
+        angular_velocity = row.get(angular_velocity_col) if angular_velocity_col else None
+        position_deg = row.get("Position_Deg")
+        torque_nm = row.get("Torque_Nm")
 
         rows_to_insert.append((
             int(biodex_test_id),
@@ -7281,9 +7280,19 @@ with tab6:
             if raw_review_df.empty:
                 st.warning("No raw time-series rows were found for this Biodex test.")
             else:
+                raw_review_df["plot_time_seconds"] = pd.to_numeric(raw_review_df["time_seconds"], errors="coerce")
+                if raw_review_df["plot_time_seconds"].isna().all():
+                    raw_review_df["time_raw"] = pd.to_datetime(raw_review_df["time_raw"], errors="coerce")
+                    if raw_review_df["time_raw"].notna().any():
+                        raw_review_df["plot_time_seconds"] = (
+                            raw_review_df["time_raw"] - raw_review_df["time_raw"].dropna().iloc[0]
+                        ).dt.total_seconds()
+                    else:
+                        raw_review_df["plot_time_seconds"] = pd.to_numeric(raw_review_df["sample_index"], errors="coerce")
+
                 review_raw_fig = go.Figure()
                 review_raw_fig.add_trace(go.Scatter(
-                    x=raw_review_df["time_seconds"],
+                    x=raw_review_df["plot_time_seconds"],
                     y=raw_review_df["torque_nm"],
                     mode="lines",
                     name="Raw Torque",
