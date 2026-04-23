@@ -638,6 +638,112 @@ def insert_biodex_mean_curve(cur, biodex_processing_run_id, mean_df):
         )
     return len(rows)
 
+def fetch_biodex_processed_sessions(
+    cur,
+    athlete_id,
+    protocol_type,
+    movement,
+    limb,
+    speed_deg_per_sec,
+):
+    cur.execute(
+        """
+        SELECT
+            pr.biodex_processing_run_id,
+            bt.biodex_test_id,
+            bt.test_name,
+            bt.test_date,
+            bt.protocol_type,
+            bt.movement,
+            bt.limb,
+            bt.speed_deg_per_sec,
+            bt.source_file_name,
+            pr.processing_version,
+            pr.created_at,
+            pr.is_reviewed,
+            COUNT(DISTINCT rw.biodex_rep_window_id) AS rep_count,
+            MAX(mc.mean_torque_nm) AS peak_positive_mean_torque,
+            MIN(mc.mean_torque_nm) AS peak_negative_mean_torque
+        FROM biodex_processing_runs pr
+        JOIN biodex_tests bt
+            ON pr.biodex_test_id = bt.biodex_test_id
+        LEFT JOIN biodex_rep_windows rw
+            ON pr.biodex_processing_run_id = rw.biodex_processing_run_id
+        LEFT JOIN biodex_mean_curves mc
+            ON pr.biodex_processing_run_id = mc.biodex_processing_run_id
+        WHERE bt.athlete_id = %s
+          AND bt.protocol_type = %s
+          AND bt.movement = %s
+          AND bt.limb = %s
+          AND bt.speed_deg_per_sec = %s
+        GROUP BY
+            pr.biodex_processing_run_id,
+            bt.biodex_test_id,
+            bt.test_name,
+            bt.test_date,
+            bt.protocol_type,
+            bt.movement,
+            bt.limb,
+            bt.speed_deg_per_sec,
+            bt.source_file_name,
+            pr.processing_version,
+            pr.created_at,
+            pr.is_reviewed
+        ORDER BY bt.test_date DESC NULLS LAST, pr.created_at DESC
+        """,
+        (
+            int(athlete_id),
+            protocol_type,
+            movement,
+            limb,
+            int(speed_deg_per_sec),
+        ),
+    )
+    columns = [
+        "biodex_processing_run_id",
+        "biodex_test_id",
+        "test_name",
+        "test_date",
+        "protocol_type",
+        "movement",
+        "limb",
+        "speed_deg_per_sec",
+        "source_file_name",
+        "processing_version",
+        "created_at",
+        "is_reviewed",
+        "rep_count",
+        "peak_positive_mean_torque",
+        "peak_negative_mean_torque",
+    ]
+    return pd.DataFrame(cur.fetchall(), columns=columns)
+
+def fetch_biodex_mean_curve(cur, biodex_processing_run_id):
+    cur.execute(
+        """
+        SELECT
+            movement_pct,
+            mean_torque_nm,
+            std_torque_nm,
+            upper_band,
+            lower_band
+        FROM biodex_mean_curves
+        WHERE biodex_processing_run_id = %s
+        ORDER BY movement_pct
+        """,
+        (int(biodex_processing_run_id),),
+    )
+    return pd.DataFrame(
+        cur.fetchall(),
+        columns=[
+            "movement_pct",
+            "mean_torque_nm",
+            "std_torque_nm",
+            "upper_band",
+            "lower_band",
+        ],
+    )
+
 def get_valid_savgol_window(window_length, series_length, polyorder):
     """Clamp the Savitzky-Golay window to a valid odd length for the series."""
     max_window = series_length if series_length % 2 == 1 else series_length - 1
@@ -6766,53 +6872,173 @@ with tab6:
         st.markdown("### Compare Sessions")
         st.caption("Use this area to compare saved Biodex sessions from different days for the same exercise type.")
 
+        athlete_rows_compare = fetch_all_athletes(cur)
+        athlete_options_compare = {}
+        athlete_labels_compare = {}
+        for athlete_id, athlete_name, first_name, last_name, handedness in athlete_rows_compare:
+            display_name = athlete_name or " ".join(part for part in [first_name, last_name] if part).strip() or f"Athlete {athlete_id}"
+            handedness_suffix = f" ({handedness})" if handedness else ""
+            athlete_options_compare[int(athlete_id)] = display_name
+            athlete_labels_compare[int(athlete_id)] = f"{display_name}{handedness_suffix}"
+
         compare_col1, compare_col2 = st.columns(2)
         with compare_col1:
-            st.selectbox(
-                "Athlete",
-                options=["Select athlete in future workflow"],
-                index=0,
-                key="biodex_test_compare_athlete_placeholder",
-                disabled=True,
-            )
-            st.selectbox(
+            if athlete_options_compare:
+                selected_compare_athlete_id = st.selectbox(
+                    "Athlete",
+                    options=list(athlete_options_compare.keys()),
+                    format_func=lambda athlete_id: athlete_labels_compare.get(athlete_id, f"Athlete {athlete_id}"),
+                    key="biodex_test_compare_athlete",
+                )
+            else:
+                selected_compare_athlete_id = None
+                st.text_input("Athlete", value="No athletes found yet", disabled=True)
+
+            selected_compare_protocol = st.selectbox(
                 "Protocol Type",
-                options=["Aerobic", "Reactive Eccentric", "Speed", "Strength"],
+                options=["aerobic", "reactive_eccentric", "speed", "strength"],
+                format_func=lambda value: value.replace("_", " ").title(),
                 index=0,
-                key="biodex_test_compare_protocol_placeholder",
-                disabled=True,
+                key="biodex_test_compare_protocol",
+                disabled=selected_compare_athlete_id is None,
             )
-            st.selectbox(
+            selected_compare_movement = st.selectbox(
                 "Movement",
-                options=["D2 Shoulder Pattern", "Shoulder ER/IR"],
+                options=["d2_shoulder_pattern", "shoulder_er_ir"],
+                format_func=lambda value: {
+                    "d2_shoulder_pattern": "D2 Shoulder Pattern",
+                    "shoulder_er_ir": "Shoulder ER/IR",
+                }.get(value, value.replace("_", " ").title()),
                 index=0,
-                key="biodex_test_compare_movement_placeholder",
-                disabled=True,
+                key="biodex_test_compare_movement",
+                disabled=selected_compare_athlete_id is None,
             )
         with compare_col2:
-            st.selectbox(
+            selected_compare_limb = st.selectbox(
                 "Limb",
-                options=["Right", "Left"],
+                options=["right", "left"],
+                format_func=lambda value: value.title(),
                 index=0,
-                key="biodex_test_compare_limb_placeholder",
-                disabled=True,
+                key="biodex_test_compare_limb",
+                disabled=selected_compare_athlete_id is None,
             )
-            st.number_input(
+            selected_compare_speed = st.number_input(
                 "Speed (deg/s)",
                 min_value=0,
                 value=75,
-                key="biodex_test_compare_speed_placeholder",
-                disabled=True,
-            )
-            st.multiselect(
-                "Sessions",
-                options=["Saved sessions will appear here"],
-                default=[],
-                key="biodex_test_compare_sessions_placeholder",
-                disabled=True,
+                step=1,
+                key="biodex_test_compare_speed",
+                disabled=selected_compare_athlete_id is None,
             )
 
-        st.info("Next build step: query saved Biodex tests by athlete + metadata, then overlay landmark-aligned average torque curves across dates.")
+        if selected_compare_athlete_id is None:
+            st.info("Select an athlete to compare saved Biodex processing runs.")
+        else:
+            processed_sessions_df = fetch_biodex_processed_sessions(
+                cur,
+                athlete_id=int(selected_compare_athlete_id),
+                protocol_type=selected_compare_protocol,
+                movement=selected_compare_movement,
+                limb=selected_compare_limb,
+                speed_deg_per_sec=int(selected_compare_speed),
+            )
+
+            if processed_sessions_df.empty:
+                st.info("No saved processing runs match these filters yet.")
+            else:
+                session_labels = {}
+                for _, row in processed_sessions_df.iterrows():
+                    test_date = row["test_date"].strftime("%Y-%m-%d") if pd.notna(row["test_date"]) else "No date"
+                    reviewed_suffix = "Reviewed" if row["is_reviewed"] else "Auto"
+                    session_labels[int(row["biodex_processing_run_id"])] = (
+                        f"{test_date} | Run {int(row['biodex_processing_run_id'])} | "
+                        f"{reviewed_suffix} | {int(row['rep_count'])} reps"
+                    )
+
+                selected_compare_run_ids = st.multiselect(
+                    "Sessions",
+                    options=list(session_labels.keys()),
+                    default=list(session_labels.keys())[:2],
+                    format_func=lambda run_id: session_labels.get(run_id, f"Run {run_id}"),
+                    key="biodex_test_compare_sessions",
+                )
+
+                if not selected_compare_run_ids:
+                    st.info("Select at least one saved session to display its mean curve.")
+                else:
+                    compare_fig = go.Figure()
+                    selected_summary_rows = []
+
+                    for run_id in selected_compare_run_ids:
+                        curve_df = fetch_biodex_mean_curve(cur, run_id)
+                        if curve_df.empty:
+                            continue
+
+                        session_row = processed_sessions_df[
+                            processed_sessions_df["biodex_processing_run_id"] == run_id
+                        ].iloc[0]
+                        label = session_labels.get(run_id, f"Run {run_id}")
+
+                        compare_fig.add_trace(go.Scatter(
+                            x=curve_df["movement_pct"],
+                            y=curve_df["mean_torque_nm"],
+                            mode="lines",
+                            line=dict(width=4),
+                            name=label,
+                        ))
+                        compare_fig.add_trace(go.Scatter(
+                            x=curve_df["movement_pct"],
+                            y=curve_df["upper_band"],
+                            mode="lines",
+                            line=dict(width=0),
+                            legendgroup=label,
+                            showlegend=False,
+                            hoverinfo="skip",
+                        ))
+                        compare_fig.add_trace(go.Scatter(
+                            x=curve_df["movement_pct"],
+                            y=curve_df["lower_band"],
+                            mode="lines",
+                            line=dict(width=0),
+                            fill="tonexty",
+                            opacity=0.18,
+                            legendgroup=label,
+                            name=f"{label} ±1 SD",
+                        ))
+
+                        selected_summary_rows.append({
+                            "Processing Run": int(run_id),
+                            "Test ID": int(session_row["biodex_test_id"]),
+                            "Test Date": session_row["test_date"],
+                            "Source File": session_row["source_file_name"],
+                            "Rep Count": int(session_row["rep_count"]),
+                            "Peak Positive Mean Torque": float(session_row["peak_positive_mean_torque"]),
+                            "Peak Negative Mean Torque": float(session_row["peak_negative_mean_torque"]),
+                            "Processing Version": session_row["processing_version"],
+                            "Reviewed": bool(session_row["is_reviewed"]),
+                        })
+
+                    if not compare_fig.data:
+                        st.warning("Selected sessions do not have saved mean-curve points.")
+                    else:
+                        compare_fig.update_layout(
+                            title="Saved Landmark-Aligned Biodex Mean Curves",
+                            xaxis_title="Movement Cycle (%)",
+                            yaxis_title="Torque_Nm",
+                            height=600,
+                            legend=dict(
+                                orientation="h",
+                                yanchor="bottom",
+                                y=1.02,
+                                xanchor="center",
+                                x=0.5,
+                            ),
+                        )
+                        st.plotly_chart(compare_fig, use_container_width=True)
+
+                    if selected_summary_rows:
+                        st.markdown("### Selected Session Summary")
+                        st.dataframe(pd.DataFrame(selected_summary_rows), use_container_width=True)
 
     with biodex_test_tab3:
         st.markdown("### Review Reps")
