@@ -1201,6 +1201,192 @@ def extract_landmark_aligned_biodex_reps(
 
     return reps_long_df, mean_df, aligned_rep_metadata
 
+def detect_d2_biodex_reps(df, position_col="Position_Deg", buffer_samples=20):
+    if df.empty or position_col not in df.columns:
+        return []
+
+    position_values = pd.to_numeric(df[position_col], errors="coerce").to_numpy(dtype=float)
+    if len(position_values) < 15 or np.all(np.isnan(position_values)):
+        return []
+
+    finite_mask = np.isfinite(position_values)
+    if not finite_mask.any():
+        return []
+
+    clean_position = position_values.copy()
+    if not finite_mask.all():
+        valid_idx = np.flatnonzero(finite_mask)
+        clean_position[~finite_mask] = np.interp(
+            np.flatnonzero(~finite_mask),
+            valid_idx,
+            position_values[finite_mask],
+        )
+
+    smooth_window = get_valid_savgol_window(21, len(clean_position), 3)
+    if smooth_window is not None:
+        smooth_position = savgol_filter(clean_position, window_length=smooth_window, polyorder=3)
+    else:
+        smooth_position = clean_position
+
+    position_span = float(np.nanmax(smooth_position) - np.nanmin(smooth_position))
+    if position_span <= 0:
+        return []
+
+    prominence = max(5.0, position_span * 0.25)
+    min_distance = max(20, len(smooth_position) // 8)
+    max_indices, _ = find_peaks(smooth_position, prominence=prominence, distance=min_distance)
+    min_indices, _ = find_peaks(-smooth_position, prominence=prominence, distance=min_distance)
+
+    rep_windows = []
+    n_rows = len(df)
+    for max_idx in max_indices:
+        previous_mins = min_indices[min_indices < max_idx]
+        next_mins = min_indices[min_indices > max_idx]
+        if len(previous_mins) == 0 or len(next_mins) == 0:
+            continue
+
+        start_idx = int(previous_mins[-1])
+        end_idx = int(next_mins[0])
+        if end_idx <= start_idx:
+            continue
+
+        buffered_start = max(0, start_idx - int(buffer_samples))
+        buffered_end = min(n_rows - 1, end_idx + int(buffer_samples))
+        if rep_windows and buffered_start <= rep_windows[-1][1]:
+            continue
+        rep_windows.append((buffered_start, buffered_end))
+
+    return rep_windows
+
+def detect_d2_rep_landmarks(rep_df, position_col="Position_Deg", value_col="Torque_Nm"):
+    if rep_df.empty or position_col not in rep_df.columns or value_col not in rep_df.columns:
+        return None
+
+    position_values = pd.to_numeric(rep_df[position_col], errors="coerce").to_numpy(dtype=float)
+    torque_values = pd.to_numeric(rep_df[value_col], errors="coerce").to_numpy(dtype=float)
+    if len(rep_df) < 7 or np.all(np.isnan(position_values)) or np.all(np.isnan(torque_values)):
+        return None
+
+    position_values = pd.Series(position_values).interpolate(limit_direction="both").to_numpy(dtype=float)
+    torque_values = pd.Series(torque_values).interpolate(limit_direction="both").to_numpy(dtype=float)
+
+    reversal_idx = int(np.nanargmax(position_values))
+    if reversal_idx <= 1 or reversal_idx >= len(rep_df) - 2:
+        return None
+
+    negative_phase = torque_values[:reversal_idx + 1]
+    positive_phase = torque_values[reversal_idx:]
+    neg_peak_idx = int(np.nanargmin(negative_phase))
+    pos_peak_idx = int(reversal_idx + np.nanargmax(positive_phase))
+
+    landmark_indices = [neg_peak_idx, reversal_idx, pos_peak_idx]
+    if any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
+        return None
+
+    return {
+        "indices": landmark_indices,
+        "kinds": ["neg", "reversal", "pos"],
+    }
+
+def extract_d2_landmark_aligned_biodex_reps(
+    df,
+    rep_windows,
+    time_col="Elapsed Seconds",
+    position_col="Position_Deg",
+    value_col="Torque_Nm",
+    n_points=101,
+):
+    if df.empty or not rep_windows:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    percent_axis = np.linspace(0.0, 100.0, int(n_points))
+    valid_reps = []
+    phase_fraction_rows = []
+
+    for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
+        rep_df = df.iloc[int(start_idx):int(end_idx) + 1].copy()
+        rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
+        rep_df[position_col] = pd.to_numeric(rep_df[position_col], errors="coerce")
+        rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
+        rep_df = rep_df.dropna(subset=[time_col, position_col, value_col]).reset_index(drop=True)
+        if len(rep_df) < 7:
+            continue
+
+        landmark_info = detect_d2_rep_landmarks(
+            rep_df,
+            position_col=position_col,
+            value_col=value_col,
+        )
+        if landmark_info is None:
+            continue
+
+        boundary_idx = [0] + landmark_info["indices"] + [len(rep_df) - 1]
+        if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
+            continue
+
+        phase_lengths = np.diff(boundary_idx).astype(float)
+        if np.any(phase_lengths <= 0):
+            continue
+
+        phase_fraction_rows.append(phase_lengths / phase_lengths.sum())
+        valid_reps.append({
+            "rep_number": rep_number,
+            "rep_df": rep_df,
+            "boundary_idx": boundary_idx,
+            "landmark_indices": landmark_info["indices"],
+            "landmark_kinds": landmark_info["kinds"],
+        })
+
+    if not valid_reps:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    median_phase_fractions = np.nanmedian(np.vstack(phase_fraction_rows), axis=0)
+    median_phase_fractions = median_phase_fractions / median_phase_fractions.sum()
+    boundary_pct = np.concatenate(([0.0], np.cumsum(median_phase_fractions) * 100.0))
+
+    normalized_curves = []
+    rep_rows = []
+    aligned_rep_metadata = []
+
+    for rep_info in valid_reps:
+        rep_df = rep_info["rep_df"]
+        time_values = rep_df[time_col].to_numpy(dtype=float)
+        torque_values = rep_df[value_col].to_numpy(dtype=float)
+        sample_idx = np.arange(len(rep_df), dtype=float)
+        mapped_pct = np.interp(sample_idx, rep_info["boundary_idx"], boundary_pct)
+        interp_torque = np.interp(percent_axis, mapped_pct, torque_values)
+
+        landmark_times = [float(time_values[idx]) for idx in rep_info["landmark_indices"]]
+        landmark_torques = [float(torque_values[idx]) for idx in rep_info["landmark_indices"]]
+
+        normalized_curves.append(interp_torque)
+        rep_rows.append(pd.DataFrame({
+            "rep_number": rep_info["rep_number"],
+            "movement_pct": percent_axis,
+            "torque_nm": interp_torque,
+        }))
+        aligned_rep_metadata.append({
+            "rep_number": rep_info["rep_number"],
+            "landmark_indices": rep_info["landmark_indices"],
+            "landmark_kinds": rep_info["landmark_kinds"],
+            "landmark_times": landmark_times,
+            "landmark_torques": landmark_torques,
+        })
+
+    curves_arr = np.vstack(normalized_curves)
+    reps_long_df = pd.concat(rep_rows, ignore_index=True)
+    mean_df = pd.DataFrame({
+        "movement_pct": percent_axis,
+        "mean_torque_nm": np.nanmean(curves_arr, axis=0),
+        "std_torque_nm": np.nanstd(curves_arr, axis=0),
+    })
+    mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
+    mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
+    mean_df.attrs["landmark_boundary_pct"] = boundary_pct[1:-1].tolist()
+    mean_df.attrs["landmark_labels"] = ["NEG1", "REVERSAL", "POS1"]
+
+    return reps_long_df, mean_df, aligned_rep_metadata
+
 # Helper: Ball release frame by peak |hand CGVel X|
 # Helper: Ball release frame by peak |hand CGVel X|
 def get_ball_release_frame(take_id, handedness, cur):
@@ -6728,6 +6914,8 @@ with tab6:
                     "df": biodex_df,
                     "numeric_columns": numeric_columns,
                     "test_name": test_name,
+                    "movement": selected_biodex_test_movement,
+                    "protocol_type": selected_biodex_test_protocol,
                 })
 
             if stored_uploads:
@@ -6844,6 +7032,22 @@ with tab6:
                 )
                 st.plotly_chart(preview_fig, use_container_width=True)
 
+                if preview_item.get("movement", selected_biodex_test_movement) == "d2_shoulder_pattern" and "Position_Deg" in preview_item["numeric_columns"]:
+                    d2_position_fig = go.Figure()
+                    d2_position_fig.add_trace(go.Scatter(
+                        x=preview_df["Elapsed Seconds"],
+                        y=preview_df["Position_Deg"],
+                        mode="lines",
+                        name="Position_Deg",
+                    ))
+                    d2_position_fig.update_layout(
+                        title="D2 Shoulder Pattern Position",
+                        xaxis_title="Elapsed Time (s)",
+                        yaxis_title="Position_Deg",
+                        height=450,
+                    )
+                    st.plotly_chart(d2_position_fig, use_container_width=True)
+
                 st.markdown("### Rep Detection Preview")
                 preview_controls_col, preview_plot_col = st.columns([0.35, 1.0], vertical_alignment="top")
 
@@ -6888,6 +7092,11 @@ with tab6:
                         step=0.01,
                         key="biodex_test_preview_prominence",
                     )
+                    if preview_item.get("movement", selected_biodex_test_movement) == "d2_shoulder_pattern":
+                        st.caption(
+                            "D2 preview uses `Position_Deg` cycles for rep windows. "
+                            "Buffer and normalized points apply; torque threshold/min samples/landmark prominence are ER/IR controls."
+                        )
 
                 preview_rep_windows = detect_biodex_reps(
                     preview_df,
@@ -6896,14 +7105,31 @@ with tab6:
                     min_samples=int(preview_min_samples),
                     buffer_samples=int(preview_buffer_samples),
                 )
-                preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
-                    preview_df,
-                    preview_rep_windows,
-                    time_col="Elapsed Seconds",
-                    value_col="Torque_Nm",
-                    n_points=int(preview_n_points),
-                    prominence_ratio=float(preview_landmark_prominence),
-                )
+                preview_processing_version = "shoulder_er_ir_landmark_v1"
+                if preview_item.get("movement", selected_biodex_test_movement) == "d2_shoulder_pattern":
+                    preview_rep_windows = detect_d2_biodex_reps(
+                        preview_df,
+                        position_col="Position_Deg",
+                        buffer_samples=int(preview_buffer_samples),
+                    )
+                    preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_d2_landmark_aligned_biodex_reps(
+                        preview_df,
+                        preview_rep_windows,
+                        time_col="Elapsed Seconds",
+                        position_col="Position_Deg",
+                        value_col="Torque_Nm",
+                        n_points=int(preview_n_points),
+                    )
+                    preview_processing_version = "d2_shoulder_pattern_landmark_v1"
+                else:
+                    preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
+                        preview_df,
+                        preview_rep_windows,
+                        time_col="Elapsed Seconds",
+                        value_col="Torque_Nm",
+                        n_points=int(preview_n_points),
+                        prominence_ratio=float(preview_landmark_prominence),
+                    )
 
                 with preview_plot_col:
                     preview_raw_fig = go.Figure()
@@ -7001,7 +7227,7 @@ with tab6:
                                 biodex_processing_run_id = insert_biodex_processing_run(
                                     cur,
                                     biodex_test_id=int(preview_item["biodex_test_id"]),
-                                    processing_version="shoulder_er_ir_landmark_v1",
+                                    processing_version=preview_processing_version,
                                     threshold=float(preview_threshold),
                                     min_samples=int(preview_min_samples),
                                     buffer_samples=int(preview_buffer_samples),
