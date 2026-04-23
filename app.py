@@ -7138,10 +7138,23 @@ with tab6:
                         step=0.01,
                         key="biodex_test_preview_prominence",
                     )
-                    if preview_item.get("movement", selected_biodex_test_movement) == "d2_shoulder_pattern":
+                    preview_movement = preview_item.get("movement", selected_biodex_test_movement)
+                    preview_protocol_type = preview_item.get("protocol_type", selected_biodex_test_protocol)
+                    if (
+                        preview_movement == "d2_shoulder_pattern"
+                        and preview_protocol_type != "speed"
+                    ):
                         st.caption(
                             "D2 preview uses `Position_Deg` cycles for rep windows. "
                             "Buffer and normalized points apply; torque threshold/min samples/landmark prominence are ER/IR controls."
+                        )
+                    elif (
+                        preview_movement == "d2_shoulder_pattern"
+                        and preview_protocol_type == "speed"
+                    ):
+                        st.caption(
+                            "D2 Speed preview uses torque spike bursts as reps, similar to Shoulder ER/IR. "
+                            "Threshold, minimum active samples, buffer, and landmark prominence all apply here."
                         )
 
                 preview_rep_windows = detect_biodex_reps(
@@ -7152,7 +7165,12 @@ with tab6:
                     buffer_samples=int(preview_buffer_samples),
                 )
                 preview_processing_version = "shoulder_er_ir_landmark_v1"
-                if preview_item.get("movement", selected_biodex_test_movement) == "d2_shoulder_pattern":
+                preview_movement = preview_item.get("movement", selected_biodex_test_movement)
+                preview_protocol_type = preview_item.get("protocol_type", selected_biodex_test_protocol)
+                if (
+                    preview_movement == "d2_shoulder_pattern"
+                    and preview_protocol_type != "speed"
+                ):
                     preview_rep_windows = detect_d2_biodex_reps(
                         preview_df,
                         position_col="Position_Deg",
@@ -7167,6 +7185,19 @@ with tab6:
                         n_points=int(preview_n_points),
                     )
                     preview_processing_version = "d2_shoulder_pattern_landmark_v1"
+                elif (
+                    preview_movement == "d2_shoulder_pattern"
+                    and preview_protocol_type == "speed"
+                ):
+                    preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
+                        preview_df,
+                        preview_rep_windows,
+                        time_col="Elapsed Seconds",
+                        value_col="Torque_Nm",
+                        n_points=int(preview_n_points),
+                        prominence_ratio=float(preview_landmark_prominence),
+                    )
+                    preview_processing_version = "d2_shoulder_pattern_speed_landmark_v1"
                 else:
                     preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
                         preview_df,
