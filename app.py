@@ -744,6 +744,179 @@ def fetch_biodex_mean_curve(cur, biodex_processing_run_id):
         ],
     )
 
+def fetch_all_biodex_processing_runs(cur):
+    cur.execute(
+        """
+        SELECT
+            pr.biodex_processing_run_id,
+            bt.biodex_test_id,
+            bt.test_name,
+            bt.test_date,
+            bt.protocol_type,
+            bt.movement,
+            bt.limb,
+            bt.speed_deg_per_sec,
+            bt.source_file_name,
+            a.athlete_name,
+            pr.processing_version,
+            pr.created_at,
+            pr.is_reviewed,
+            pr.threshold,
+            pr.min_samples,
+            pr.buffer_samples,
+            pr.n_points,
+            pr.landmark_prominence_ratio,
+            COUNT(DISTINCT rw.biodex_rep_window_id) AS rep_count
+        FROM biodex_processing_runs pr
+        JOIN biodex_tests bt
+            ON pr.biodex_test_id = bt.biodex_test_id
+        JOIN athletes a
+            ON bt.athlete_id = a.athlete_id
+        LEFT JOIN biodex_rep_windows rw
+            ON pr.biodex_processing_run_id = rw.biodex_processing_run_id
+        GROUP BY
+            pr.biodex_processing_run_id,
+            bt.biodex_test_id,
+            bt.test_name,
+            bt.test_date,
+            bt.protocol_type,
+            bt.movement,
+            bt.limb,
+            bt.speed_deg_per_sec,
+            bt.source_file_name,
+            a.athlete_name,
+            pr.processing_version,
+            pr.created_at,
+            pr.is_reviewed,
+            pr.threshold,
+            pr.min_samples,
+            pr.buffer_samples,
+            pr.n_points,
+            pr.landmark_prominence_ratio
+        ORDER BY bt.test_date DESC NULLS LAST, pr.created_at DESC
+        """
+    )
+    return pd.DataFrame(
+        cur.fetchall(),
+        columns=[
+            "biodex_processing_run_id",
+            "biodex_test_id",
+            "test_name",
+            "test_date",
+            "protocol_type",
+            "movement",
+            "limb",
+            "speed_deg_per_sec",
+            "source_file_name",
+            "athlete_name",
+            "processing_version",
+            "created_at",
+            "is_reviewed",
+            "threshold",
+            "min_samples",
+            "buffer_samples",
+            "n_points",
+            "landmark_prominence_ratio",
+            "rep_count",
+        ],
+    )
+
+def fetch_biodex_raw_time_series(cur, biodex_test_id):
+    cur.execute(
+        """
+        SELECT
+            sample_index,
+            time_seconds,
+            time_raw,
+            angular_velocity_deg_sec,
+            position_deg,
+            torque_nm
+        FROM biodex_time_series
+        WHERE biodex_test_id = %s
+        ORDER BY sample_index
+        """,
+        (int(biodex_test_id),),
+    )
+    return pd.DataFrame(
+        cur.fetchall(),
+        columns=[
+            "sample_index",
+            "time_seconds",
+            "time_raw",
+            "angular_velocity_deg_sec",
+            "position_deg",
+            "torque_nm",
+        ],
+    )
+
+def fetch_biodex_rep_windows(cur, biodex_processing_run_id):
+    cur.execute(
+        """
+        SELECT
+            biodex_rep_window_id,
+            rep_number,
+            start_sample_index,
+            end_sample_index,
+            start_time_seconds,
+            end_time_seconds
+        FROM biodex_rep_windows
+        WHERE biodex_processing_run_id = %s
+        ORDER BY rep_number
+        """,
+        (int(biodex_processing_run_id),),
+    )
+    return pd.DataFrame(
+        cur.fetchall(),
+        columns=[
+            "biodex_rep_window_id",
+            "rep_number",
+            "start_sample_index",
+            "end_sample_index",
+            "start_time_seconds",
+            "end_time_seconds",
+        ],
+    )
+
+def fetch_biodex_rep_landmarks(cur, biodex_processing_run_id):
+    cur.execute(
+        """
+        SELECT
+            rw.rep_number,
+            rl.landmark_name,
+            rl.sample_index,
+            rl.time_seconds,
+            rl.torque_nm
+        FROM biodex_rep_landmarks rl
+        JOIN biodex_rep_windows rw
+            ON rl.biodex_rep_window_id = rw.biodex_rep_window_id
+        WHERE rw.biodex_processing_run_id = %s
+        ORDER BY rw.rep_number, rl.sample_index
+        """,
+        (int(biodex_processing_run_id),),
+    )
+    return pd.DataFrame(
+        cur.fetchall(),
+        columns=[
+            "rep_number",
+            "landmark_name",
+            "sample_index",
+            "time_seconds",
+            "torque_nm",
+        ],
+    )
+
+def mark_biodex_processing_run_reviewed(cur, conn, biodex_processing_run_id):
+    cur.execute(
+        """
+        UPDATE biodex_processing_runs
+        SET is_reviewed = TRUE
+        WHERE biodex_processing_run_id = %s
+        """,
+        (int(biodex_processing_run_id),),
+    )
+    conn.commit()
+    return cur.rowcount
+
 def get_valid_savgol_window(window_length, series_length, polyorder):
     """Clamp the Savitzky-Golay window to a valid odd length for the series."""
     max_window = series_length if series_length % 2 == 1 else series_length - 1
@@ -7044,11 +7217,178 @@ with tab6:
         st.markdown("### Review Reps")
         st.caption("Use this area to inspect auto-detected reps, adjust windows or landmarks, and save reviewed processing for future comparisons.")
 
-        st.selectbox(
-            "Processed Biodex Test",
-            options=["Processed tests will appear here"],
-            index=0,
-            key="biodex_test_review_test_placeholder",
-            disabled=True,
-        )
-        st.info("Next build step: load one saved test, show detected rep windows and landmarks, and allow manual correction before saving reviewed outputs.")
+        review_runs_df = fetch_all_biodex_processing_runs(cur)
+
+        if review_runs_df.empty:
+            st.info("No saved Biodex processing runs are available to review yet.")
+        else:
+            review_labels = {}
+            for _, row in review_runs_df.iterrows():
+                test_date = row["test_date"].strftime("%Y-%m-%d") if pd.notna(row["test_date"]) else "No date"
+                reviewed_suffix = "Reviewed" if row["is_reviewed"] else "Needs Review"
+                review_labels[int(row["biodex_processing_run_id"])] = (
+                    f"{row['athlete_name']} | {test_date} | Run {int(row['biodex_processing_run_id'])} | "
+                    f"{row['movement']} | {row['protocol_type']} | {reviewed_suffix}"
+                )
+
+            selected_review_run_id = st.selectbox(
+                "Processed Biodex Test",
+                options=list(review_labels.keys()),
+                format_func=lambda run_id: review_labels.get(run_id, f"Run {run_id}"),
+                key="biodex_test_review_run",
+            )
+
+            selected_review_row = review_runs_df[
+                review_runs_df["biodex_processing_run_id"] == selected_review_run_id
+            ].iloc[0]
+
+            review_summary_col1, review_summary_col2, review_summary_col3 = st.columns(3)
+            with review_summary_col1:
+                st.metric("Processing Run", int(selected_review_row["biodex_processing_run_id"]))
+                st.metric("Rep Count", int(selected_review_row["rep_count"]))
+            with review_summary_col2:
+                st.metric("Biodex Test", int(selected_review_row["biodex_test_id"]))
+                st.metric("Reviewed", "Yes" if selected_review_row["is_reviewed"] else "No")
+            with review_summary_col3:
+                st.metric("Speed", f"{int(selected_review_row['speed_deg_per_sec'])} deg/s")
+                st.metric("Version", selected_review_row["processing_version"])
+
+            st.dataframe(
+                pd.DataFrame([{
+                    "Athlete": selected_review_row["athlete_name"],
+                    "Test Date": selected_review_row["test_date"],
+                    "Protocol": selected_review_row["protocol_type"],
+                    "Movement": selected_review_row["movement"],
+                    "Limb": selected_review_row["limb"],
+                    "Source File": selected_review_row["source_file_name"],
+                    "Threshold": selected_review_row["threshold"],
+                    "Min Samples": selected_review_row["min_samples"],
+                    "Buffer Samples": selected_review_row["buffer_samples"],
+                    "N Points": selected_review_row["n_points"],
+                    "Landmark Prominence": selected_review_row["landmark_prominence_ratio"],
+                }]),
+                use_container_width=True,
+            )
+
+            raw_review_df = fetch_biodex_raw_time_series(
+                cur,
+                int(selected_review_row["biodex_test_id"]),
+            )
+            windows_review_df = fetch_biodex_rep_windows(cur, selected_review_run_id)
+            landmarks_review_df = fetch_biodex_rep_landmarks(cur, selected_review_run_id)
+            mean_review_df = fetch_biodex_mean_curve(cur, selected_review_run_id)
+
+            if raw_review_df.empty:
+                st.warning("No raw time-series rows were found for this Biodex test.")
+            else:
+                review_raw_fig = go.Figure()
+                review_raw_fig.add_trace(go.Scatter(
+                    x=raw_review_df["time_seconds"],
+                    y=raw_review_df["torque_nm"],
+                    mode="lines",
+                    name="Raw Torque",
+                ))
+
+                review_shapes = []
+                for _, window_row in windows_review_df.iterrows():
+                    x0 = float(window_row["start_time_seconds"])
+                    x1 = float(window_row["end_time_seconds"])
+                    review_shapes.append(dict(
+                        type="rect",
+                        xref="x",
+                        yref="paper",
+                        x0=x0,
+                        x1=x1,
+                        y0=0,
+                        y1=1,
+                        fillcolor="rgba(0, 123, 255, 0.12)",
+                        line=dict(width=0),
+                        layer="below",
+                    ))
+                    review_raw_fig.add_annotation(
+                        x=(x0 + x1) / 2.0,
+                        y=1.02,
+                        xref="x",
+                        yref="paper",
+                        text=f"Rep {int(window_row['rep_number'])}",
+                        showarrow=False,
+                    )
+
+                if not landmarks_review_df.empty:
+                    for landmark_name, landmark_df in landmarks_review_df.groupby("landmark_name"):
+                        review_raw_fig.add_trace(go.Scatter(
+                            x=landmark_df["time_seconds"],
+                            y=landmark_df["torque_nm"],
+                            mode="markers",
+                            marker=dict(
+                                size=10,
+                                symbol="triangle-up" if str(landmark_name).startswith("pos") else "triangle-down",
+                            ),
+                            name=str(landmark_name),
+                        ))
+
+                review_raw_fig.update_layout(
+                    title="Saved Rep Windows and Landmarks",
+                    xaxis_title="Elapsed Time (s)",
+                    yaxis_title="Torque_Nm",
+                    shapes=review_shapes,
+                    height=500,
+                )
+                st.plotly_chart(review_raw_fig, use_container_width=True)
+
+            if mean_review_df.empty:
+                st.warning("No saved mean curve was found for this processing run.")
+            else:
+                review_mean_fig = go.Figure()
+                review_mean_fig.add_trace(go.Scatter(
+                    x=mean_review_df["movement_pct"],
+                    y=mean_review_df["upper_band"],
+                    mode="lines",
+                    line=dict(width=0),
+                    showlegend=False,
+                    hoverinfo="skip",
+                ))
+                review_mean_fig.add_trace(go.Scatter(
+                    x=mean_review_df["movement_pct"],
+                    y=mean_review_df["lower_band"],
+                    mode="lines",
+                    line=dict(width=0),
+                    fill="tonexty",
+                    name="±1 SD",
+                ))
+                review_mean_fig.add_trace(go.Scatter(
+                    x=mean_review_df["movement_pct"],
+                    y=mean_review_df["mean_torque_nm"],
+                    mode="lines",
+                    line=dict(width=4),
+                    name="Mean Torque",
+                ))
+                review_mean_fig.update_layout(
+                    title="Saved Landmark-Aligned Mean Curve",
+                    xaxis_title="Movement Cycle (%)",
+                    yaxis_title="Torque_Nm",
+                    height=500,
+                )
+                st.plotly_chart(review_mean_fig, use_container_width=True)
+
+            if selected_review_row["is_reviewed"]:
+                st.success("This processing run is already marked as reviewed.")
+            else:
+                if st.button(
+                    "Mark as Reviewed",
+                    key=f"biodex_test_mark_reviewed_{selected_review_run_id}",
+                    use_container_width=True,
+                ):
+                    try:
+                        updated_count = mark_biodex_processing_run_reviewed(
+                            cur,
+                            conn,
+                            selected_review_run_id,
+                        )
+                    except Exception as exc:
+                        conn.rollback()
+                        st.error(f"Could not mark this processing run as reviewed: {exc}")
+                    else:
+                        if updated_count:
+                            st.success("Processing run marked as reviewed.")
+                            st.rerun()
