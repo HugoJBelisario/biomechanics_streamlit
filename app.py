@@ -1232,21 +1232,27 @@ def detect_d2_biodex_reps(df, position_col="Position_Deg", buffer_samples=20):
     if position_span <= 0:
         return []
 
+    low_position = float(np.nanpercentile(smooth_position, 10))
+    high_position = float(np.nanpercentile(smooth_position, 90))
+    low_return_threshold = low_position + ((high_position - low_position) * 0.08)
+
     prominence = max(5.0, position_span * 0.25)
     min_distance = max(20, len(smooth_position) // 8)
     max_indices, _ = find_peaks(smooth_position, prominence=prominence, distance=min_distance)
-    min_indices, _ = find_peaks(-smooth_position, prominence=prominence, distance=min_distance)
 
     rep_windows = []
     n_rows = len(df)
     for max_idx in max_indices:
-        previous_mins = min_indices[min_indices < max_idx]
-        next_mins = min_indices[min_indices > max_idx]
-        if len(previous_mins) == 0 or len(next_mins) == 0:
+        if smooth_position[max_idx] < high_position:
             continue
 
-        start_idx = int(previous_mins[-1])
-        end_idx = int(next_mins[0])
+        previous_low_idx = np.flatnonzero(smooth_position[:max_idx] <= low_return_threshold)
+        next_low_idx = np.flatnonzero(smooth_position[max_idx:] <= low_return_threshold)
+        if len(previous_low_idx) == 0 or len(next_low_idx) == 0:
+            continue
+
+        start_idx = int(previous_low_idx[-1])
+        end_idx = int(max_idx + next_low_idx[0])
         if end_idx <= start_idx:
             continue
 
@@ -1259,33 +1265,49 @@ def detect_d2_biodex_reps(df, position_col="Position_Deg", buffer_samples=20):
     return rep_windows
 
 def detect_d2_rep_landmarks(rep_df, position_col="Position_Deg", value_col="Torque_Nm"):
-    if rep_df.empty or position_col not in rep_df.columns or value_col not in rep_df.columns:
+    if rep_df.empty or value_col not in rep_df.columns:
         return None
 
-    position_values = pd.to_numeric(rep_df[position_col], errors="coerce").to_numpy(dtype=float)
     torque_values = pd.to_numeric(rep_df[value_col], errors="coerce").to_numpy(dtype=float)
-    if len(rep_df) < 7 or np.all(np.isnan(position_values)) or np.all(np.isnan(torque_values)):
+    if len(rep_df) < 7 or np.all(np.isnan(torque_values)):
         return None
 
-    position_values = pd.Series(position_values).interpolate(limit_direction="both").to_numpy(dtype=float)
     torque_values = pd.Series(torque_values).interpolate(limit_direction="both").to_numpy(dtype=float)
 
-    reversal_idx = int(np.nanargmax(position_values))
-    if reversal_idx <= 1 or reversal_idx >= len(rep_df) - 2:
+    smooth_window = get_valid_savgol_window(11, len(torque_values), 3)
+    if smooth_window is not None:
+        smooth_torque = savgol_filter(torque_values, window_length=smooth_window, polyorder=3)
+    else:
+        smooth_torque = torque_values
+
+    torque_span = float(np.nanmax(smooth_torque) - np.nanmin(smooth_torque))
+    if torque_span <= 0:
         return None
 
-    negative_phase = torque_values[:reversal_idx + 1]
-    positive_phase = torque_values[reversal_idx:]
-    neg_peak_idx = int(np.nanargmin(negative_phase))
-    pos_peak_idx = int(reversal_idx + np.nanargmax(positive_phase))
+    min_distance = max(1, len(smooth_torque) // 12)
+    prominence = max(5.0, torque_span * 0.10)
+    pos_peaks, pos_props = find_peaks(smooth_torque, prominence=prominence, distance=min_distance)
+    neg_peaks, neg_props = find_peaks(-smooth_torque, prominence=prominence, distance=min_distance)
 
-    landmark_indices = [neg_peak_idx, reversal_idx, pos_peak_idx]
+    if len(pos_peaks) < 2 or len(neg_peaks) < 2:
+        return None
+
+    top_pos_idx = np.argsort(pos_props["prominences"])[-2:]
+    top_neg_idx = np.argsort(neg_props["prominences"])[-2:]
+    candidates = []
+    for idx in top_neg_idx:
+        candidates.append((int(neg_peaks[idx]), "neg"))
+    for idx in top_pos_idx:
+        candidates.append((int(pos_peaks[idx]), "pos"))
+
+    candidates = sorted(candidates, key=lambda item: item[0])
+    landmark_indices = [idx for idx, _kind in candidates]
     if any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
         return None
 
     return {
         "indices": landmark_indices,
-        "kinds": ["neg", "reversal", "pos"],
+        "kinds": [kind for _idx, kind in candidates],
     }
 
 def extract_d2_landmark_aligned_biodex_reps(
@@ -1382,8 +1404,14 @@ def extract_d2_landmark_aligned_biodex_reps(
     })
     mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
     mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
+    landmark_counts = {}
+    landmark_labels = []
+    for kind in aligned_rep_metadata[0]["landmark_kinds"]:
+        landmark_counts[kind] = landmark_counts.get(kind, 0) + 1
+        landmark_labels.append(f"{kind.upper()}{landmark_counts[kind]}")
+
     mean_df.attrs["landmark_boundary_pct"] = boundary_pct[1:-1].tolist()
-    mean_df.attrs["landmark_labels"] = ["NEG1", "REVERSAL", "POS1"]
+    mean_df.attrs["landmark_labels"] = landmark_labels
 
     return reps_long_df, mean_df, aligned_rep_metadata
 
@@ -7210,6 +7238,25 @@ with tab6:
                             line=dict(width=4),
                             name="Mean Torque",
                         ))
+                        for boundary_pct, label in zip(
+                            preview_mean_df.attrs.get("landmark_boundary_pct", []),
+                            preview_mean_df.attrs.get("landmark_labels", []),
+                        ):
+                            preview_avg_fig.add_vline(
+                                x=float(boundary_pct),
+                                line_width=2,
+                                line_dash="dot",
+                                line_color="rgba(255,255,255,0.45)",
+                            )
+                            preview_avg_fig.add_annotation(
+                                x=float(boundary_pct),
+                                y=1.03,
+                                xref="x",
+                                yref="paper",
+                                text=label,
+                                showarrow=False,
+                                font=dict(size=11),
+                            )
                         preview_avg_fig.update_layout(
                             title="Landmark-Aligned Average Torque Curve Across Detected Reps",
                             xaxis_title="Movement Cycle (%)",
