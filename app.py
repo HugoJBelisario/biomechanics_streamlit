@@ -1265,14 +1265,26 @@ def detect_d2_biodex_reps(df, position_col="Position_Deg", buffer_samples=20):
     return rep_windows
 
 def detect_d2_rep_landmarks(rep_df, position_col="Position_Deg", value_col="Torque_Nm"):
-    if rep_df.empty or value_col not in rep_df.columns:
+    if rep_df.empty or position_col not in rep_df.columns or value_col not in rep_df.columns:
         return None
 
+    position_values = pd.to_numeric(rep_df[position_col], errors="coerce").to_numpy(dtype=float)
     torque_values = pd.to_numeric(rep_df[value_col], errors="coerce").to_numpy(dtype=float)
-    if len(rep_df) < 7 or np.all(np.isnan(torque_values)):
+    if len(rep_df) < 7 or np.all(np.isnan(position_values)) or np.all(np.isnan(torque_values)):
         return None
 
+    position_values = pd.Series(position_values).interpolate(limit_direction="both").to_numpy(dtype=float)
     torque_values = pd.Series(torque_values).interpolate(limit_direction="both").to_numpy(dtype=float)
+
+    position_window = get_valid_savgol_window(21, len(position_values), 3)
+    if position_window is not None:
+        smooth_position = savgol_filter(position_values, window_length=position_window, polyorder=3)
+    else:
+        smooth_position = position_values
+
+    reversal_idx = int(np.nanargmax(smooth_position))
+    if reversal_idx <= 2 or reversal_idx >= len(rep_df) - 3:
+        return None
 
     smooth_window = get_valid_savgol_window(11, len(torque_values), 3)
     if smooth_window is not None:
@@ -1289,25 +1301,31 @@ def detect_d2_rep_landmarks(rep_df, position_col="Position_Deg", value_col="Torq
     pos_peaks, pos_props = find_peaks(smooth_torque, prominence=prominence, distance=min_distance)
     neg_peaks, neg_props = find_peaks(-smooth_torque, prominence=prominence, distance=min_distance)
 
-    if len(pos_peaks) < 2 or len(neg_peaks) < 2:
+    neg_phase_peak_mask = neg_peaks < reversal_idx
+    pos_phase_peak_mask = pos_peaks > reversal_idx
+    neg_phase_peaks = neg_peaks[neg_phase_peak_mask]
+    pos_phase_peaks = pos_peaks[pos_phase_peak_mask]
+    neg_phase_prominences = neg_props["prominences"][neg_phase_peak_mask]
+    pos_phase_prominences = pos_props["prominences"][pos_phase_peak_mask]
+
+    if len(pos_phase_peaks) < 2 or len(neg_phase_peaks) < 2:
         return None
 
-    top_pos_idx = np.argsort(pos_props["prominences"])[-2:]
-    top_neg_idx = np.argsort(neg_props["prominences"])[-2:]
-    candidates = []
-    for idx in top_neg_idx:
-        candidates.append((int(neg_peaks[idx]), "neg"))
-    for idx in top_pos_idx:
-        candidates.append((int(pos_peaks[idx]), "pos"))
+    top_neg_indices = np.sort(neg_phase_peaks[np.argsort(neg_phase_prominences)[-2:]])
+    top_pos_indices = np.sort(pos_phase_peaks[np.argsort(pos_phase_prominences)[-2:]])
 
-    candidates = sorted(candidates, key=lambda item: item[0])
-    landmark_indices = [idx for idx, _kind in candidates]
+    landmark_indices = [
+        int(top_neg_indices[0]),
+        int(top_neg_indices[1]),
+        int(top_pos_indices[0]),
+        int(top_pos_indices[1]),
+    ]
     if any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
         return None
 
     return {
         "indices": landmark_indices,
-        "kinds": [kind for _idx, kind in candidates],
+        "kinds": ["neg", "neg", "pos", "pos"],
     }
 
 def extract_d2_landmark_aligned_biodex_reps(
