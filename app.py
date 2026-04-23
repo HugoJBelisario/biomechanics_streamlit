@@ -1488,7 +1488,14 @@ def detect_d2_speed_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_rati
         "smooth_values": smooth_torque,
     }
 
-def detect_d2_speed_biodex_reps(df, value_col="Torque_Nm", threshold=20.0, min_samples=15, tail_buffer_samples=10):
+def detect_d2_speed_biodex_reps(
+    df,
+    value_col="Torque_Nm",
+    threshold=20.0,
+    min_samples=15,
+    tail_buffer_samples=10,
+    baseline_hold_samples=6,
+):
     if df.empty or value_col not in df.columns:
         return []
 
@@ -1537,9 +1544,18 @@ def detect_d2_speed_biodex_reps(df, value_col="Torque_Nm", threshold=20.0, min_s
                 break
 
         end_idx_local = len(smooth_region) - 1
+        hold_count = 0
         for idx in range(last_peak_idx, len(smooth_region)):
             if abs(smooth_region[idx]) <= baseline_threshold:
-                end_idx_local = min(len(smooth_region) - 1, idx + int(tail_buffer_samples))
+                hold_count += 1
+            else:
+                hold_count = 0
+
+            if hold_count >= int(baseline_hold_samples):
+                end_idx_local = min(
+                    len(smooth_region) - 1,
+                    idx + int(tail_buffer_samples),
+                )
                 break
 
         start_idx = max(0, int(region_start) + int(start_idx_local))
