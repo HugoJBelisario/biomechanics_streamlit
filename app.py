@@ -1433,6 +1433,228 @@ def extract_d2_landmark_aligned_biodex_reps(
 
     return reps_long_df, mean_df, aligned_rep_metadata
 
+def detect_d2_speed_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.10):
+    if rep_df.empty or value_col not in rep_df.columns:
+        return None
+
+    torque_values = pd.to_numeric(rep_df[value_col], errors="coerce").to_numpy(dtype=float)
+    if len(rep_df) < 9 or np.all(np.isnan(torque_values)):
+        return None
+
+    torque_values = pd.Series(torque_values).interpolate(limit_direction="both").to_numpy(dtype=float)
+    smooth_window = get_valid_savgol_window(9, len(torque_values), 3)
+    if smooth_window is not None:
+        smooth_torque = savgol_filter(torque_values, window_length=smooth_window, polyorder=3)
+    else:
+        smooth_torque = torque_values
+
+    torque_span = float(np.nanmax(smooth_torque) - np.nanmin(smooth_torque))
+    if torque_span <= 0:
+        return None
+
+    min_distance = max(1, len(smooth_torque) // 18)
+    prominence = max(5.0, torque_span * float(prominence_ratio))
+    pos_peaks, pos_props = find_peaks(smooth_torque, prominence=prominence, distance=min_distance)
+    neg_peaks, neg_props = find_peaks(-smooth_torque, prominence=prominence, distance=min_distance)
+    if len(pos_peaks) < 3 or len(neg_peaks) < 3:
+        return None
+
+    pos_height_threshold = float(np.nanmax(smooth_torque)) * 0.35
+    neg_height_threshold = float(np.nanmin(smooth_torque)) * 0.35
+    pos_candidates = [int(idx) for idx in pos_peaks if smooth_torque[int(idx)] >= pos_height_threshold]
+    neg_candidates = [int(idx) for idx in neg_peaks if smooth_torque[int(idx)] <= neg_height_threshold]
+    if len(pos_candidates) < 3:
+        top_pos = np.argsort(pos_props["prominences"])[-3:]
+        pos_candidates = sorted(int(pos_peaks[idx]) for idx in top_pos)
+    else:
+        pos_candidates = sorted(pos_candidates[:3])
+    if len(neg_candidates) < 3:
+        top_neg = np.argsort(neg_props["prominences"])[-3:]
+        neg_candidates = sorted(int(neg_peaks[idx]) for idx in top_neg)
+    else:
+        neg_candidates = sorted(neg_candidates[:3])
+
+    landmark_pairs = [(idx, "pos") for idx in pos_candidates[:3]] + [(idx, "neg") for idx in neg_candidates[:3]]
+    landmark_pairs = sorted(landmark_pairs, key=lambda item: item[0])
+    landmark_indices = [idx for idx, _kind in landmark_pairs]
+    landmark_kinds = [kind for _idx, kind in landmark_pairs]
+
+    if len(landmark_indices) != 6 or any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
+        return None
+
+    return {
+        "indices": landmark_indices,
+        "kinds": landmark_kinds,
+        "smooth_values": smooth_torque,
+    }
+
+def detect_d2_speed_biodex_reps(df, value_col="Torque_Nm", threshold=20.0, min_samples=15, tail_buffer_samples=10):
+    if df.empty or value_col not in df.columns:
+        return []
+
+    torque_values = pd.to_numeric(df[value_col], errors="coerce").to_numpy(dtype=float)
+    if len(torque_values) < 9 or np.all(np.isnan(torque_values)):
+        return []
+
+    torque_values = pd.Series(torque_values).interpolate(limit_direction="both").to_numpy(dtype=float)
+    smooth_window = get_valid_savgol_window(9, len(torque_values), 3)
+    if smooth_window is not None:
+        smooth_torque = savgol_filter(torque_values, window_length=smooth_window, polyorder=3)
+    else:
+        smooth_torque = torque_values
+
+    abs_envelope = pd.Series(np.abs(smooth_torque)).rolling(window=9, center=True, min_periods=1).max().to_numpy(dtype=float)
+    active_idx = np.flatnonzero(abs_envelope >= float(threshold))
+    if active_idx.size == 0:
+        return []
+
+    regions = _build_contiguous_regions(active_idx.tolist())
+    regions = _merge_close_regions(regions, max(int(min_samples) * 2, 12))
+    rep_windows = []
+    n_rows = len(df)
+    baseline_threshold = max(5.0, float(threshold) * 0.4)
+    positive_onset_threshold = max(8.0, float(threshold) * 0.5)
+
+    for region_start, region_end in regions:
+        region_df = df.iloc[int(region_start):int(region_end) + 1].copy().reset_index(drop=True)
+        landmark_info = detect_d2_speed_rep_landmarks(region_df, value_col=value_col)
+        if landmark_info is None:
+            continue
+
+        landmark_indices = landmark_info["indices"]
+        smooth_region = landmark_info["smooth_values"]
+        first_peak_idx = int(landmark_indices[0])
+        last_peak_idx = int(landmark_indices[-1])
+
+        start_idx_local = 0
+        for idx in range(first_peak_idx, -1, -1):
+            if smooth_region[idx] <= baseline_threshold:
+                start_idx_local = min(len(smooth_region) - 1, idx + 1)
+                break
+        for idx in range(start_idx_local, first_peak_idx + 1):
+            if smooth_region[idx] >= positive_onset_threshold:
+                start_idx_local = idx
+                break
+
+        end_idx_local = len(smooth_region) - 1
+        for idx in range(last_peak_idx, len(smooth_region)):
+            if abs(smooth_region[idx]) <= baseline_threshold:
+                end_idx_local = min(len(smooth_region) - 1, idx + int(tail_buffer_samples))
+                break
+
+        start_idx = max(0, int(region_start) + int(start_idx_local))
+        end_idx = min(n_rows - 1, int(region_start) + int(end_idx_local))
+        if end_idx <= start_idx:
+            continue
+        rep_windows.append((start_idx, end_idx))
+
+    return rep_windows
+
+def extract_d2_speed_landmark_aligned_biodex_reps(
+    df,
+    rep_windows,
+    time_col="Elapsed Seconds",
+    value_col="Torque_Nm",
+    n_points=101,
+    prominence_ratio=0.10,
+):
+    if df.empty or not rep_windows:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    percent_axis = np.linspace(0.0, 100.0, int(n_points))
+    valid_reps = []
+    phase_fraction_rows = []
+
+    for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
+        rep_df = df.iloc[int(start_idx):int(end_idx) + 1].copy()
+        rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
+        rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
+        rep_df = rep_df.dropna(subset=[time_col, value_col]).reset_index(drop=True)
+        if len(rep_df) < 9:
+            continue
+
+        landmark_info = detect_d2_speed_rep_landmarks(
+            rep_df,
+            value_col=value_col,
+            prominence_ratio=prominence_ratio,
+        )
+        if landmark_info is None:
+            continue
+
+        boundary_idx = [0] + landmark_info["indices"] + [len(rep_df) - 1]
+        if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
+            continue
+
+        phase_lengths = np.diff(boundary_idx).astype(float)
+        if np.any(phase_lengths <= 0):
+            continue
+
+        phase_fraction_rows.append(phase_lengths / phase_lengths.sum())
+        valid_reps.append({
+            "rep_number": rep_number,
+            "rep_df": rep_df,
+            "boundary_idx": boundary_idx,
+            "landmark_indices": landmark_info["indices"],
+            "landmark_kinds": landmark_info["kinds"],
+        })
+
+    if not valid_reps:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    median_phase_fractions = np.nanmedian(np.vstack(phase_fraction_rows), axis=0)
+    median_phase_fractions = median_phase_fractions / median_phase_fractions.sum()
+    boundary_pct = np.concatenate(([0.0], np.cumsum(median_phase_fractions) * 100.0))
+
+    normalized_curves = []
+    rep_rows = []
+    aligned_rep_metadata = []
+
+    for rep_info in valid_reps:
+        rep_df = rep_info["rep_df"]
+        time_values = rep_df[time_col].to_numpy(dtype=float)
+        torque_values = rep_df[value_col].to_numpy(dtype=float)
+        sample_idx = np.arange(len(rep_df), dtype=float)
+        mapped_pct = np.interp(sample_idx, rep_info["boundary_idx"], boundary_pct)
+        interp_torque = np.interp(percent_axis, mapped_pct, torque_values)
+
+        landmark_times = [float(time_values[idx]) for idx in rep_info["landmark_indices"]]
+        landmark_torques = [float(torque_values[idx]) for idx in rep_info["landmark_indices"]]
+
+        normalized_curves.append(interp_torque)
+        rep_rows.append(pd.DataFrame({
+            "rep_number": rep_info["rep_number"],
+            "movement_pct": percent_axis,
+            "torque_nm": interp_torque,
+        }))
+        aligned_rep_metadata.append({
+            "rep_number": rep_info["rep_number"],
+            "landmark_indices": rep_info["landmark_indices"],
+            "landmark_kinds": rep_info["landmark_kinds"],
+            "landmark_times": landmark_times,
+            "landmark_torques": landmark_torques,
+        })
+
+    curves_arr = np.vstack(normalized_curves)
+    reps_long_df = pd.concat(rep_rows, ignore_index=True)
+    mean_df = pd.DataFrame({
+        "movement_pct": percent_axis,
+        "mean_torque_nm": np.nanmean(curves_arr, axis=0),
+        "std_torque_nm": np.nanstd(curves_arr, axis=0),
+    })
+    mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
+    mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
+
+    landmark_counts = {}
+    landmark_labels = []
+    for kind in aligned_rep_metadata[0]["landmark_kinds"]:
+        landmark_counts[kind] = landmark_counts.get(kind, 0) + 1
+        landmark_labels.append(f"{kind.upper()}{landmark_counts[kind]}")
+
+    mean_df.attrs["landmark_boundary_pct"] = boundary_pct[1:-1].tolist()
+    mean_df.attrs["landmark_labels"] = landmark_labels
+
+    return reps_long_df, mean_df, aligned_rep_metadata
+
 # Helper: Ball release frame by peak |hand CGVel X|
 # Helper: Ball release frame by peak |hand CGVel X|
 def get_ball_release_frame(take_id, handedness, cur):
@@ -7189,7 +7411,14 @@ with tab6:
                     preview_movement == "d2_shoulder_pattern"
                     and preview_protocol_type == "speed"
                 ):
-                    preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
+                    preview_rep_windows = detect_d2_speed_biodex_reps(
+                        preview_df,
+                        value_col="Torque_Nm",
+                        threshold=float(preview_threshold),
+                        min_samples=int(preview_min_samples),
+                        tail_buffer_samples=int(preview_buffer_samples),
+                    )
+                    preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_d2_speed_landmark_aligned_biodex_reps(
                         preview_df,
                         preview_rep_windows,
                         time_col="Elapsed Seconds",
