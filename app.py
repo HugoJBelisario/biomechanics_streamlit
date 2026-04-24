@@ -1433,59 +1433,40 @@ def extract_d2_landmark_aligned_biodex_reps(
 
     return reps_long_df, mean_df, aligned_rep_metadata
 
-def detect_d2_speed_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.10):
-    if rep_df.empty or value_col not in rep_df.columns:
+def detect_d2_speed_position_landmarks(rep_df, position_col="Position_Deg"):
+    if rep_df.empty or position_col not in rep_df.columns:
         return None
 
-    torque_values = pd.to_numeric(rep_df[value_col], errors="coerce").to_numpy(dtype=float)
-    if len(rep_df) < 9 or np.all(np.isnan(torque_values)):
+    position_values = pd.to_numeric(rep_df[position_col], errors="coerce").to_numpy(dtype=float)
+    if len(rep_df) < 9 or np.all(np.isnan(position_values)):
         return None
 
-    torque_values = pd.Series(torque_values).interpolate(limit_direction="both").to_numpy(dtype=float)
-    smooth_window = get_valid_savgol_window(9, len(torque_values), 3)
+    position_values = pd.Series(position_values).interpolate(limit_direction="both").to_numpy(dtype=float)
+    smooth_window = get_valid_savgol_window(11, len(position_values), 3)
     if smooth_window is not None:
-        smooth_torque = savgol_filter(torque_values, window_length=smooth_window, polyorder=3)
+        smooth_position = savgol_filter(position_values, window_length=smooth_window, polyorder=3)
     else:
-        smooth_torque = torque_values
+        smooth_position = position_values
 
-    torque_span = float(np.nanmax(smooth_torque) - np.nanmin(smooth_torque))
-    if torque_span <= 0:
+    position_span = float(np.nanmax(smooth_position) - np.nanmin(smooth_position))
+    if position_span <= 0:
         return None
 
-    min_distance = max(1, len(smooth_torque) // 18)
-    prominence = max(5.0, torque_span * float(prominence_ratio))
-    pos_peaks, pos_props = find_peaks(smooth_torque, prominence=prominence, distance=min_distance)
-    neg_peaks, neg_props = find_peaks(-smooth_torque, prominence=prominence, distance=min_distance)
-    if len(pos_peaks) < 3 or len(neg_peaks) < 3:
+    min_distance = max(1, len(smooth_position) // 14)
+    prominence = max(5.0, position_span * 0.15)
+    trough_indices, trough_props = find_peaks(-smooth_position, prominence=prominence, distance=min_distance)
+    if len(trough_indices) < 3:
         return None
 
-    pos_height_threshold = float(np.nanmax(smooth_torque)) * 0.35
-    neg_height_threshold = float(np.nanmin(smooth_torque)) * 0.35
-    pos_candidates = [int(idx) for idx in pos_peaks if smooth_torque[int(idx)] >= pos_height_threshold]
-    neg_candidates = [int(idx) for idx in neg_peaks if smooth_torque[int(idx)] <= neg_height_threshold]
-    if len(pos_candidates) < 3:
-        top_pos = np.argsort(pos_props["prominences"])[-3:]
-        pos_candidates = sorted(int(pos_peaks[idx]) for idx in top_pos)
-    else:
-        pos_candidates = sorted(pos_candidates[:3])
-    if len(neg_candidates) < 3:
-        top_neg = np.argsort(neg_props["prominences"])[-3:]
-        neg_candidates = sorted(int(neg_peaks[idx]) for idx in top_neg)
-    else:
-        neg_candidates = sorted(neg_candidates[:3])
-
-    landmark_pairs = [(idx, "pos") for idx in pos_candidates[:3]] + [(idx, "neg") for idx in neg_candidates[:3]]
-    landmark_pairs = sorted(landmark_pairs, key=lambda item: item[0])
-    landmark_indices = [idx for idx, _kind in landmark_pairs]
-    landmark_kinds = [kind for _idx, kind in landmark_pairs]
-
-    if len(landmark_indices) != 6 or any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
+    top_trough_indices = np.argsort(trough_props["prominences"])[-3:]
+    landmark_indices = sorted(int(trough_indices[idx]) for idx in top_trough_indices)
+    if len(landmark_indices) != 3 or any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
         return None
 
     return {
         "indices": landmark_indices,
-        "kinds": landmark_kinds,
-        "smooth_values": smooth_torque,
+        "kinds": ["position_trough", "position_trough", "position_trough"],
+        "smooth_values": smooth_position,
     }
 
 def detect_d2_speed_biodex_reps(
@@ -1524,7 +1505,7 @@ def detect_d2_speed_biodex_reps(
 
     for region_start, region_end in regions:
         region_df = df.iloc[int(region_start):int(region_end) + 1].copy().reset_index(drop=True)
-        landmark_info = detect_d2_speed_rep_landmarks(region_df, value_col=value_col)
+        landmark_info = detect_d2_speed_position_landmarks(region_df, position_col="Position_Deg")
         if landmark_info is None:
             continue
 
@@ -1570,9 +1551,9 @@ def extract_d2_speed_landmark_aligned_biodex_reps(
     df,
     rep_windows,
     time_col="Elapsed Seconds",
+    position_col="Position_Deg",
     value_col="Torque_Nm",
     n_points=101,
-    prominence_ratio=0.10,
 ):
     if df.empty or not rep_windows:
         return pd.DataFrame(), pd.DataFrame(), []
@@ -1584,27 +1565,20 @@ def extract_d2_speed_landmark_aligned_biodex_reps(
     for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
         rep_df = df.iloc[int(start_idx):int(end_idx) + 1].copy()
         rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
+        rep_df[position_col] = pd.to_numeric(rep_df[position_col], errors="coerce")
         rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
-        rep_df = rep_df.dropna(subset=[time_col, value_col]).reset_index(drop=True)
+        rep_df = rep_df.dropna(subset=[time_col, position_col, value_col]).reset_index(drop=True)
         if len(rep_df) < 9:
             continue
 
-        landmark_info = detect_d2_speed_rep_landmarks(
+        landmark_info = detect_d2_speed_position_landmarks(
             rep_df,
-            value_col=value_col,
-            prominence_ratio=prominence_ratio,
+            position_col=position_col,
         )
         if landmark_info is None:
             continue
 
-        trim_start = int(landmark_info["indices"][0])
-        trim_end = int(landmark_info["indices"][-1])
-        if trim_end <= trim_start:
-            continue
-
-        rep_df = rep_df.iloc[trim_start:trim_end + 1].reset_index(drop=True)
-        trimmed_landmark_indices = [int(idx - trim_start) for idx in landmark_info["indices"]]
-        boundary_idx = trimmed_landmark_indices
+        boundary_idx = [0] + landmark_info["indices"] + [len(rep_df) - 1]
         if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
             continue
 
@@ -1617,7 +1591,7 @@ def extract_d2_speed_landmark_aligned_biodex_reps(
             "rep_number": rep_number,
             "rep_df": rep_df,
             "boundary_idx": boundary_idx,
-            "landmark_indices": trimmed_landmark_indices,
+            "landmark_indices": landmark_info["indices"],
             "landmark_kinds": landmark_info["kinds"],
         })
 
@@ -1671,7 +1645,10 @@ def extract_d2_speed_landmark_aligned_biodex_reps(
     landmark_labels = []
     for kind in aligned_rep_metadata[0]["landmark_kinds"]:
         landmark_counts[kind] = landmark_counts.get(kind, 0) + 1
-        landmark_labels.append(f"{kind.upper()}{landmark_counts[kind]}")
+        if kind == "position_trough":
+            landmark_labels.append(f"POS_DEG_TROUGH{landmark_counts[kind]}")
+        else:
+            landmark_labels.append(f"{kind.upper()}{landmark_counts[kind]}")
 
     mean_df.attrs["landmark_boundary_pct"] = boundary_pct[1:-1].tolist()
     mean_df.attrs["landmark_labels"] = landmark_labels
@@ -7398,8 +7375,8 @@ with tab6:
                         and preview_protocol_type == "speed"
                     ):
                         st.caption(
-                            "D2 Speed preview uses torque spike bursts as reps, similar to Shoulder ER/IR. "
-                            "Threshold, minimum active samples, buffer, and landmark prominence all apply here."
+                            "D2 Speed preview uses torque spike bursts for rep windows and `Position_Deg` troughs to align reps. "
+                            "Threshold, minimum active samples, and buffer shape the windows; normalized points shape the aligned curve."
                         )
 
                 preview_rep_windows = detect_biodex_reps(
@@ -7445,9 +7422,9 @@ with tab6:
                         preview_df,
                         preview_rep_windows,
                         time_col="Elapsed Seconds",
+                        position_col="Position_Deg",
                         value_col="Torque_Nm",
                         n_points=int(preview_n_points),
-                        prominence_ratio=float(preview_landmark_prominence),
                     )
                     preview_processing_version = "d2_shoulder_pattern_speed_landmark_v1"
                 else:
