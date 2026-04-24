@@ -1597,7 +1597,14 @@ def extract_d2_speed_landmark_aligned_biodex_reps(
         if landmark_info is None:
             continue
 
-        boundary_idx = [0] + landmark_info["indices"] + [len(rep_df) - 1]
+        trim_start = int(landmark_info["indices"][0])
+        trim_end = int(landmark_info["indices"][-1])
+        if trim_end <= trim_start:
+            continue
+
+        rep_df = rep_df.iloc[trim_start:trim_end + 1].reset_index(drop=True)
+        trimmed_landmark_indices = [int(idx - trim_start) for idx in landmark_info["indices"]]
+        boundary_idx = trimmed_landmark_indices
         if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
             continue
 
@@ -1610,7 +1617,7 @@ def extract_d2_speed_landmark_aligned_biodex_reps(
             "rep_number": rep_number,
             "rep_df": rep_df,
             "boundary_idx": boundary_idx,
-            "landmark_indices": landmark_info["indices"],
+            "landmark_indices": trimmed_landmark_indices,
             "landmark_kinds": landmark_info["kinds"],
         })
 
@@ -1619,7 +1626,7 @@ def extract_d2_speed_landmark_aligned_biodex_reps(
 
     median_phase_fractions = np.nanmedian(np.vstack(phase_fraction_rows), axis=0)
     median_phase_fractions = median_phase_fractions / median_phase_fractions.sum()
-    boundary_pct = np.concatenate(([0.0], np.cumsum(median_phase_fractions) * 100.0))
+    boundary_pct = np.concatenate(([0.0], np.cumsum(median_phase_fractions[:-1]) * 100.0, [100.0]))
 
     normalized_curves = []
     rep_rows = []
