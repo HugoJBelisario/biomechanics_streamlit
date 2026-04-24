@@ -7534,8 +7534,13 @@ with tab6:
                     )
                     st.plotly_chart(preview_raw_fig, use_container_width=True)
 
-                    if preview_reps_long_df.empty or preview_mean_df.empty:
+                    if not preview_rep_windows:
                         st.warning("No visible reps were detected with the current settings.")
+                    elif preview_reps_long_df.empty or preview_mean_df.empty:
+                        st.warning(
+                            "Rep windows were detected, but landmark alignment did not complete for the current settings. "
+                            "Try lowering landmark prominence or adjusting the rep window controls."
+                        )
                     else:
                         preview_avg_fig = go.Figure()
                         for rep_number, rep_df in preview_reps_long_df.groupby("rep_number"):
