@@ -1474,13 +1474,32 @@ def detect_d2_speed_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_rati
     else:
         neg_candidates = sorted(neg_candidates[:3])
 
-    landmark_pairs = [(idx, "pos") for idx in pos_candidates[:3]] + [(idx, "neg") for idx in neg_candidates[:3]]
-    landmark_pairs = sorted(landmark_pairs, key=lambda item: item[0])
+    landmark_pairs = None
+    expected_sequence = ["pos", "neg", "pos", "neg", "pos", "neg"]
+    for start_pos_idx in pos_candidates:
+        current_idx = int(start_pos_idx)
+        current_pairs = [(current_idx, "pos")]
+        valid_sequence = True
+
+        for expected_kind in expected_sequence[1:]:
+            candidate_pool = neg_candidates if expected_kind == "neg" else pos_candidates
+            next_candidates = [int(idx) for idx in candidate_pool if int(idx) > current_idx]
+            if not next_candidates:
+                valid_sequence = False
+                break
+
+            current_idx = int(next_candidates[0])
+            current_pairs.append((current_idx, expected_kind))
+
+        if valid_sequence:
+            landmark_pairs = current_pairs
+            break
+
+    if landmark_pairs is None:
+        return None
+
     landmark_indices = [idx for idx, _kind in landmark_pairs]
     landmark_kinds = [kind for _idx, kind in landmark_pairs]
-
-    if len(landmark_indices) != 6 or any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
-        return None
 
     return {
         "indices": landmark_indices,
@@ -7461,6 +7480,14 @@ with tab6:
                     )
 
                 with preview_plot_col:
+                    preview_plot_suffix = (
+                        f"{preview_item['biodex_test_id']}_"
+                        f"{preview_threshold}_"
+                        f"{preview_min_samples}_"
+                        f"{preview_buffer_samples}_"
+                        f"{preview_n_points}_"
+                        f"{preview_landmark_prominence}"
+                    )
                     preview_raw_fig = go.Figure()
                     preview_raw_fig.add_trace(go.Scatter(
                         x=preview_df["Elapsed Seconds"],
@@ -7501,7 +7528,16 @@ with tab6:
                         shapes=preview_shapes,
                         height=500,
                     )
-                    st.plotly_chart(preview_raw_fig, use_container_width=True)
+                    st.plotly_chart(
+                        preview_raw_fig,
+                        use_container_width=True,
+                        key=f"biodex_test_preview_raw_plot_{preview_plot_suffix}",
+                    )
+                    if len(preview_rep_windows) > 1:
+                        st.caption(
+                            f"{len(preview_rep_windows)} reps were detected. "
+                            "If you only see the first one, the plot is zoomed in; adjusting any control or using Plotly's autoscale/reset axes will bring the full trace back."
+                        )
 
                     if preview_reps_long_df.empty or preview_mean_df.empty:
                         st.warning("No visible reps were detected with the current settings.")
@@ -7564,7 +7600,11 @@ with tab6:
                             yaxis_title="Torque_Nm",
                             height=500,
                         )
-                        st.plotly_chart(preview_avg_fig, use_container_width=True)
+                        st.plotly_chart(
+                            preview_avg_fig,
+                            use_container_width=True,
+                            key=f"biodex_test_preview_avg_plot_{preview_plot_suffix}",
+                        )
 
                         if st.button(
                             "Save Detection Results",
