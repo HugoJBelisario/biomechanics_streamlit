@@ -1461,63 +1461,25 @@ def detect_d2_speed_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_rati
 
     pos_height_threshold = float(np.nanmax(smooth_torque)) * 0.35
     neg_height_threshold = float(np.nanmin(smooth_torque)) * 0.35
-    pos_candidates = sorted(
-        (int(idx), float(smooth_torque[int(idx)]), float(pos_props["prominences"][peak_i]))
-        for peak_i, idx in enumerate(pos_peaks)
-        if smooth_torque[int(idx)] >= pos_height_threshold
-    )
-    neg_candidates = sorted(
-        (int(idx), float(smooth_torque[int(idx)]), float(neg_props["prominences"][peak_i]))
-        for peak_i, idx in enumerate(neg_peaks)
-        if smooth_torque[int(idx)] <= neg_height_threshold
-    )
+    pos_candidates = [int(idx) for idx in pos_peaks if smooth_torque[int(idx)] >= pos_height_threshold]
+    neg_candidates = [int(idx) for idx in neg_peaks if smooth_torque[int(idx)] <= neg_height_threshold]
     if len(pos_candidates) < 3:
-        pos_candidates = sorted(
-            (int(pos_peaks[peak_i]), float(smooth_torque[int(pos_peaks[peak_i])]), float(pos_props["prominences"][peak_i]))
-            for peak_i in np.argsort(pos_props["prominences"])[-max(3, len(pos_peaks)):]
-        )
+        top_pos = np.argsort(pos_props["prominences"])[-3:]
+        pos_candidates = sorted(int(pos_peaks[idx]) for idx in top_pos)
+    else:
+        pos_candidates = sorted(pos_candidates[:3])
     if len(neg_candidates) < 3:
-        neg_candidates = sorted(
-            (int(neg_peaks[peak_i]), float(smooth_torque[int(neg_peaks[peak_i])]), float(neg_props["prominences"][peak_i]))
-            for peak_i in np.argsort(neg_props["prominences"])[-max(3, len(neg_peaks)):]
-        )
+        top_neg = np.argsort(neg_props["prominences"])[-3:]
+        neg_candidates = sorted(int(neg_peaks[idx]) for idx in top_neg)
+    else:
+        neg_candidates = sorted(neg_candidates[:3])
 
-    first_positive = None
-    for idx, amplitude, prominence_value in pos_candidates:
-        if amplitude > 0:
-            first_positive = (idx, amplitude, prominence_value)
-            break
-    if first_positive is None:
-        return None
+    landmark_pairs = [(idx, "pos") for idx in pos_candidates[:3]] + [(idx, "neg") for idx in neg_candidates[:3]]
+    landmark_pairs = sorted(landmark_pairs, key=lambda item: item[0])
+    landmark_indices = [idx for idx, _kind in landmark_pairs]
+    landmark_kinds = [kind for _idx, kind in landmark_pairs]
 
-    landmark_indices = [int(first_positive[0])]
-    landmark_kinds = ["pos"]
-    current_idx = int(first_positive[0])
-    expected_kind = "neg"
-
-    for _ in range(5):
-        if expected_kind == "neg":
-            next_candidates = [item for item in neg_candidates if item[0] > current_idx]
-            if not next_candidates:
-                return None
-            next_idx, _amp, _prom = max(next_candidates, key=lambda item: (item[2], -item[0]))
-            landmark_indices.append(int(next_idx))
-            landmark_kinds.append("neg")
-            current_idx = int(next_idx)
-            expected_kind = "pos"
-        else:
-            next_candidates = [item for item in pos_candidates if item[0] > current_idx]
-            if not next_candidates:
-                return None
-            next_idx, _amp, _prom = max(next_candidates, key=lambda item: (item[2], -item[0]))
-            landmark_indices.append(int(next_idx))
-            landmark_kinds.append("pos")
-            current_idx = int(next_idx)
-            expected_kind = "neg"
-
-    if len(landmark_indices) != 6 or landmark_kinds != ["pos", "neg", "pos", "neg", "pos", "neg"]:
-        return None
-    if any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
+    if len(landmark_indices) != 6 or any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
         return None
 
     return {
@@ -7534,13 +7496,8 @@ with tab6:
                     )
                     st.plotly_chart(preview_raw_fig, use_container_width=True)
 
-                    if not preview_rep_windows:
+                    if preview_reps_long_df.empty or preview_mean_df.empty:
                         st.warning("No visible reps were detected with the current settings.")
-                    elif preview_reps_long_df.empty or preview_mean_df.empty:
-                        st.warning(
-                            "Rep windows were detected, but landmark alignment did not complete for the current settings. "
-                            "Try lowering landmark prominence or adjusting the rep window controls."
-                        )
                     else:
                         preview_avg_fig = go.Figure()
                         for rep_number, rep_df in preview_reps_long_df.groupby("rep_number"):
