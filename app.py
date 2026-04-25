@@ -9,6 +9,7 @@ from scipy.signal import savgol_filter
 from scipy.signal import find_peaks
 import plotly.graph_objects as go
 import plotly.express as px
+from datetime import datetime
 
 interp_points = np.linspace(0, 100, 100)
 
@@ -341,6 +342,56 @@ def get_first_existing_biodex_column(df, candidates):
             return col
     return None
 
+def format_biodex_movement_label(value):
+    return {
+        "d2_shoulder_pattern": "D2 Shoulder Pattern",
+        "shoulder_er_ir": "Shoulder ER/IR",
+        "posterior_cuff": "Posterior Cuff",
+    }.get(value, value.replace("_", " ").title())
+
+def get_biodex_throwing_context_options():
+    return [
+        "pre_session",
+        "after_1st_inning",
+        "after_2nd_inning",
+        "after_3rd_inning",
+        "after_4th_inning",
+        "after_5th_inning",
+        "after_6th_inning",
+        "after_7th_inning",
+        "after_8th_inning",
+        "after_9th_inning",
+        "post_session",
+    ]
+
+def format_biodex_throwing_context_label(value):
+    return {
+        "pre_session": "Pre-Session / Before Pen",
+        "after_1st_inning": "After 1st Inning",
+        "after_2nd_inning": "After 2nd Inning",
+        "after_3rd_inning": "After 3rd Inning",
+        "after_4th_inning": "After 4th Inning",
+        "after_5th_inning": "After 5th Inning",
+        "after_6th_inning": "After 6th Inning",
+        "after_7th_inning": "After 7th Inning",
+        "after_8th_inning": "After 8th Inning",
+        "after_9th_inning": "After 9th Inning",
+        "post_session": "Post-Session",
+    }.get(value, value.replace("_", " ").title())
+
+def table_has_column(cur, table_name, column_name):
+    cur.execute(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = %s
+          AND column_name = %s
+        LIMIT 1
+        """,
+        (table_name, column_name),
+    )
+    return cur.fetchone() is not None
+
 def insert_biodex_test(
     cur,
     athlete_id,
@@ -352,35 +403,68 @@ def insert_biodex_test(
     test_date,
     source_file_name,
     notes,
+    throwing_context=None,
 ):
-    cur.execute(
-        """
-        INSERT INTO biodex_tests (
-            athlete_id,
-            test_name,
-            protocol_type,
-            limb,
-            movement,
-            speed_deg_per_sec,
-            test_date,
-            source_file_name,
-            notes
+    if table_has_column(cur, "biodex_tests", "throwing_context"):
+        cur.execute(
+            """
+            INSERT INTO biodex_tests (
+                athlete_id,
+                test_name,
+                protocol_type,
+                limb,
+                movement,
+                speed_deg_per_sec,
+                test_date,
+                source_file_name,
+                notes,
+                throwing_context
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING biodex_test_id
+            """,
+            (
+                int(athlete_id),
+                test_name,
+                protocol_type,
+                limb,
+                movement,
+                int(speed_deg_per_sec) if speed_deg_per_sec is not None else None,
+                test_date,
+                source_file_name,
+                notes,
+                throwing_context,
+            ),
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING biodex_test_id
-        """,
-        (
-            int(athlete_id),
-            test_name,
-            protocol_type,
-            limb,
-            movement,
-            int(speed_deg_per_sec) if speed_deg_per_sec is not None else None,
-            test_date,
-            source_file_name,
-            notes,
-        ),
-    )
+    else:
+        cur.execute(
+            """
+            INSERT INTO biodex_tests (
+                athlete_id,
+                test_name,
+                protocol_type,
+                limb,
+                movement,
+                speed_deg_per_sec,
+                test_date,
+                source_file_name,
+                notes
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING biodex_test_id
+            """,
+            (
+                int(athlete_id),
+                test_name,
+                protocol_type,
+                limb,
+                movement,
+                int(speed_deg_per_sec) if speed_deg_per_sec is not None else None,
+                test_date,
+                source_file_name,
+                notes,
+            ),
+        )
     return int(cur.fetchone()[0])
 
 def insert_biodex_time_series(cur, biodex_test_id, biodex_df, chunk_size=2000, progress_callback=None):
@@ -6545,14 +6629,12 @@ with tab5:
     movement_options = [
         "d2_shoulder_pattern",
         "shoulder_er_ir",
+        "posterior_cuff",
     ]
     selected_movement = st.selectbox(
         "Movement",
         options=movement_options,
-        format_func=lambda value: {
-            "d2_shoulder_pattern": "D2 Shoulder Pattern",
-            "shoulder_er_ir": "Shoulder ER/IR",
-        }.get(value, value.replace("_", " ").title()),
+        format_func=format_biodex_movement_label,
         key="biodex_movement",
         disabled=selected_athlete is None,
     )
@@ -6584,10 +6666,7 @@ with tab5:
     if selected_limb:
         biodex_plot_label_parts.append(selected_limb.title())
     if selected_movement:
-        biodex_plot_label_parts.append({
-            "d2_shoulder_pattern": "D2 Shoulder Pattern",
-            "shoulder_er_ir": "Shoulder ER/IR",
-        }.get(selected_movement, selected_movement.replace("_", " ").title()))
+        biodex_plot_label_parts.append(format_biodex_movement_label(selected_movement))
     if selected_speed_deg_per_sec:
         biodex_plot_label_parts.append(f"{selected_speed_deg_per_sec} deg/s")
     if selected_test_date:
@@ -7065,6 +7144,35 @@ with tab6:
     with biodex_test_tab1:
         st.markdown("### Upload & Process")
         st.caption("Use this area for new Biodex uploads, metadata capture, raw storage, rep detection, and saving processed outputs.")
+        biodex_upload_files_state = st.session_state.get("biodex_test_upload_files") or []
+        biodex_upload_signature = tuple(
+            (getattr(item, "name", ""), getattr(item, "size", 0))
+            for item in biodex_upload_files_state
+        )
+        detected_biodex_start_datetime = None
+        if biodex_upload_signature and st.session_state.get("biodex_test_upload_signature") != biodex_upload_signature:
+            try:
+                detected_df, _detected_numeric_columns = prepare_biodex_dataframe(biodex_upload_files_state[0])
+                if not detected_df.empty:
+                    detected_biodex_start_datetime = pd.to_datetime(detected_df["Time"].iloc[0], errors="coerce")
+                    if pd.notna(detected_biodex_start_datetime):
+                        detected_biodex_start_datetime = detected_biodex_start_datetime.to_pydatetime()
+                        st.session_state["biodex_test_upload_date"] = detected_biodex_start_datetime.date()
+                        st.session_state["biodex_test_upload_time"] = detected_biodex_start_datetime.time().replace(microsecond=0)
+                        st.session_state["biodex_test_detected_datetime"] = detected_biodex_start_datetime.isoformat()
+                        st.session_state["biodex_test_use_file_datetime"] = True
+            except Exception:
+                st.session_state.pop("biodex_test_detected_datetime", None)
+            finally:
+                st.session_state["biodex_test_upload_signature"] = biodex_upload_signature
+        elif st.session_state.get("biodex_test_detected_datetime"):
+            detected_biodex_start_datetime = pd.to_datetime(
+                st.session_state.get("biodex_test_detected_datetime"),
+                errors="coerce",
+            )
+            if pd.notna(detected_biodex_start_datetime):
+                detected_biodex_start_datetime = detected_biodex_start_datetime.to_pydatetime()
+
         athlete_rows_test = fetch_all_athletes(cur)
         athlete_options_test = {}
         athlete_labels_test = {}
@@ -7099,12 +7207,16 @@ with tab6:
             )
             selected_biodex_test_movement = st.selectbox(
                 "Movement",
-                options=["d2_shoulder_pattern", "shoulder_er_ir"],
-                format_func=lambda value: {
-                    "d2_shoulder_pattern": "D2 Shoulder Pattern",
-                    "shoulder_er_ir": "Shoulder ER/IR",
-                }.get(value, value.replace("_", " ").title()),
+                options=["d2_shoulder_pattern", "shoulder_er_ir", "posterior_cuff"],
+                format_func=format_biodex_movement_label,
                 key="biodex_test_upload_movement",
+                disabled=selected_biodex_test_athlete_id is None,
+            )
+            selected_biodex_test_throwing_context = st.selectbox(
+                "Throwing Context",
+                options=get_biodex_throwing_context_options(),
+                format_func=format_biodex_throwing_context_label,
+                key="biodex_test_upload_throwing_context",
                 disabled=selected_biodex_test_athlete_id is None,
             )
         with upload_col2:
@@ -7127,6 +7239,27 @@ with tab6:
                 "Test Date",
                 key="biodex_test_upload_date",
                 disabled=selected_biodex_test_athlete_id is None,
+            )
+            selected_biodex_test_time = st.time_input(
+                "Test Time",
+                key="biodex_test_upload_time",
+                disabled=selected_biodex_test_athlete_id is None,
+            )
+            use_biodex_file_datetime = st.checkbox(
+                "Use file start timestamp when available",
+                key="biodex_test_use_file_datetime",
+                disabled=selected_biodex_test_athlete_id is None,
+            )
+
+        if detected_biodex_start_datetime is not None:
+            st.caption(
+                "Detected Biodex file start timestamp: "
+                f"`{detected_biodex_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}`"
+            )
+        if not table_has_column(cur, "biodex_tests", "throwing_context"):
+            st.info(
+                "The `Throwing Context` dropdown is live in the UI. "
+                "To persist it in `biodex_tests`, add a `throwing_context` column in the database."
             )
 
         entered_biodex_test_notes = st.text_area(
@@ -7164,14 +7297,27 @@ with tab6:
                         text=f"Reading file {file_index} of {total_files}: {uploaded_file.name}",
                     )
                     biodex_df, numeric_columns = prepare_biodex_dataframe(uploaded_file)
+                    file_start_datetime = pd.to_datetime(biodex_df["Time"].iloc[0], errors="coerce")
+                    if pd.notna(file_start_datetime):
+                        file_start_datetime = file_start_datetime.to_pydatetime()
+                    else:
+                        file_start_datetime = None
+
+                    manual_test_datetime = datetime.combine(
+                        selected_biodex_test_date,
+                        selected_biodex_test_time,
+                    )
+                    stored_test_datetime = (
+                        file_start_datetime
+                        if use_biodex_file_datetime and file_start_datetime is not None
+                        else manual_test_datetime
+                    )
                     selected_athlete_name = athlete_options_test[int(selected_biodex_test_athlete_id)]["athlete_name"]
                     test_name = " | ".join([
                         selected_athlete_name,
                         selected_biodex_test_protocol.replace("_", " ").title(),
-                        {
-                            "d2_shoulder_pattern": "D2 Shoulder Pattern",
-                            "shoulder_er_ir": "Shoulder ER/IR",
-                        }.get(selected_biodex_test_movement, selected_biodex_test_movement.replace("_", " ").title()),
+                        format_biodex_movement_label(selected_biodex_test_movement),
+                        format_biodex_throwing_context_label(selected_biodex_test_throwing_context),
                         str(int(selected_biodex_test_speed)) + " deg/s",
                     ])
                     upload_status.info(f"Creating biodex_tests row for {uploaded_file.name}")
@@ -7187,9 +7333,10 @@ with tab6:
                         limb=selected_biodex_test_limb,
                         movement=selected_biodex_test_movement,
                         speed_deg_per_sec=int(selected_biodex_test_speed),
-                        test_date=selected_biodex_test_date,
+                        test_date=stored_test_datetime,
                         source_file_name=uploaded_file.name,
                         notes=entered_biodex_test_notes,
+                        throwing_context=selected_biodex_test_throwing_context,
                     )
                     upload_status.info(f"Inserting raw time-series rows for {uploaded_file.name}")
                     def _update_insert_progress(inserted_rows, total_rows, *, _file_name=uploaded_file.name, _base=file_base_progress, _weight=file_weight):
@@ -7226,6 +7373,8 @@ with tab6:
                     "test_name": test_name,
                     "movement": selected_biodex_test_movement,
                     "protocol_type": selected_biodex_test_protocol,
+                    "test_date": stored_test_datetime,
+                    "throwing_context": selected_biodex_test_throwing_context,
                 })
 
             if stored_uploads:
@@ -7690,11 +7839,8 @@ with tab6:
             )
             selected_compare_movement = st.selectbox(
                 "Movement",
-                options=["d2_shoulder_pattern", "shoulder_er_ir"],
-                format_func=lambda value: {
-                    "d2_shoulder_pattern": "D2 Shoulder Pattern",
-                    "shoulder_er_ir": "Shoulder ER/IR",
-                }.get(value, value.replace("_", " ").title()),
+                options=["d2_shoulder_pattern", "shoulder_er_ir", "posterior_cuff"],
+                format_func=format_biodex_movement_label,
                 index=0,
                 key="biodex_test_compare_movement",
                 disabled=selected_compare_athlete_id is None,
