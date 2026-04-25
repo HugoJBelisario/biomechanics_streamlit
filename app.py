@@ -392,6 +392,11 @@ def table_has_column(cur, table_name, column_name):
     )
     return cur.fetchone() is not None
 
+def get_biodex_effective_speed(protocol_type, speed_deg_per_sec):
+    if protocol_type == "reactive_eccentric":
+        return None
+    return int(speed_deg_per_sec) if speed_deg_per_sec is not None else None
+
 def insert_biodex_test(
     cur,
     athlete_id,
@@ -729,8 +734,7 @@ def fetch_biodex_processed_sessions(
     limb,
     speed_deg_per_sec,
 ):
-    cur.execute(
-        """
+    query = """
         SELECT
             pr.biodex_processing_run_id,
             bt.biodex_test_id,
@@ -758,7 +762,18 @@ def fetch_biodex_processed_sessions(
           AND bt.protocol_type = %s
           AND bt.movement = %s
           AND bt.limb = %s
-          AND bt.speed_deg_per_sec = %s
+    """
+    params = [
+        int(athlete_id),
+        protocol_type,
+        movement,
+        limb,
+    ]
+    if protocol_type != "reactive_eccentric":
+        query += " AND bt.speed_deg_per_sec = %s"
+        params.append(int(speed_deg_per_sec))
+
+    query += """
         GROUP BY
             pr.biodex_processing_run_id,
             bt.biodex_test_id,
@@ -773,15 +788,8 @@ def fetch_biodex_processed_sessions(
             pr.created_at,
             pr.is_reviewed
         ORDER BY bt.test_date DESC NULLS LAST, pr.created_at DESC
-        """,
-        (
-            int(athlete_id),
-            protocol_type,
-            movement,
-            limb,
-            int(speed_deg_per_sec),
-        ),
-    )
+    """
+    cur.execute(query, tuple(params))
     columns = [
         "biodex_processing_run_id",
         "biodex_test_id",
@@ -6645,7 +6653,7 @@ with tab5:
         value=75,
         step=1,
         key="biodex_speed_deg_per_sec",
-        disabled=selected_athlete is None,
+        disabled=selected_athlete is None or selected_protocol_type == "reactive_eccentric",
     )
     selected_test_date = st.date_input(
         "Test Date",
@@ -6667,7 +6675,7 @@ with tab5:
         biodex_plot_label_parts.append(selected_limb.title())
     if selected_movement:
         biodex_plot_label_parts.append(format_biodex_movement_label(selected_movement))
-    if selected_speed_deg_per_sec:
+    if selected_protocol_type != "reactive_eccentric" and selected_speed_deg_per_sec:
         biodex_plot_label_parts.append(f"{selected_speed_deg_per_sec} deg/s")
     if selected_test_date:
         biodex_plot_label_parts.append(selected_test_date.strftime("%Y-%m-%d"))
@@ -7233,7 +7241,10 @@ with tab6:
                 value=75,
                 step=1,
                 key="biodex_test_upload_speed",
-                disabled=selected_biodex_test_athlete_id is None,
+                disabled=(
+                    selected_biodex_test_athlete_id is None
+                    or selected_biodex_test_protocol == "reactive_eccentric"
+                ),
             )
             selected_biodex_test_date = st.date_input(
                 "Test Date",
@@ -7312,14 +7323,20 @@ with tab6:
                         if use_biodex_file_datetime and file_start_datetime is not None
                         else manual_test_datetime
                     )
+                    effective_biodex_test_speed = get_biodex_effective_speed(
+                        selected_biodex_test_protocol,
+                        selected_biodex_test_speed,
+                    )
                     selected_athlete_name = athlete_options_test[int(selected_biodex_test_athlete_id)]["athlete_name"]
-                    test_name = " | ".join([
+                    test_name_parts = [
                         selected_athlete_name,
                         selected_biodex_test_protocol.replace("_", " ").title(),
                         format_biodex_movement_label(selected_biodex_test_movement),
                         format_biodex_throwing_context_label(selected_biodex_test_throwing_context),
-                        str(int(selected_biodex_test_speed)) + " deg/s",
-                    ])
+                    ]
+                    if effective_biodex_test_speed is not None:
+                        test_name_parts.append(f"{int(effective_biodex_test_speed)} deg/s")
+                    test_name = " | ".join(test_name_parts)
                     upload_status.info(f"Creating biodex_tests row for {uploaded_file.name}")
                     upload_progress.progress(
                         min(100, int(file_base_progress * 100 + file_weight * 18)),
@@ -7332,7 +7349,7 @@ with tab6:
                         protocol_type=selected_biodex_test_protocol,
                         limb=selected_biodex_test_limb,
                         movement=selected_biodex_test_movement,
-                        speed_deg_per_sec=int(selected_biodex_test_speed),
+                        speed_deg_per_sec=effective_biodex_test_speed,
                         test_date=stored_test_datetime,
                         source_file_name=uploaded_file.name,
                         notes=entered_biodex_test_notes,
@@ -7860,7 +7877,10 @@ with tab6:
                 value=75,
                 step=1,
                 key="biodex_test_compare_speed",
-                disabled=selected_compare_athlete_id is None,
+                disabled=(
+                    selected_compare_athlete_id is None
+                    or selected_compare_protocol == "reactive_eccentric"
+                ),
             )
 
         if selected_compare_athlete_id is None:
@@ -7872,7 +7892,10 @@ with tab6:
                 protocol_type=selected_compare_protocol,
                 movement=selected_compare_movement,
                 limb=selected_compare_limb,
-                speed_deg_per_sec=int(selected_compare_speed),
+                speed_deg_per_sec=get_biodex_effective_speed(
+                    selected_compare_protocol,
+                    selected_compare_speed,
+                ),
             )
 
             if processed_sessions_df.empty:
@@ -8009,7 +8032,11 @@ with tab6:
                 st.metric("Biodex Test", int(selected_review_row["biodex_test_id"]))
                 st.metric("Reviewed", "Yes" if selected_review_row["is_reviewed"] else "No")
             with review_summary_col3:
-                st.metric("Speed", f"{int(selected_review_row['speed_deg_per_sec'])} deg/s")
+                review_speed = selected_review_row["speed_deg_per_sec"]
+                st.metric(
+                    "Speed",
+                    f"{int(review_speed)} deg/s" if pd.notna(review_speed) else "N/A",
+                )
                 st.metric("Version", selected_review_row["processing_version"])
 
             st.dataframe(
