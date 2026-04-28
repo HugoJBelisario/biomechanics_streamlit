@@ -1505,6 +1505,19 @@ def extract_single_rep_file_aligned_curves(
             if "Position_Deg" in rep_df.columns and rep_df["Position_Deg"].notna().any()
             else None
         )
+        if position_values is not None:
+            finite_position_mask = np.isfinite(position_values)
+            if not finite_position_mask.any():
+                position_values = None
+            elif not finite_position_mask.all():
+                valid_idx = np.flatnonzero(finite_position_mask)
+                cleaned_position = position_values.copy()
+                cleaned_position[~finite_position_mask] = np.interp(
+                    np.flatnonzero(~finite_position_mask),
+                    valid_idx,
+                    position_values[finite_position_mask],
+                )
+                position_values = cleaned_position
 
         peak_pos_idx = int(np.argmax(torque_values))
         zero_torque_rise_idx = peak_pos_idx
