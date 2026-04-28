@@ -1522,6 +1522,33 @@ def extract_single_rep_file_aligned_curves(
                 zero_torque_fall_idx = idx
                 break
 
+        rom_plateau_idx = None
+        if position_values is not None and len(position_values) >= 7:
+            smooth_position_window = min(len(position_values), 11)
+            if smooth_position_window % 2 == 0:
+                smooth_position_window = max(1, smooth_position_window - 1)
+            if smooth_position_window >= 5:
+                smooth_position = savgol_filter(position_values, window_length=smooth_position_window, polyorder=min(3, smooth_position_window - 2))
+            else:
+                smooth_position = position_values
+
+            peak_position_idx = int(np.argmax(smooth_position))
+            peak_position_value = float(smooth_position[peak_position_idx])
+            plateau_threshold = peak_position_value * 0.95
+            plateau_tolerance = max(3.0, abs(peak_position_value) * 0.03)
+            sustain_needed = 3
+
+            for idx in range(peak_position_idx, -1, -1):
+                window_end = min(len(smooth_position), idx + sustain_needed)
+                if window_end - idx < sustain_needed:
+                    continue
+                within_plateau = smooth_position[idx:window_end] >= plateau_threshold
+                stable_band = np.abs(smooth_position[idx:window_end] - peak_position_value) <= plateau_tolerance
+                if np.all(within_plateau) and np.all(stable_band):
+                    rom_plateau_idx = idx
+                elif rom_plateau_idx is not None:
+                    break
+
         if anchor_mode == "peak_positive_torque":
             anchor_idx = int(np.argmax(torque_values))
             anchor_label = "Peak Positive Torque"
@@ -1572,6 +1599,7 @@ def extract_single_rep_file_aligned_curves(
             "zero_torque_rise_idx": zero_torque_rise_idx,
             "peak_positive_idx": peak_pos_idx,
             "zero_torque_fall_idx": zero_torque_fall_idx,
+            "rom_plateau_idx": rom_plateau_idx,
             "anchor_time": anchor_time,
             "anchor_torque": float(torque_values[anchor_idx]),
             "anchor_label": anchor_label,
@@ -1648,6 +1676,17 @@ def extract_single_rep_file_aligned_curves(
         mean_df.attrs["secondary_anchor_label"] = "Peak Positive Torque"
         mean_df.attrs["tertiary_anchor_x"] = zero_fall_target_pct
         mean_df.attrs["tertiary_anchor_label"] = "0 Torque Fall"
+        rom_plateau_pcts = [
+            (
+                float(rep["rom_plateau_idx"]) / max(1.0, float(len(rep["position_values"]) - 1))
+            ) * 100.0
+            for rep, _zero_pct, _peak_pct, _zero_fall_pct in valid_segment_reps
+            if rep["position_values"] is not None and rep["rom_plateau_idx"] is not None
+        ]
+        if rom_plateau_pcts:
+            rom_plateau_target_pct = float(np.nanmedian(rom_plateau_pcts))
+            mean_df.attrs["quaternary_anchor_x"] = rom_plateau_target_pct
+            mean_df.attrs["quaternary_anchor_label"] = "ROM Plateau"
     elif x_axis_mode == "normalized_duration":
         percent_axis = np.linspace(0.0, 100.0, int(n_points))
         anchor_pcts = [
@@ -8328,6 +8367,24 @@ with tab6:
                                         text=str(tertiary_anchor_label),
                                         showarrow=False,
                                         font=dict(size=11),
+                                    )
+                                quaternary_anchor_x = posterior_rom_mean_df.attrs.get("quaternary_anchor_x")
+                                quaternary_anchor_label = posterior_rom_mean_df.attrs.get("quaternary_anchor_label")
+                                if quaternary_anchor_x is not None and quaternary_anchor_label:
+                                    posterior_rom_fig.add_vline(
+                                        x=float(quaternary_anchor_x),
+                                        line_width=2,
+                                        line_dash="dot",
+                                        line_color="rgba(144,238,144,0.55)",
+                                    )
+                                    posterior_rom_fig.add_annotation(
+                                        x=float(quaternary_anchor_x),
+                                        y=1.03,
+                                        xref="x",
+                                        yref="paper",
+                                        text=str(quaternary_anchor_label),
+                                        showarrow=False,
+                                        font=dict(size=11, color="rgba(144,238,144,0.95)"),
                                     )
                                 posterior_rom_fig.update_layout(
                                     title="Posterior Cuff Reactive Eccentric: Across-File Range of Motion",
