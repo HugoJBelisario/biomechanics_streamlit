@@ -940,6 +940,112 @@ def fetch_biodex_raw_time_series(cur, biodex_test_id):
         ],
     )
 
+def fetch_biodex_tests_for_restore(cur):
+    throwing_context_expr = (
+        "COALESCE(bt.throwing_context, '') AS throwing_context"
+        if table_has_column(cur, "biodex_tests", "throwing_context")
+        else "'' AS throwing_context"
+    )
+    cur.execute(
+        f"""
+        SELECT
+            bt.biodex_test_id,
+            bt.test_name,
+            bt.test_date,
+            bt.protocol_type,
+            bt.movement,
+            bt.limb,
+            bt.speed_deg_per_sec,
+            bt.source_file_name,
+            bt.notes,
+            a.athlete_name,
+            {throwing_context_expr},
+            COUNT(DISTINCT pr.biodex_processing_run_id) AS processing_run_count
+        FROM biodex_tests bt
+        JOIN athletes a
+            ON bt.athlete_id = a.athlete_id
+        LEFT JOIN biodex_processing_runs pr
+            ON bt.biodex_test_id = pr.biodex_test_id
+        GROUP BY
+            bt.biodex_test_id,
+            bt.test_name,
+            bt.test_date,
+            bt.protocol_type,
+            bt.movement,
+            bt.limb,
+            bt.speed_deg_per_sec,
+            bt.source_file_name,
+            bt.notes,
+            a.athlete_name,
+            throwing_context
+        ORDER BY bt.test_date DESC NULLS LAST, bt.biodex_test_id DESC
+        """
+    )
+    return pd.DataFrame(
+        cur.fetchall(),
+        columns=[
+            "biodex_test_id",
+            "test_name",
+            "test_date",
+            "protocol_type",
+            "movement",
+            "limb",
+            "speed_deg_per_sec",
+            "source_file_name",
+            "notes",
+            "athlete_name",
+            "throwing_context",
+            "processing_run_count",
+        ],
+    )
+
+def build_biodex_preview_item_from_db(cur, biodex_test_id):
+    restore_tests_df = fetch_biodex_tests_for_restore(cur)
+    selected_rows = restore_tests_df.loc[
+        restore_tests_df["biodex_test_id"] == int(biodex_test_id)
+    ]
+    if selected_rows.empty:
+        raise ValueError("That Biodex test could not be found in the database.")
+
+    test_row = selected_rows.iloc[0]
+    raw_df = fetch_biodex_raw_time_series(cur, biodex_test_id=int(biodex_test_id))
+    if raw_df.empty:
+        raise ValueError("No raw time-series rows were found for that Biodex test.")
+
+    preview_df = pd.DataFrame()
+    preview_df["Time"] = pd.to_datetime(raw_df["time_raw"], errors="coerce")
+    if raw_df["time_seconds"].notna().any():
+        preview_df["Elapsed Seconds"] = pd.to_numeric(raw_df["time_seconds"], errors="coerce")
+    elif preview_df["Time"].notna().any():
+        preview_df["Elapsed Seconds"] = (
+            preview_df["Time"] - preview_df["Time"].dropna().iloc[0]
+        ).dt.total_seconds()
+    else:
+        preview_df["Elapsed Seconds"] = pd.to_numeric(raw_df["sample_index"], errors="coerce")
+
+    preview_df["Angular_Velocity_Deg/Sec"] = pd.to_numeric(raw_df["angular_velocity_deg_sec"], errors="coerce")
+    preview_df["Position_Deg"] = pd.to_numeric(raw_df["position_deg"], errors="coerce")
+    preview_df["Torque_Nm"] = pd.to_numeric(raw_df["torque_nm"], errors="coerce")
+    preview_df = preview_df.sort_values("Elapsed Seconds").reset_index(drop=True)
+
+    numeric_columns = [
+        col for col in ["Angular_Velocity_Deg/Sec", "Position_Deg", "Torque_Nm"]
+        if col in preview_df.columns and preview_df[col].notna().any()
+    ]
+
+    return {
+        "biodex_test_id": int(test_row["biodex_test_id"]),
+        "name": str(test_row["source_file_name"]),
+        "row_count": int(len(preview_df)),
+        "df": preview_df,
+        "numeric_columns": numeric_columns,
+        "test_name": str(test_row["test_name"]),
+        "movement": test_row["movement"],
+        "protocol_type": test_row["protocol_type"],
+        "test_date": test_row["test_date"],
+        "throwing_context": test_row["throwing_context"],
+    }
+
 def fetch_biodex_rep_windows(cur, biodex_processing_run_id):
     cur.execute(
         """
@@ -7466,6 +7572,62 @@ with tab6:
                             )
             else:
                 st.caption("No Biodex uploads are currently stored.")
+
+        with st.expander("Restore Stored Test"):
+            st.caption("Load a previously saved raw Biodex test back into this preview workspace without re-uploading the file.")
+            restorable_tests_df = fetch_biodex_tests_for_restore(cur)
+            if restorable_tests_df.empty:
+                st.info("No stored Biodex tests are available to restore yet.")
+            else:
+                restore_options = restorable_tests_df["biodex_test_id"].tolist()
+                restore_labels = {}
+                for _, row in restorable_tests_df.iterrows():
+                    test_date_label = (
+                        pd.to_datetime(row["test_date"]).strftime("%Y-%m-%d %H:%M")
+                        if pd.notna(row["test_date"])
+                        else "No datetime"
+                    )
+                    processing_label = (
+                        "Unprocessed"
+                        if int(row["processing_run_count"]) == 0
+                        else f"{int(row['processing_run_count'])} saved run(s)"
+                    )
+                    restore_labels[int(row["biodex_test_id"])] = (
+                        f"{row['athlete_name']} | {test_date_label} | "
+                        f"{format_biodex_movement_label(row['movement'])} | "
+                        f"{row['source_file_name']} | {processing_label}"
+                    )
+
+                selected_restore_biodex_test_id = st.selectbox(
+                    "Stored Biodex test",
+                    options=restore_options,
+                    format_func=lambda test_id: restore_labels.get(test_id, f"Test {test_id}"),
+                    key="biodex_test_restore_selection",
+                )
+                if st.button(
+                    "Load Stored Test into Preview",
+                    key="biodex_test_restore_button",
+                    use_container_width=True,
+                ):
+                    try:
+                        restored_preview_item = build_biodex_preview_item_from_db(
+                            cur,
+                            biodex_test_id=int(selected_restore_biodex_test_id),
+                        )
+                    except Exception as exc:
+                        st.error(f"Could not restore the stored Biodex test: {exc}")
+                    else:
+                        current_previews = st.session_state.get("biodex_test_uploaded_previews", [])
+                        current_previews = [
+                            item for item in current_previews
+                            if int(item["biodex_test_id"]) != int(restored_preview_item["biodex_test_id"])
+                        ]
+                        current_previews.append(restored_preview_item)
+                        st.session_state["biodex_test_uploaded_previews"] = current_previews
+                        st.session_state["biodex_test_preview_file"] = restored_preview_item["name"]
+                        st.success(
+                            f"Loaded `{restored_preview_item['name']}` back into Upload & Process for rep-detection preview."
+                        )
 
         uploaded_previews = st.session_state.get("biodex_test_uploaded_previews", [])
         if uploaded_previews:
