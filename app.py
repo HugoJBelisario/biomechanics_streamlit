@@ -7870,14 +7870,36 @@ with tab6:
                         if item.get("movement") == "posterior_cuff"
                         and item.get("protocol_type") == "reactive_eccentric"
                     ]
-                    posterior_rep_options = [item["name"] for item in posterior_rep_candidates]
-                    default_posterior_rep_selection = posterior_rep_options[:]
+                    posterior_rep_candidate_by_id = {
+                        int(item["biodex_test_id"]): item
+                        for item in posterior_rep_candidates
+                    }
+                    restorable_posterior_tests_df = fetch_biodex_tests_for_restore(cur)
+                    restorable_posterior_tests_df = restorable_posterior_tests_df.loc[
+                        (restorable_posterior_tests_df["movement"] == "posterior_cuff")
+                        & (restorable_posterior_tests_df["protocol_type"] == "reactive_eccentric")
+                    ].copy()
+
+                    posterior_rep_options = restorable_posterior_tests_df["biodex_test_id"].astype(int).tolist()
+                    default_posterior_rep_selection = list(posterior_rep_candidate_by_id.keys())
+                    posterior_rep_labels = {}
+                    for _, row in restorable_posterior_tests_df.iterrows():
+                        test_date_label = (
+                            pd.to_datetime(row["test_date"]).strftime("%Y-%m-%d %H:%M")
+                            if pd.notna(row["test_date"])
+                            else "No datetime"
+                        )
+                        posterior_rep_labels[int(row["biodex_test_id"])] = (
+                            f"{row['athlete_name']} | {test_date_label} | "
+                            f"{row['source_file_name']}"
+                        )
 
                     single_rep_control_col, single_rep_plot_col = st.columns([0.35, 1.0], vertical_alignment="top")
                     with single_rep_control_col:
                         selected_posterior_rep_files = st.multiselect(
                             "Files to align",
                             options=posterior_rep_options,
+                            format_func=lambda test_id: posterior_rep_labels.get(int(test_id), f"Test {int(test_id)}"),
                             default=default_posterior_rep_selection,
                             key="posterior_cuff_single_rep_files",
                         )
@@ -7904,10 +7926,19 @@ with tab6:
                             key="posterior_cuff_single_rep_points",
                         )
 
-                    selected_posterior_rep_items = [
-                        item for item in posterior_rep_candidates
-                        if item["name"] in set(selected_posterior_rep_files)
-                    ]
+                    selected_posterior_rep_items = []
+                    for biodex_test_id in selected_posterior_rep_files:
+                        biodex_test_id = int(biodex_test_id)
+                        if biodex_test_id in posterior_rep_candidate_by_id:
+                            selected_posterior_rep_items.append(posterior_rep_candidate_by_id[biodex_test_id])
+                            continue
+                        try:
+                            restored_item = build_biodex_preview_item_from_db(cur, biodex_test_id=biodex_test_id)
+                        except Exception:
+                            continue
+                        posterior_rep_candidate_by_id[biodex_test_id] = restored_item
+                        selected_posterior_rep_items.append(restored_item)
+
                     posterior_reps_long_df, posterior_mean_df, posterior_alignment_metadata = extract_single_rep_file_aligned_curves(
                         selected_posterior_rep_items,
                         anchor_mode=posterior_anchor_mode,
