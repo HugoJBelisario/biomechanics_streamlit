@@ -1231,6 +1231,80 @@ def detect_biodex_reps(df, value_col="Torque_Nm", threshold=20.0, min_samples=15
 
     return rep_windows
 
+def detect_posterior_cuff_reactive_eccentric_reps(
+    df,
+    value_col="Torque_Nm",
+    threshold=20.0,
+    min_samples=15,
+    buffer_samples=20,
+):
+    rep_windows = detect_biodex_reps(
+        df,
+        value_col=value_col,
+        threshold=threshold,
+        min_samples=min_samples,
+        buffer_samples=buffer_samples,
+    )
+    if not rep_windows or df.empty or value_col not in df.columns:
+        return rep_windows
+
+    signal = pd.to_numeric(df[value_col], errors="coerce").to_numpy(dtype=float)
+    if len(signal) == 0:
+        return rep_windows
+
+    finite_mask = np.isfinite(signal)
+    if not finite_mask.any():
+        return rep_windows
+
+    clean_signal = signal.copy()
+    if not finite_mask.all():
+        valid_idx = np.flatnonzero(finite_mask)
+        clean_signal[~finite_mask] = np.interp(
+            np.flatnonzero(~finite_mask),
+            valid_idx,
+            signal[finite_mask],
+        )
+
+    onset_window = max(5, min(len(clean_signal), int(min_samples) * 2 + 1))
+    if onset_window % 2 == 0:
+        onset_window = max(1, onset_window - 1)
+
+    smooth_signal = (
+        pd.Series(clean_signal)
+        .rolling(window=onset_window, center=True, min_periods=1)
+        .mean()
+        .to_numpy(dtype=float)
+    )
+
+    n_rows = len(df)
+    search_span = max(int(buffer_samples) * 4, int(min_samples) * 4, 20)
+    sustain_samples = max(3, int(min_samples) // 3)
+    negative_onset_threshold = -max(3.0, float(threshold) * 0.25)
+    pre_dip_padding = max(1, int(buffer_samples) // 4)
+    adjusted_windows = []
+
+    for start_idx, end_idx in rep_windows:
+        search_start = max(0, int(start_idx) - search_span)
+        search_end = min(n_rows - 1, int(start_idx))
+        local_signal = smooth_signal[search_start:search_end + 1]
+        negative_mask = local_signal <= negative_onset_threshold
+        negative_regions = _build_contiguous_regions(np.flatnonzero(negative_mask).tolist())
+
+        adjusted_start = int(start_idx)
+        if negative_regions:
+            eligible_regions = [
+                (region_start, region_end)
+                for region_start, region_end in negative_regions
+                if (region_end - region_start + 1) >= sustain_samples
+            ]
+            if eligible_regions:
+                region_start, _region_end = eligible_regions[-1]
+                adjusted_start = max(0, search_start + int(region_start) - pre_dip_padding)
+
+        adjusted_windows.append((adjusted_start, int(end_idx)))
+
+    return adjusted_windows
+
 def detect_biodex_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.12):
     if rep_df.empty or value_col not in rep_df.columns:
         return None
@@ -7748,6 +7822,14 @@ with tab6:
                             "D2 Speed preview uses torque spike bursts as reps, similar to Shoulder ER/IR. "
                             "Threshold, minimum active samples, buffer, and landmark prominence all apply here."
                         )
+                    elif (
+                        preview_movement == "posterior_cuff"
+                        and preview_protocol_type == "reactive_eccentric"
+                    ):
+                        st.caption(
+                            "Posterior Cuff reactive eccentric preview starts reps at the first sustained negative preload "
+                            "before the main torque burst. Threshold and buffer still matter, but onset is anchored earlier automatically."
+                        )
 
                 preview_rep_windows = detect_biodex_reps(
                     preview_df,
@@ -7797,6 +7879,26 @@ with tab6:
                         prominence_ratio=float(preview_landmark_prominence),
                     )
                     preview_processing_version = "d2_shoulder_pattern_speed_landmark_v1"
+                elif (
+                    preview_movement == "posterior_cuff"
+                    and preview_protocol_type == "reactive_eccentric"
+                ):
+                    preview_rep_windows = detect_posterior_cuff_reactive_eccentric_reps(
+                        preview_df,
+                        value_col="Torque_Nm",
+                        threshold=float(preview_threshold),
+                        min_samples=int(preview_min_samples),
+                        buffer_samples=int(preview_buffer_samples),
+                    )
+                    preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
+                        preview_df,
+                        preview_rep_windows,
+                        time_col="Elapsed Seconds",
+                        value_col="Torque_Nm",
+                        n_points=int(preview_n_points),
+                        prominence_ratio=float(preview_landmark_prominence),
+                    )
+                    preview_processing_version = "posterior_cuff_reactive_eccentric_landmark_v1"
                 else:
                     preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
                         preview_df,
