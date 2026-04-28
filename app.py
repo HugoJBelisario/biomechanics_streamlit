@@ -1473,6 +1473,99 @@ def extract_landmark_aligned_biodex_reps(
 
     return reps_long_df, mean_df, aligned_rep_metadata
 
+def extract_single_rep_file_aligned_curves(
+    preview_items,
+    anchor_mode="peak_negative_torque",
+    value_col="Torque_Nm",
+    time_col="Elapsed Seconds",
+    n_points=201,
+):
+    if not preview_items:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    aligned_reps = []
+    for rep_number, item in enumerate(preview_items, start=1):
+        rep_df = item["df"].copy()
+        if value_col not in rep_df.columns or time_col not in rep_df.columns:
+            continue
+
+        rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
+        rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
+        rep_df = rep_df.dropna(subset=[time_col, value_col]).reset_index(drop=True)
+        if len(rep_df) < 5:
+            continue
+
+        time_values = rep_df[time_col].to_numpy(dtype=float)
+        torque_values = rep_df[value_col].to_numpy(dtype=float)
+
+        if anchor_mode == "peak_positive_torque":
+            anchor_idx = int(np.argmax(torque_values))
+            anchor_label = "Peak Positive Torque"
+        elif anchor_mode == "negative_torque_onset":
+            peak_neg_idx = int(np.argmin(torque_values))
+            baseline_window = max(3, min(len(torque_values), 15))
+            baseline_value = float(np.nanmedian(torque_values[:baseline_window]))
+            onset_threshold = baseline_value - max(2.0, np.nanstd(torque_values[:baseline_window]) * 1.5)
+            anchor_idx = peak_neg_idx
+            sustain_needed = 3
+            for idx in range(peak_neg_idx, -1, -1):
+                window_end = min(len(torque_values), idx + sustain_needed)
+                if np.all(torque_values[idx:window_end] <= onset_threshold):
+                    anchor_idx = idx
+                elif anchor_idx != peak_neg_idx:
+                    break
+            anchor_label = "Negative Torque Onset"
+        else:
+            anchor_idx = int(np.argmin(torque_values))
+            anchor_label = "Peak Negative Torque"
+
+        anchor_time = float(time_values[anchor_idx])
+        aligned_reps.append({
+            "rep_number": rep_number,
+            "file_name": item["name"],
+            "aligned_time": time_values - anchor_time,
+            "torque_values": torque_values,
+            "anchor_idx": anchor_idx,
+            "anchor_time": anchor_time,
+            "anchor_torque": float(torque_values[anchor_idx]),
+            "anchor_label": anchor_label,
+        })
+
+    if not aligned_reps:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    common_start = max(float(rep["aligned_time"][0]) for rep in aligned_reps)
+    common_end = min(float(rep["aligned_time"][-1]) for rep in aligned_reps)
+    if common_end <= common_start:
+        return pd.DataFrame(), pd.DataFrame(), aligned_reps
+
+    common_axis = np.linspace(common_start, common_end, int(n_points))
+    rep_rows = []
+    interpolated_curves = []
+
+    for rep in aligned_reps:
+        interp_torque = np.interp(common_axis, rep["aligned_time"], rep["torque_values"])
+        interpolated_curves.append(interp_torque)
+        rep_rows.append(pd.DataFrame({
+            "rep_number": rep["rep_number"],
+            "file_name": rep["file_name"],
+            "aligned_time_s": common_axis,
+            "torque_nm": interp_torque,
+        }))
+
+    curves_arr = np.vstack(interpolated_curves)
+    reps_long_df = pd.concat(rep_rows, ignore_index=True)
+    mean_df = pd.DataFrame({
+        "aligned_time_s": common_axis,
+        "mean_torque_nm": np.nanmean(curves_arr, axis=0),
+        "std_torque_nm": np.nanstd(curves_arr, axis=0),
+    })
+    mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
+    mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
+    mean_df.attrs["anchor_label"] = aligned_reps[0]["anchor_label"]
+
+    return reps_long_df, mean_df, aligned_reps
+
 def detect_d2_biodex_reps(df, position_col="Position_Deg", buffer_samples=20):
     if df.empty or position_col not in df.columns:
         return []
@@ -7760,341 +7853,440 @@ with tab6:
                     )
                     st.plotly_chart(d2_position_fig, use_container_width=True)
 
-                st.markdown("### Rep Detection Preview")
-                preview_controls_col, preview_plot_col = st.columns([0.35, 1.0], vertical_alignment="top")
-
-                with preview_controls_col:
-                    preview_threshold = st.number_input(
-                        "Rep detection threshold (smoothed |Torque| envelope)",
-                        min_value=1.0,
-                        max_value=500.0,
-                        value=20.0,
-                        step=1.0,
-                        key="biodex_test_preview_threshold",
-                    )
-                    preview_min_samples = st.number_input(
-                        "Minimum active samples per rep",
-                        min_value=1,
-                        max_value=500,
-                        value=15,
-                        step=1,
-                        key="biodex_test_preview_min_samples",
-                    )
-                    preview_buffer_samples = st.number_input(
-                        "Buffer samples before/after rep",
-                        min_value=0,
-                        max_value=500,
-                        value=20,
-                        step=1,
-                        key="biodex_test_preview_buffer",
-                    )
-                    preview_n_points = st.number_input(
-                        "Normalized points per rep",
-                        min_value=25,
-                        max_value=500,
-                        value=101,
-                        step=1,
-                        key="biodex_test_preview_n_points",
-                    )
-                    preview_landmark_prominence = st.slider(
-                        "Landmark prominence ratio",
-                        min_value=0.05,
-                        max_value=0.40,
-                        value=0.12,
-                        step=0.01,
-                        key="biodex_test_preview_prominence",
-                    )
-                    preview_movement = preview_item.get("movement", selected_biodex_test_movement)
-                    preview_protocol_type = preview_item.get("protocol_type", selected_biodex_test_protocol)
-                    if (
-                        preview_movement == "d2_shoulder_pattern"
-                        and preview_protocol_type != "speed"
-                    ):
-                        st.caption(
-                            "D2 preview uses `Position_Deg` cycles for rep windows. "
-                            "Buffer and normalized points apply; torque threshold/min samples/landmark prominence are ER/IR controls."
-                        )
-                    elif (
-                        preview_movement == "d2_shoulder_pattern"
-                        and preview_protocol_type == "speed"
-                    ):
-                        st.caption(
-                            "D2 Speed preview uses torque spike bursts as reps, similar to Shoulder ER/IR. "
-                            "Threshold, minimum active samples, buffer, and landmark prominence all apply here."
-                        )
-                    elif (
-                        preview_movement == "posterior_cuff"
-                        and preview_protocol_type == "reactive_eccentric"
-                    ):
-                        st.caption(
-                            "Posterior Cuff reactive eccentric preview starts reps at the first sustained negative preload "
-                            "before the main torque burst. Threshold and buffer still matter, but onset is anchored earlier automatically."
-                        )
-
-                preview_rep_windows = detect_biodex_reps(
-                    preview_df,
-                    value_col="Torque_Nm",
-                    threshold=float(preview_threshold),
-                    min_samples=int(preview_min_samples),
-                    buffer_samples=int(preview_buffer_samples),
-                )
-                preview_processing_version = "shoulder_er_ir_landmark_v1"
                 preview_movement = preview_item.get("movement", selected_biodex_test_movement)
                 preview_protocol_type = preview_item.get("protocol_type", selected_biodex_test_protocol)
+
                 if (
-                    preview_movement == "d2_shoulder_pattern"
-                    and preview_protocol_type != "speed"
-                ):
-                    preview_rep_windows = detect_d2_biodex_reps(
-                        preview_df,
-                        position_col="Position_Deg",
-                        buffer_samples=int(preview_buffer_samples),
-                    )
-                    preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_d2_landmark_aligned_biodex_reps(
-                        preview_df,
-                        preview_rep_windows,
-                        time_col="Elapsed Seconds",
-                        position_col="Position_Deg",
-                        value_col="Torque_Nm",
-                        n_points=int(preview_n_points),
-                    )
-                    preview_processing_version = "d2_shoulder_pattern_landmark_v1"
-                elif (
-                    preview_movement == "d2_shoulder_pattern"
-                    and preview_protocol_type == "speed"
-                ):
-                    preview_rep_windows = detect_d2_speed_biodex_reps(
-                        preview_df,
-                        value_col="Torque_Nm",
-                        threshold=float(preview_threshold),
-                        min_samples=int(preview_min_samples),
-                        tail_buffer_samples=int(preview_buffer_samples),
-                    )
-                    preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_d2_speed_landmark_aligned_biodex_reps(
-                        preview_df,
-                        preview_rep_windows,
-                        time_col="Elapsed Seconds",
-                        value_col="Torque_Nm",
-                        n_points=int(preview_n_points),
-                        prominence_ratio=float(preview_landmark_prominence),
-                    )
-                    preview_processing_version = "d2_shoulder_pattern_speed_landmark_v1"
-                elif (
                     preview_movement == "posterior_cuff"
                     and preview_protocol_type == "reactive_eccentric"
                 ):
-                    preview_rep_windows = detect_posterior_cuff_reactive_eccentric_reps(
-                        preview_df,
-                        value_col="Torque_Nm",
-                        threshold=float(preview_threshold),
-                        min_samples=int(preview_min_samples),
-                        buffer_samples=int(preview_buffer_samples),
+                    st.markdown("### Single-Rep File Alignment Preview")
+                    st.caption(
+                        "For Posterior Cuff reactive eccentric work, each uploaded file is treated as one rep. "
+                        "Instead of detecting reps within a file, this view aligns whole files to one another."
                     )
-                    preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
-                        preview_df,
-                        preview_rep_windows,
-                        time_col="Elapsed Seconds",
-                        value_col="Torque_Nm",
-                        n_points=int(preview_n_points),
-                        prominence_ratio=float(preview_landmark_prominence),
-                    )
-                    preview_processing_version = "posterior_cuff_reactive_eccentric_landmark_v1"
-                else:
-                    preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
-                        preview_df,
-                        preview_rep_windows,
-                        time_col="Elapsed Seconds",
-                        value_col="Torque_Nm",
-                        n_points=int(preview_n_points),
-                        prominence_ratio=float(preview_landmark_prominence),
-                    )
+                    posterior_rep_candidates = [
+                        item for item in uploaded_previews
+                        if item.get("movement") == "posterior_cuff"
+                        and item.get("protocol_type") == "reactive_eccentric"
+                    ]
+                    posterior_rep_options = [item["name"] for item in posterior_rep_candidates]
+                    default_posterior_rep_selection = posterior_rep_options[:]
 
-                with preview_plot_col:
-                    preview_plot_suffix = (
-                        f"{preview_item['biodex_test_id']}_"
-                        f"{preview_threshold}_"
-                        f"{preview_min_samples}_"
-                        f"{preview_buffer_samples}_"
-                        f"{preview_n_points}_"
-                        f"{preview_landmark_prominence}"
-                    )
-                    preview_raw_fig = go.Figure()
-                    preview_raw_fig.add_trace(go.Scatter(
-                        x=preview_df["Elapsed Seconds"],
-                        y=preview_df["Torque_Nm"],
-                        mode="lines",
-                        name=f"{preview_item['name']} (Raw)",
-                    ))
-
-                    preview_shapes = []
-                    for rep_number, (start_idx, end_idx) in enumerate(preview_rep_windows, start=1):
-                        x0 = float(preview_df.iloc[start_idx]["Elapsed Seconds"])
-                        x1 = float(preview_df.iloc[end_idx]["Elapsed Seconds"])
-                        preview_shapes.append(dict(
-                            type="rect",
-                            xref="x",
-                            yref="paper",
-                            x0=x0,
-                            x1=x1,
-                            y0=0,
-                            y1=1,
-                            fillcolor="rgba(0, 123, 255, 0.12)",
-                            line=dict(width=0),
-                            layer="below",
-                        ))
-                        preview_raw_fig.add_annotation(
-                            x=(x0 + x1) / 2.0,
-                            y=1.02,
-                            xref="x",
-                            yref="paper",
-                            text=f"Rep {rep_number}",
-                            showarrow=False,
+                    single_rep_control_col, single_rep_plot_col = st.columns([0.35, 1.0], vertical_alignment="top")
+                    with single_rep_control_col:
+                        selected_posterior_rep_files = st.multiselect(
+                            "Files to align",
+                            options=posterior_rep_options,
+                            default=default_posterior_rep_selection,
+                            key="posterior_cuff_single_rep_files",
+                        )
+                        posterior_anchor_mode = st.selectbox(
+                            "Alignment anchor",
+                            options=[
+                                "negative_torque_onset",
+                                "peak_negative_torque",
+                                "peak_positive_torque",
+                            ],
+                            format_func=lambda value: {
+                                "negative_torque_onset": "Negative Torque Onset",
+                                "peak_negative_torque": "Peak Negative Torque",
+                                "peak_positive_torque": "Peak Positive Torque",
+                            }.get(value, value.replace("_", " ").title()),
+                            key="posterior_cuff_single_rep_anchor",
+                        )
+                        posterior_n_points = st.number_input(
+                            "Aligned points per file",
+                            min_value=51,
+                            max_value=500,
+                            value=201,
+                            step=10,
+                            key="posterior_cuff_single_rep_points",
                         )
 
-                    preview_raw_fig.update_layout(
-                        title="Detected Torque Reps",
-                        xaxis_title="Elapsed Time (s)",
-                        yaxis_title="Torque_Nm",
-                        shapes=preview_shapes,
-                        height=500,
+                    selected_posterior_rep_items = [
+                        item for item in posterior_rep_candidates
+                        if item["name"] in set(selected_posterior_rep_files)
+                    ]
+                    posterior_reps_long_df, posterior_mean_df, posterior_alignment_metadata = extract_single_rep_file_aligned_curves(
+                        selected_posterior_rep_items,
+                        anchor_mode=posterior_anchor_mode,
+                        value_col="Torque_Nm",
+                        time_col="Elapsed Seconds",
+                        n_points=int(posterior_n_points),
                     )
-                    st.plotly_chart(
-                        preview_raw_fig,
-                        use_container_width=True,
-                        key=f"biodex_test_preview_raw_plot_{preview_plot_suffix}",
-                    )
-                    if len(preview_rep_windows) > 1:
-                        st.caption(
-                            f"{len(preview_rep_windows)} reps were detected. "
-                            "If you only see the first one, the plot is zoomed in; adjusting any control or using Plotly's autoscale/reset axes will bring the full trace back."
-                        )
 
-                    if preview_reps_long_df.empty or preview_mean_df.empty:
-                        if preview_rep_windows:
-                            if (
-                                preview_movement == "posterior_cuff"
-                                and preview_protocol_type == "reactive_eccentric"
-                            ):
-                                st.warning(
-                                    "A rep window was detected, but the current landmark alignment step could not build an averaged rep from this posterior cuff reactive eccentric shape. "
-                                    "The onset detection is working; the next step is adding a posterior-cuff-specific alignment strategy."
-                                )
-                            else:
-                                st.warning(
-                                    "Rep windows were detected, but landmark alignment could not be completed with the current settings."
-                                )
+                    with single_rep_plot_col:
+                        if posterior_reps_long_df.empty or posterior_mean_df.empty:
+                            st.warning("Select at least one valid single-rep file to build the aligned overlay.")
                         else:
-                            st.warning("No visible reps were detected with the current settings.")
-                    else:
-                        preview_avg_fig = go.Figure()
-                        for rep_number, rep_df in preview_reps_long_df.groupby("rep_number"):
-                            preview_avg_fig.add_trace(go.Scatter(
-                                x=rep_df["movement_pct"],
-                                y=rep_df["torque_nm"],
+                            posterior_align_fig = go.Figure()
+                            for rep_number, rep_df in posterior_reps_long_df.groupby("rep_number"):
+                                file_name = rep_df["file_name"].iloc[0]
+                                posterior_align_fig.add_trace(go.Scatter(
+                                    x=rep_df["aligned_time_s"],
+                                    y=rep_df["torque_nm"],
+                                    mode="lines",
+                                    line=dict(width=1.5),
+                                    opacity=0.45,
+                                    name=file_name,
+                                ))
+                            posterior_align_fig.add_trace(go.Scatter(
+                                x=posterior_mean_df["aligned_time_s"],
+                                y=posterior_mean_df["upper_band"],
                                 mode="lines",
-                                line=dict(width=1),
-                                opacity=0.35,
-                                name=f"Rep {rep_number}",
+                                line=dict(width=0),
+                                showlegend=False,
+                                hoverinfo="skip",
                             ))
-                        preview_avg_fig.add_trace(go.Scatter(
-                            x=preview_mean_df["movement_pct"],
-                            y=preview_mean_df["upper_band"],
-                            mode="lines",
-                            line=dict(width=0),
-                            showlegend=False,
-                            hoverinfo="skip",
-                        ))
-                        preview_avg_fig.add_trace(go.Scatter(
-                            x=preview_mean_df["movement_pct"],
-                            y=preview_mean_df["lower_band"],
-                            mode="lines",
-                            line=dict(width=0),
-                            fill="tonexty",
-                            name="±1 SD",
-                        ))
-                        preview_avg_fig.add_trace(go.Scatter(
-                            x=preview_mean_df["movement_pct"],
-                            y=preview_mean_df["mean_torque_nm"],
-                            mode="lines",
-                            line=dict(width=4),
-                            name="Mean Torque",
-                        ))
-                        for boundary_pct, label in zip(
-                            preview_mean_df.attrs.get("landmark_boundary_pct", []),
-                            preview_mean_df.attrs.get("landmark_labels", []),
-                        ):
-                            preview_avg_fig.add_vline(
-                                x=float(boundary_pct),
+                            posterior_align_fig.add_trace(go.Scatter(
+                                x=posterior_mean_df["aligned_time_s"],
+                                y=posterior_mean_df["lower_band"],
+                                mode="lines",
+                                line=dict(width=0),
+                                fill="tonexty",
+                                name="±1 SD",
+                            ))
+                            posterior_align_fig.add_trace(go.Scatter(
+                                x=posterior_mean_df["aligned_time_s"],
+                                y=posterior_mean_df["mean_torque_nm"],
+                                mode="lines",
+                                line=dict(width=4),
+                                name="Mean Torque",
+                            ))
+                            posterior_align_fig.add_vline(
+                                x=0.0,
                                 line_width=2,
                                 line_dash="dot",
                                 line_color="rgba(255,255,255,0.45)",
                             )
-                            preview_avg_fig.add_annotation(
-                                x=float(boundary_pct),
+                            posterior_align_fig.add_annotation(
+                                x=0.0,
                                 y=1.03,
                                 xref="x",
                                 yref="paper",
-                                text=label,
+                                text=str(posterior_mean_df.attrs.get("anchor_label", "Alignment Anchor")),
                                 showarrow=False,
                                 font=dict(size=11),
                             )
-                        preview_avg_fig.update_layout(
-                            title="Landmark-Aligned Average Torque Curve Across Detected Reps",
-                            xaxis_title="Movement Cycle (%)",
+                            posterior_align_fig.update_layout(
+                                title="Posterior Cuff Reactive Eccentric: Across-File Alignment",
+                                xaxis_title="Aligned Time (s)",
+                                yaxis_title="Torque_Nm",
+                                height=500,
+                            )
+                            st.plotly_chart(
+                                posterior_align_fig,
+                                use_container_width=True,
+                                key=f"posterior_cuff_single_rep_plot_{posterior_anchor_mode}_{posterior_n_points}_{len(selected_posterior_rep_items)}",
+                            )
+
+                    if posterior_alignment_metadata:
+                        posterior_summary_rows = []
+                        for rep_meta in posterior_alignment_metadata:
+                            posterior_summary_rows.append({
+                                "Rep File": rep_meta["file_name"],
+                                "Anchor": rep_meta["anchor_label"],
+                                "Anchor Time (s)": rep_meta["anchor_time"],
+                                "Anchor Torque (Nm)": rep_meta["anchor_torque"],
+                            })
+                        st.markdown("### Single-Rep Alignment Summary")
+                        st.dataframe(pd.DataFrame(posterior_summary_rows), use_container_width=True)
+                else:
+                    st.markdown("### Rep Detection Preview")
+                    preview_controls_col, preview_plot_col = st.columns([0.35, 1.0], vertical_alignment="top")
+
+                    with preview_controls_col:
+                        preview_threshold = st.number_input(
+                            "Rep detection threshold (smoothed |Torque| envelope)",
+                            min_value=1.0,
+                            max_value=500.0,
+                            value=20.0,
+                            step=1.0,
+                            key="biodex_test_preview_threshold",
+                        )
+                        preview_min_samples = st.number_input(
+                            "Minimum active samples per rep",
+                            min_value=1,
+                            max_value=500,
+                            value=15,
+                            step=1,
+                            key="biodex_test_preview_min_samples",
+                        )
+                        preview_buffer_samples = st.number_input(
+                            "Buffer samples before/after rep",
+                            min_value=0,
+                            max_value=500,
+                            value=20,
+                            step=1,
+                            key="biodex_test_preview_buffer",
+                        )
+                        preview_n_points = st.number_input(
+                            "Normalized points per rep",
+                            min_value=25,
+                            max_value=500,
+                            value=101,
+                            step=1,
+                            key="biodex_test_preview_n_points",
+                        )
+                        preview_landmark_prominence = st.slider(
+                            "Landmark prominence ratio",
+                            min_value=0.05,
+                            max_value=0.40,
+                            value=0.12,
+                            step=0.01,
+                            key="biodex_test_preview_prominence",
+                        )
+                        if (
+                            preview_movement == "d2_shoulder_pattern"
+                            and preview_protocol_type != "speed"
+                        ):
+                            st.caption(
+                                "D2 preview uses `Position_Deg` cycles for rep windows. "
+                                "Buffer and normalized points apply; torque threshold/min samples/landmark prominence are ER/IR controls."
+                            )
+                        elif (
+                            preview_movement == "d2_shoulder_pattern"
+                            and preview_protocol_type == "speed"
+                        ):
+                            st.caption(
+                                "D2 Speed preview uses torque spike bursts as reps, similar to Shoulder ER/IR. "
+                                "Threshold, minimum active samples, buffer, and landmark prominence all apply here."
+                            )
+
+                    preview_rep_windows = detect_biodex_reps(
+                        preview_df,
+                        value_col="Torque_Nm",
+                        threshold=float(preview_threshold),
+                        min_samples=int(preview_min_samples),
+                        buffer_samples=int(preview_buffer_samples),
+                    )
+                    preview_processing_version = "shoulder_er_ir_landmark_v1"
+                    if (
+                        preview_movement == "d2_shoulder_pattern"
+                        and preview_protocol_type != "speed"
+                    ):
+                        preview_rep_windows = detect_d2_biodex_reps(
+                            preview_df,
+                            position_col="Position_Deg",
+                            buffer_samples=int(preview_buffer_samples),
+                        )
+                        preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_d2_landmark_aligned_biodex_reps(
+                            preview_df,
+                            preview_rep_windows,
+                            time_col="Elapsed Seconds",
+                            position_col="Position_Deg",
+                            value_col="Torque_Nm",
+                            n_points=int(preview_n_points),
+                        )
+                        preview_processing_version = "d2_shoulder_pattern_landmark_v1"
+                    elif (
+                        preview_movement == "d2_shoulder_pattern"
+                        and preview_protocol_type == "speed"
+                    ):
+                        preview_rep_windows = detect_d2_speed_biodex_reps(
+                            preview_df,
+                            value_col="Torque_Nm",
+                            threshold=float(preview_threshold),
+                            min_samples=int(preview_min_samples),
+                            tail_buffer_samples=int(preview_buffer_samples),
+                        )
+                        preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_d2_speed_landmark_aligned_biodex_reps(
+                            preview_df,
+                            preview_rep_windows,
+                            time_col="Elapsed Seconds",
+                            value_col="Torque_Nm",
+                            n_points=int(preview_n_points),
+                            prominence_ratio=float(preview_landmark_prominence),
+                        )
+                        preview_processing_version = "d2_shoulder_pattern_speed_landmark_v1"
+                    else:
+                        preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
+                            preview_df,
+                            preview_rep_windows,
+                            time_col="Elapsed Seconds",
+                            value_col="Torque_Nm",
+                            n_points=int(preview_n_points),
+                            prominence_ratio=float(preview_landmark_prominence),
+                        )
+
+                    with preview_plot_col:
+                        preview_plot_suffix = (
+                            f"{preview_item['biodex_test_id']}_"
+                            f"{preview_threshold}_"
+                            f"{preview_min_samples}_"
+                            f"{preview_buffer_samples}_"
+                            f"{preview_n_points}_"
+                            f"{preview_landmark_prominence}"
+                        )
+                        preview_raw_fig = go.Figure()
+                        preview_raw_fig.add_trace(go.Scatter(
+                            x=preview_df["Elapsed Seconds"],
+                            y=preview_df["Torque_Nm"],
+                            mode="lines",
+                            name=f"{preview_item['name']} (Raw)",
+                        ))
+
+                        preview_shapes = []
+                        for rep_number, (start_idx, end_idx) in enumerate(preview_rep_windows, start=1):
+                            x0 = float(preview_df.iloc[start_idx]["Elapsed Seconds"])
+                            x1 = float(preview_df.iloc[end_idx]["Elapsed Seconds"])
+                            preview_shapes.append(dict(
+                                type="rect",
+                                xref="x",
+                                yref="paper",
+                                x0=x0,
+                                x1=x1,
+                                y0=0,
+                                y1=1,
+                                fillcolor="rgba(0, 123, 255, 0.12)",
+                                line=dict(width=0),
+                                layer="below",
+                            ))
+                            preview_raw_fig.add_annotation(
+                                x=(x0 + x1) / 2.0,
+                                y=1.02,
+                                xref="x",
+                                yref="paper",
+                                text=f"Rep {rep_number}",
+                                showarrow=False,
+                            )
+
+                        preview_raw_fig.update_layout(
+                            title="Detected Torque Reps",
+                            xaxis_title="Elapsed Time (s)",
                             yaxis_title="Torque_Nm",
+                            shapes=preview_shapes,
                             height=500,
                         )
                         st.plotly_chart(
-                            preview_avg_fig,
+                            preview_raw_fig,
                             use_container_width=True,
-                            key=f"biodex_test_preview_avg_plot_{preview_plot_suffix}",
+                            key=f"biodex_test_preview_raw_plot_{preview_plot_suffix}",
                         )
+                        if len(preview_rep_windows) > 1:
+                            st.caption(
+                                f"{len(preview_rep_windows)} reps were detected. "
+                                "If you only see the first one, the plot is zoomed in; adjusting any control or using Plotly's autoscale/reset axes will bring the full trace back."
+                            )
 
-                        if st.button(
-                            "Save Detection Results",
-                            key=f"biodex_test_save_detection_{preview_item['biodex_test_id']}",
-                            use_container_width=True,
-                        ):
-                            try:
-                                biodex_processing_run_id = insert_biodex_processing_run(
-                                    cur,
-                                    biodex_test_id=int(preview_item["biodex_test_id"]),
-                                    processing_version=preview_processing_version,
-                                    threshold=float(preview_threshold),
-                                    min_samples=int(preview_min_samples),
-                                    buffer_samples=int(preview_buffer_samples),
-                                    n_points=int(preview_n_points),
-                                    landmark_prominence_ratio=float(preview_landmark_prominence),
-                                    is_reviewed=False,
+                        if preview_reps_long_df.empty or preview_mean_df.empty:
+                            if preview_rep_windows:
+                                st.warning(
+                                    "Rep windows were detected, but landmark alignment could not be completed with the current settings."
                                 )
-                                rep_window_rows = insert_biodex_rep_windows(
-                                    cur,
-                                    biodex_processing_run_id=biodex_processing_run_id,
-                                    rep_windows=preview_rep_windows,
-                                    rep_df_source=preview_df,
-                                )
-                                inserted_landmark_count = insert_biodex_rep_landmarks(
-                                    cur,
-                                    rep_window_rows=rep_window_rows,
-                                    aligned_rep_metadata=preview_aligned_rep_metadata,
-                                )
-                                inserted_mean_curve_points = insert_biodex_mean_curve(
-                                    cur,
-                                    biodex_processing_run_id=biodex_processing_run_id,
-                                    mean_df=preview_mean_df,
-                                )
-                                conn.commit()
-                            except Exception as exc:
-                                conn.rollback()
-                                st.error(f"Could not save detection results: {exc}")
                             else:
-                                st.success(
-                                    "Saved detection results "
-                                    f"(processing run {biodex_processing_run_id}, "
-                                    f"{len(rep_window_rows)} rep windows, "
-                                    f"{inserted_landmark_count} landmarks, "
-                                    f"{inserted_mean_curve_points} mean-curve points)."
+                                st.warning("No visible reps were detected with the current settings.")
+                        else:
+                            preview_avg_fig = go.Figure()
+                            for rep_number, rep_df in preview_reps_long_df.groupby("rep_number"):
+                                preview_avg_fig.add_trace(go.Scatter(
+                                    x=rep_df["movement_pct"],
+                                    y=rep_df["torque_nm"],
+                                    mode="lines",
+                                    line=dict(width=1),
+                                    opacity=0.35,
+                                    name=f"Rep {rep_number}",
+                                ))
+                            preview_avg_fig.add_trace(go.Scatter(
+                                x=preview_mean_df["movement_pct"],
+                                y=preview_mean_df["upper_band"],
+                                mode="lines",
+                                line=dict(width=0),
+                                showlegend=False,
+                                hoverinfo="skip",
+                            ))
+                            preview_avg_fig.add_trace(go.Scatter(
+                                x=preview_mean_df["movement_pct"],
+                                y=preview_mean_df["lower_band"],
+                                mode="lines",
+                                line=dict(width=0),
+                                fill="tonexty",
+                                name="±1 SD",
+                            ))
+                            preview_avg_fig.add_trace(go.Scatter(
+                                x=preview_mean_df["movement_pct"],
+                                y=preview_mean_df["mean_torque_nm"],
+                                mode="lines",
+                                line=dict(width=4),
+                                name="Mean Torque",
+                            ))
+                            for boundary_pct, label in zip(
+                                preview_mean_df.attrs.get("landmark_boundary_pct", []),
+                                preview_mean_df.attrs.get("landmark_labels", []),
+                            ):
+                                preview_avg_fig.add_vline(
+                                    x=float(boundary_pct),
+                                    line_width=2,
+                                    line_dash="dot",
+                                    line_color="rgba(255,255,255,0.45)",
                                 )
+                                preview_avg_fig.add_annotation(
+                                    x=float(boundary_pct),
+                                    y=1.03,
+                                    xref="x",
+                                    yref="paper",
+                                    text=label,
+                                    showarrow=False,
+                                    font=dict(size=11),
+                                )
+                            preview_avg_fig.update_layout(
+                                title="Landmark-Aligned Average Torque Curve Across Detected Reps",
+                                xaxis_title="Movement Cycle (%)",
+                                yaxis_title="Torque_Nm",
+                                height=500,
+                            )
+                            st.plotly_chart(
+                                preview_avg_fig,
+                                use_container_width=True,
+                                key=f"biodex_test_preview_avg_plot_{preview_plot_suffix}",
+                            )
+
+                            if st.button(
+                                "Save Detection Results",
+                                key=f"biodex_test_save_detection_{preview_item['biodex_test_id']}",
+                                use_container_width=True,
+                            ):
+                                try:
+                                    biodex_processing_run_id = insert_biodex_processing_run(
+                                        cur,
+                                        biodex_test_id=int(preview_item["biodex_test_id"]),
+                                        processing_version=preview_processing_version,
+                                        threshold=float(preview_threshold),
+                                        min_samples=int(preview_min_samples),
+                                        buffer_samples=int(preview_buffer_samples),
+                                        n_points=int(preview_n_points),
+                                        landmark_prominence_ratio=float(preview_landmark_prominence),
+                                        is_reviewed=False,
+                                    )
+                                    rep_window_rows = insert_biodex_rep_windows(
+                                        cur,
+                                        biodex_processing_run_id=biodex_processing_run_id,
+                                        rep_windows=preview_rep_windows,
+                                        rep_df_source=preview_df,
+                                    )
+                                    inserted_landmark_count = insert_biodex_rep_landmarks(
+                                        cur,
+                                        rep_window_rows=rep_window_rows,
+                                        aligned_rep_metadata=preview_aligned_rep_metadata,
+                                    )
+                                    inserted_mean_curve_points = insert_biodex_mean_curve(
+                                        cur,
+                                        biodex_processing_run_id=biodex_processing_run_id,
+                                        mean_df=preview_mean_df,
+                                    )
+                                    conn.commit()
+                                except Exception as exc:
+                                    conn.rollback()
+                                    st.error(f"Could not save detection results: {exc}")
+                                else:
+                                    st.success(
+                                        "Saved detection results "
+                                        f"(processing run {biodex_processing_run_id}, "
+                                        f"{len(rep_window_rows)} rep windows, "
+                                        f"{inserted_landmark_count} landmarks, "
+                                        f"{inserted_mean_curve_points} mean-curve points)."
+                                    )
             else:
                 st.warning("The stored upload does not contain a `Torque_Nm` column for rep detection preview.")
 
