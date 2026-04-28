@@ -1499,18 +1499,20 @@ def extract_single_rep_file_aligned_curves(
         time_values = rep_df[time_col].to_numpy(dtype=float)
         torque_values = rep_df[value_col].to_numpy(dtype=float)
 
+        peak_pos_idx = int(np.argmax(torque_values))
+        zero_torque_rise_idx = peak_pos_idx
+        for idx in range(peak_pos_idx, 0, -1):
+            prev_val = float(torque_values[idx - 1])
+            curr_val = float(torque_values[idx])
+            if prev_val <= 0.0 < curr_val:
+                zero_torque_rise_idx = idx
+                break
+
         if anchor_mode == "peak_positive_torque":
             anchor_idx = int(np.argmax(torque_values))
             anchor_label = "Peak Positive Torque"
         elif anchor_mode == "zero_torque_rise":
-            peak_pos_idx = int(np.argmax(torque_values))
-            anchor_idx = peak_pos_idx
-            for idx in range(peak_pos_idx, 0, -1):
-                prev_val = float(torque_values[idx - 1])
-                curr_val = float(torque_values[idx])
-                if prev_val <= 0.0 < curr_val:
-                    anchor_idx = idx
-                    break
+            anchor_idx = zero_torque_rise_idx
             anchor_label = "0 Torque Rise"
         elif anchor_mode == "positive_rise_onset":
             peak_pos_idx = int(np.argmax(torque_values))
@@ -1552,6 +1554,8 @@ def extract_single_rep_file_aligned_curves(
             "sample_pct": np.linspace(0.0, 100.0, len(rep_df)),
             "torque_values": torque_values,
             "anchor_idx": anchor_idx,
+            "zero_torque_rise_idx": zero_torque_rise_idx,
+            "peak_positive_idx": peak_pos_idx,
             "anchor_time": anchor_time,
             "anchor_torque": float(torque_values[anchor_idx]),
             "anchor_label": anchor_label,
@@ -1562,7 +1566,57 @@ def extract_single_rep_file_aligned_curves(
 
     rep_rows = []
     interpolated_curves = []
-    if x_axis_mode == "normalized_duration":
+    if x_axis_mode == "zero_to_peak_normalized":
+        percent_axis = np.linspace(0.0, 100.0, int(n_points))
+        segment_fraction_rows = []
+        valid_segment_reps = []
+
+        for rep in aligned_reps:
+            zero_pct = (float(rep["zero_torque_rise_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
+            peak_pct = (float(rep["peak_positive_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
+            if not (0.0 < zero_pct < peak_pct < 100.0):
+                continue
+            segment_fraction_rows.append(np.array([
+                zero_pct,
+                peak_pct - zero_pct,
+                100.0 - peak_pct,
+            ], dtype=float) / 100.0)
+            valid_segment_reps.append((rep, zero_pct, peak_pct))
+
+        if not valid_segment_reps:
+            return pd.DataFrame(), pd.DataFrame(), aligned_reps
+
+        median_segment_fractions = np.nanmedian(np.vstack(segment_fraction_rows), axis=0)
+        median_segment_fractions = median_segment_fractions / median_segment_fractions.sum()
+        zero_target_pct = float(median_segment_fractions[0] * 100.0)
+        peak_target_pct = float((median_segment_fractions[0] + median_segment_fractions[1]) * 100.0)
+
+        for rep, zero_pct, peak_pct in valid_segment_reps:
+            mapped_pct = np.interp(
+                rep["sample_pct"],
+                [0.0, zero_pct, peak_pct, 100.0],
+                [0.0, zero_target_pct, peak_target_pct, 100.0],
+            )
+            interp_torque = np.interp(percent_axis, mapped_pct, rep["torque_values"])
+            interpolated_curves.append(interp_torque)
+            rep_rows.append(pd.DataFrame({
+                "rep_number": rep["rep_number"],
+                "file_name": rep["file_name"],
+                "alignment_x": percent_axis,
+                "torque_nm": interp_torque,
+            }))
+
+        mean_df = pd.DataFrame({
+            "alignment_x": percent_axis,
+            "mean_torque_nm": np.nanmean(np.vstack(interpolated_curves), axis=0),
+            "std_torque_nm": np.nanstd(np.vstack(interpolated_curves), axis=0),
+        })
+        mean_df.attrs["x_axis_mode"] = "zero_to_peak_normalized"
+        mean_df.attrs["x_axis_title"] = "Normalized Rep Duration (%)"
+        mean_df.attrs["anchor_x"] = zero_target_pct
+        mean_df.attrs["secondary_anchor_x"] = peak_target_pct
+        mean_df.attrs["secondary_anchor_label"] = "Peak Positive Torque"
+    elif x_axis_mode == "normalized_duration":
         percent_axis = np.linspace(0.0, 100.0, int(n_points))
         anchor_pcts = [
             (float(rep["anchor_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
@@ -7985,8 +8039,9 @@ with tab6:
                         )
                         posterior_x_axis_mode = st.selectbox(
                             "Alignment view",
-                            options=["normalized_duration", "raw_time"],
+                            options=["zero_to_peak_normalized", "normalized_duration", "raw_time"],
                             format_func=lambda value: {
+                                "zero_to_peak_normalized": "0 Torque -> Peak Positive Normalized",
                                 "normalized_duration": "Normalized Rep Duration",
                                 "raw_time": "Raw Time Around Anchor",
                             }.get(value, value.replace("_", " ").title()),
@@ -8078,6 +8133,24 @@ with tab6:
                                 showarrow=False,
                                 font=dict(size=11),
                             )
+                            secondary_anchor_x = posterior_mean_df.attrs.get("secondary_anchor_x")
+                            secondary_anchor_label = posterior_mean_df.attrs.get("secondary_anchor_label")
+                            if secondary_anchor_x is not None and secondary_anchor_label:
+                                posterior_align_fig.add_vline(
+                                    x=float(secondary_anchor_x),
+                                    line_width=2,
+                                    line_dash="dot",
+                                    line_color="rgba(255,255,255,0.30)",
+                                )
+                                posterior_align_fig.add_annotation(
+                                    x=float(secondary_anchor_x),
+                                    y=1.03,
+                                    xref="x",
+                                    yref="paper",
+                                    text=str(secondary_anchor_label),
+                                    showarrow=False,
+                                    font=dict(size=11),
+                                )
                             posterior_align_fig.update_layout(
                                 title="Posterior Cuff Reactive Eccentric: Across-File Alignment",
                                 xaxis_title=x_axis_title,
