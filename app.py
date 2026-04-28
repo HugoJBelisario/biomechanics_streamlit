@@ -7970,7 +7970,21 @@ with tab6:
                         )
 
                     if preview_reps_long_df.empty or preview_mean_df.empty:
-                        st.warning("No visible reps were detected with the current settings.")
+                        if preview_rep_windows:
+                            if (
+                                preview_movement == "posterior_cuff"
+                                and preview_protocol_type == "reactive_eccentric"
+                            ):
+                                st.warning(
+                                    "A rep window was detected, but the current landmark alignment step could not build an averaged rep from this posterior cuff reactive eccentric shape. "
+                                    "The onset detection is working; the next step is adding a posterior-cuff-specific alignment strategy."
+                                )
+                            else:
+                                st.warning(
+                                    "Rep windows were detected, but landmark alignment could not be completed with the current settings."
+                                )
+                        else:
+                            st.warning("No visible reps were detected with the current settings.")
                     else:
                         preview_avg_fig = go.Figure()
                         for rep_number, rep_df in preview_reps_long_df.groupby("rep_number"):
