@@ -1507,6 +1507,13 @@ def extract_single_rep_file_aligned_curves(
             if prev_val <= 0.0 < curr_val:
                 zero_torque_rise_idx = idx
                 break
+        zero_torque_fall_idx = peak_pos_idx
+        for idx in range(peak_pos_idx + 1, len(torque_values)):
+            prev_val = float(torque_values[idx - 1])
+            curr_val = float(torque_values[idx])
+            if prev_val >= 0.0 > curr_val:
+                zero_torque_fall_idx = idx
+                break
 
         if anchor_mode == "peak_positive_torque":
             anchor_idx = int(np.argmax(torque_values))
@@ -1556,6 +1563,7 @@ def extract_single_rep_file_aligned_curves(
             "anchor_idx": anchor_idx,
             "zero_torque_rise_idx": zero_torque_rise_idx,
             "peak_positive_idx": peak_pos_idx,
+            "zero_torque_fall_idx": zero_torque_fall_idx,
             "anchor_time": anchor_time,
             "anchor_torque": float(torque_values[anchor_idx]),
             "anchor_label": anchor_label,
@@ -1574,14 +1582,16 @@ def extract_single_rep_file_aligned_curves(
         for rep in aligned_reps:
             zero_pct = (float(rep["zero_torque_rise_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
             peak_pct = (float(rep["peak_positive_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
-            if not (0.0 < zero_pct < peak_pct < 100.0):
+            zero_fall_pct = (float(rep["zero_torque_fall_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
+            if not (0.0 < zero_pct < peak_pct < zero_fall_pct <= 100.0):
                 continue
             segment_fraction_rows.append(np.array([
                 zero_pct,
                 peak_pct - zero_pct,
-                100.0 - peak_pct,
+                zero_fall_pct - peak_pct,
+                100.0 - zero_fall_pct,
             ], dtype=float) / 100.0)
-            valid_segment_reps.append((rep, zero_pct, peak_pct))
+            valid_segment_reps.append((rep, zero_pct, peak_pct, zero_fall_pct))
 
         if not valid_segment_reps:
             return pd.DataFrame(), pd.DataFrame(), aligned_reps
@@ -1590,12 +1600,13 @@ def extract_single_rep_file_aligned_curves(
         median_segment_fractions = median_segment_fractions / median_segment_fractions.sum()
         zero_target_pct = float(median_segment_fractions[0] * 100.0)
         peak_target_pct = float((median_segment_fractions[0] + median_segment_fractions[1]) * 100.0)
+        zero_fall_target_pct = float((median_segment_fractions[0] + median_segment_fractions[1] + median_segment_fractions[2]) * 100.0)
 
-        for rep, zero_pct, peak_pct in valid_segment_reps:
+        for rep, zero_pct, peak_pct, zero_fall_pct in valid_segment_reps:
             mapped_pct = np.interp(
                 rep["sample_pct"],
-                [0.0, zero_pct, peak_pct, 100.0],
-                [0.0, zero_target_pct, peak_target_pct, 100.0],
+                [0.0, zero_pct, peak_pct, zero_fall_pct, 100.0],
+                [0.0, zero_target_pct, peak_target_pct, zero_fall_target_pct, 100.0],
             )
             interp_torque = np.interp(percent_axis, mapped_pct, rep["torque_values"])
             interpolated_curves.append(interp_torque)
@@ -1616,6 +1627,8 @@ def extract_single_rep_file_aligned_curves(
         mean_df.attrs["anchor_x"] = zero_target_pct
         mean_df.attrs["secondary_anchor_x"] = peak_target_pct
         mean_df.attrs["secondary_anchor_label"] = "Peak Positive Torque"
+        mean_df.attrs["tertiary_anchor_x"] = zero_fall_target_pct
+        mean_df.attrs["tertiary_anchor_label"] = "0 Torque Fall"
     elif x_axis_mode == "normalized_duration":
         percent_axis = np.linspace(0.0, 100.0, int(n_points))
         anchor_pcts = [
@@ -8148,6 +8161,24 @@ with tab6:
                                     xref="x",
                                     yref="paper",
                                     text=str(secondary_anchor_label),
+                                    showarrow=False,
+                                    font=dict(size=11),
+                                )
+                            tertiary_anchor_x = posterior_mean_df.attrs.get("tertiary_anchor_x")
+                            tertiary_anchor_label = posterior_mean_df.attrs.get("tertiary_anchor_label")
+                            if tertiary_anchor_x is not None and tertiary_anchor_label:
+                                posterior_align_fig.add_vline(
+                                    x=float(tertiary_anchor_x),
+                                    line_width=2,
+                                    line_dash="dot",
+                                    line_color="rgba(255,255,255,0.22)",
+                                )
+                                posterior_align_fig.add_annotation(
+                                    x=float(tertiary_anchor_x),
+                                    y=1.03,
+                                    xref="x",
+                                    yref="paper",
+                                    text=str(tertiary_anchor_label),
                                     showarrow=False,
                                     font=dict(size=11),
                                 )
