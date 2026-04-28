@@ -1501,6 +1501,16 @@ def extract_single_rep_file_aligned_curves(
         if anchor_mode == "peak_positive_torque":
             anchor_idx = int(np.argmax(torque_values))
             anchor_label = "Peak Positive Torque"
+        elif anchor_mode == "zero_torque_rise":
+            peak_pos_idx = int(np.argmax(torque_values))
+            anchor_idx = peak_pos_idx
+            for idx in range(peak_pos_idx, 0, -1):
+                prev_val = float(torque_values[idx - 1])
+                curr_val = float(torque_values[idx])
+                if prev_val <= 0.0 < curr_val:
+                    anchor_idx = idx
+                    break
+            anchor_label = "0 Torque Rise"
         elif anchor_mode == "positive_rise_onset":
             peak_pos_idx = int(np.argmax(torque_values))
             baseline_window = max(3, min(len(torque_values), 15))
@@ -7920,12 +7930,14 @@ with tab6:
                         posterior_anchor_mode = st.selectbox(
                             "Alignment anchor",
                             options=[
+                                "zero_torque_rise",
                                 "positive_rise_onset",
                                 "negative_torque_onset",
                                 "peak_negative_torque",
                                 "peak_positive_torque",
                             ],
                             format_func=lambda value: {
+                                "zero_torque_rise": "0 Torque Rise",
                                 "positive_rise_onset": "Positive Rise Onset",
                                 "negative_torque_onset": "Negative Torque Onset",
                                 "peak_negative_torque": "Peak Negative Torque",
