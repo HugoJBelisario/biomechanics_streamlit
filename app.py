@@ -1479,6 +1479,7 @@ def extract_single_rep_file_aligned_curves(
     value_col="Torque_Nm",
     time_col="Elapsed Seconds",
     n_points=201,
+    x_axis_mode="raw_time",
 ):
     if not preview_items:
         return pd.DataFrame(), pd.DataFrame(), []
@@ -1548,6 +1549,7 @@ def extract_single_rep_file_aligned_curves(
             "rep_number": rep_number,
             "file_name": item["name"],
             "aligned_time": time_values - anchor_time,
+            "sample_pct": np.linspace(0.0, 100.0, len(rep_df)),
             "torque_values": torque_values,
             "anchor_idx": anchor_idx,
             "anchor_time": anchor_time,
@@ -1558,32 +1560,68 @@ def extract_single_rep_file_aligned_curves(
     if not aligned_reps:
         return pd.DataFrame(), pd.DataFrame(), []
 
-    common_start = max(float(rep["aligned_time"][0]) for rep in aligned_reps)
-    common_end = min(float(rep["aligned_time"][-1]) for rep in aligned_reps)
-    if common_end <= common_start:
-        return pd.DataFrame(), pd.DataFrame(), aligned_reps
-
-    common_axis = np.linspace(common_start, common_end, int(n_points))
     rep_rows = []
     interpolated_curves = []
+    if x_axis_mode == "normalized_duration":
+        percent_axis = np.linspace(0.0, 100.0, int(n_points))
+        anchor_pcts = [
+            (float(rep["anchor_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
+            for rep in aligned_reps
+        ]
+        anchor_pct_target = float(np.nanmedian(anchor_pcts))
 
-    for rep in aligned_reps:
-        interp_torque = np.interp(common_axis, rep["aligned_time"], rep["torque_values"])
-        interpolated_curves.append(interp_torque)
-        rep_rows.append(pd.DataFrame({
-            "rep_number": rep["rep_number"],
-            "file_name": rep["file_name"],
-            "aligned_time_s": common_axis,
-            "torque_nm": interp_torque,
-        }))
+        for rep in aligned_reps:
+            anchor_pct = (float(rep["anchor_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
+            mapped_pct = np.interp(
+                rep["sample_pct"],
+                [0.0, anchor_pct, 100.0],
+                [0.0, anchor_pct_target, 100.0],
+            )
+            interp_torque = np.interp(percent_axis, mapped_pct, rep["torque_values"])
+            interpolated_curves.append(interp_torque)
+            rep_rows.append(pd.DataFrame({
+                "rep_number": rep["rep_number"],
+                "file_name": rep["file_name"],
+                "alignment_x": percent_axis,
+                "torque_nm": interp_torque,
+            }))
+
+        mean_df = pd.DataFrame({
+            "alignment_x": percent_axis,
+            "mean_torque_nm": np.nanmean(np.vstack(interpolated_curves), axis=0),
+            "std_torque_nm": np.nanstd(np.vstack(interpolated_curves), axis=0),
+        })
+        mean_df.attrs["x_axis_mode"] = "normalized_duration"
+        mean_df.attrs["x_axis_title"] = "Normalized Rep Duration (%)"
+        mean_df.attrs["anchor_x"] = anchor_pct_target
+    else:
+        common_start = max(float(rep["aligned_time"][0]) for rep in aligned_reps)
+        common_end = min(float(rep["aligned_time"][-1]) for rep in aligned_reps)
+        if common_end <= common_start:
+            return pd.DataFrame(), pd.DataFrame(), aligned_reps
+
+        common_axis = np.linspace(common_start, common_end, int(n_points))
+        for rep in aligned_reps:
+            interp_torque = np.interp(common_axis, rep["aligned_time"], rep["torque_values"])
+            interpolated_curves.append(interp_torque)
+            rep_rows.append(pd.DataFrame({
+                "rep_number": rep["rep_number"],
+                "file_name": rep["file_name"],
+                "alignment_x": common_axis,
+                "torque_nm": interp_torque,
+            }))
+
+        mean_df = pd.DataFrame({
+            "alignment_x": common_axis,
+            "mean_torque_nm": np.nanmean(np.vstack(interpolated_curves), axis=0),
+            "std_torque_nm": np.nanstd(np.vstack(interpolated_curves), axis=0),
+        })
+        mean_df.attrs["x_axis_mode"] = "raw_time"
+        mean_df.attrs["x_axis_title"] = "Aligned Time (s)"
+        mean_df.attrs["anchor_x"] = 0.0
 
     curves_arr = np.vstack(interpolated_curves)
     reps_long_df = pd.concat(rep_rows, ignore_index=True)
-    mean_df = pd.DataFrame({
-        "aligned_time_s": common_axis,
-        "mean_torque_nm": np.nanmean(curves_arr, axis=0),
-        "std_torque_nm": np.nanstd(curves_arr, axis=0),
-    })
     mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
     mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
     mean_df.attrs["anchor_label"] = aligned_reps[0]["anchor_label"]
@@ -7945,6 +7983,15 @@ with tab6:
                             }.get(value, value.replace("_", " ").title()),
                             key="posterior_cuff_single_rep_anchor",
                         )
+                        posterior_x_axis_mode = st.selectbox(
+                            "Alignment view",
+                            options=["normalized_duration", "raw_time"],
+                            format_func=lambda value: {
+                                "normalized_duration": "Normalized Rep Duration",
+                                "raw_time": "Raw Time Around Anchor",
+                            }.get(value, value.replace("_", " ").title()),
+                            key="posterior_cuff_single_rep_x_axis_mode",
+                        )
                         posterior_n_points = st.number_input(
                             "Aligned points per file",
                             min_value=51,
@@ -7973,17 +8020,20 @@ with tab6:
                         value_col="Torque_Nm",
                         time_col="Elapsed Seconds",
                         n_points=int(posterior_n_points),
+                        x_axis_mode=posterior_x_axis_mode,
                     )
 
                     with single_rep_plot_col:
                         if posterior_reps_long_df.empty or posterior_mean_df.empty:
                             st.warning("Select at least one valid single-rep file to build the aligned overlay.")
                         else:
+                            x_axis_title = str(posterior_mean_df.attrs.get("x_axis_title", "Aligned Time (s)"))
+                            anchor_x = float(posterior_mean_df.attrs.get("anchor_x", 0.0))
                             posterior_align_fig = go.Figure()
                             for rep_number, rep_df in posterior_reps_long_df.groupby("rep_number"):
                                 file_name = rep_df["file_name"].iloc[0]
                                 posterior_align_fig.add_trace(go.Scatter(
-                                    x=rep_df["aligned_time_s"],
+                                    x=rep_df["alignment_x"],
                                     y=rep_df["torque_nm"],
                                     mode="lines",
                                     line=dict(width=1.5),
@@ -7991,7 +8041,7 @@ with tab6:
                                     name=file_name,
                                 ))
                             posterior_align_fig.add_trace(go.Scatter(
-                                x=posterior_mean_df["aligned_time_s"],
+                                x=posterior_mean_df["alignment_x"],
                                 y=posterior_mean_df["upper_band"],
                                 mode="lines",
                                 line=dict(width=0),
@@ -7999,7 +8049,7 @@ with tab6:
                                 hoverinfo="skip",
                             ))
                             posterior_align_fig.add_trace(go.Scatter(
-                                x=posterior_mean_df["aligned_time_s"],
+                                x=posterior_mean_df["alignment_x"],
                                 y=posterior_mean_df["lower_band"],
                                 mode="lines",
                                 line=dict(width=0),
@@ -8007,20 +8057,20 @@ with tab6:
                                 name="±1 SD",
                             ))
                             posterior_align_fig.add_trace(go.Scatter(
-                                x=posterior_mean_df["aligned_time_s"],
+                                x=posterior_mean_df["alignment_x"],
                                 y=posterior_mean_df["mean_torque_nm"],
                                 mode="lines",
                                 line=dict(width=4),
                                 name="Mean Torque",
                             ))
                             posterior_align_fig.add_vline(
-                                x=0.0,
+                                x=anchor_x,
                                 line_width=2,
                                 line_dash="dot",
                                 line_color="rgba(255,255,255,0.45)",
                             )
                             posterior_align_fig.add_annotation(
-                                x=0.0,
+                                x=anchor_x,
                                 y=1.03,
                                 xref="x",
                                 yref="paper",
@@ -8030,14 +8080,14 @@ with tab6:
                             )
                             posterior_align_fig.update_layout(
                                 title="Posterior Cuff Reactive Eccentric: Across-File Alignment",
-                                xaxis_title="Aligned Time (s)",
+                                xaxis_title=x_axis_title,
                                 yaxis_title="Torque_Nm",
                                 height=500,
                             )
                             st.plotly_chart(
                                 posterior_align_fig,
                                 use_container_width=True,
-                                key=f"posterior_cuff_single_rep_plot_{posterior_anchor_mode}_{posterior_n_points}_{len(selected_posterior_rep_items)}",
+                                key=f"posterior_cuff_single_rep_plot_{posterior_anchor_mode}_{posterior_x_axis_mode}_{posterior_n_points}_{len(selected_posterior_rep_items)}",
                             )
 
                     if posterior_alignment_metadata:
