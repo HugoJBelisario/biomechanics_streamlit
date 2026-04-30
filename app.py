@@ -1473,6 +1473,72 @@ def extract_landmark_aligned_biodex_reps(
 
     return reps_long_df, mean_df, aligned_rep_metadata
 
+def detect_position_deg_movement_window(position_values):
+    if position_values is None or len(position_values) < 7:
+        return None
+
+    smooth_window = get_valid_savgol_window(11, len(position_values), 3)
+    if smooth_window is not None:
+        smooth_position = savgol_filter(
+            position_values,
+            window_length=smooth_window,
+            polyorder=min(3, smooth_window - 2),
+        )
+    else:
+        smooth_position = position_values
+
+    baseline_window = max(3, min(len(smooth_position), 15))
+    baseline_value = float(np.nanmedian(smooth_position[:baseline_window]))
+    peak_idx = int(np.argmax(smooth_position))
+    peak_value = float(smooth_position[peak_idx])
+    movement_span = peak_value - baseline_value
+    if not np.isfinite(movement_span) or movement_span <= 0:
+        return None
+
+    start_threshold = baseline_value + movement_span * 0.08
+    start_sustain = 3
+    start_idx = 0
+    for idx in range(0, peak_idx + 1):
+        window_end = min(len(smooth_position), idx + start_sustain)
+        if window_end - idx < start_sustain:
+            continue
+        if np.all(smooth_position[idx:window_end] >= start_threshold):
+            local_backtrack_start = max(0, idx - 6)
+            local_window = smooth_position[local_backtrack_start:idx + 1]
+            start_idx = int(local_backtrack_start + int(np.argmin(local_window)))
+            break
+
+    plateau_idx = None
+    plateau_threshold = peak_value - movement_span * 0.05
+    plateau_tolerance = max(3.0, movement_span * 0.03)
+    plateau_sustain = 3
+    for idx in range(peak_idx, -1, -1):
+        window_end = min(len(smooth_position), idx + plateau_sustain)
+        if window_end - idx < plateau_sustain:
+            continue
+        within_plateau = smooth_position[idx:window_end] >= plateau_threshold
+        stable_band = np.abs(smooth_position[idx:window_end] - peak_value) <= plateau_tolerance
+        if np.all(within_plateau) and np.all(stable_band):
+            plateau_idx = idx
+        elif plateau_idx is not None:
+            break
+
+    if plateau_idx is None:
+        end_idx = len(smooth_position) - 1
+    else:
+        plateau_padding = max(3, min(10, len(smooth_position) // 20))
+        end_idx = min(len(smooth_position) - 1, int(plateau_idx) + plateau_padding)
+
+    if end_idx <= start_idx:
+        return None
+
+    return {
+        "start_idx": int(start_idx),
+        "end_idx": int(end_idx),
+        "plateau_idx": int(plateau_idx) if plateau_idx is not None else None,
+        "smooth_position": smooth_position,
+    }
+
 def extract_single_rep_file_aligned_curves(
     preview_items,
     anchor_mode="peak_negative_torque",
@@ -1519,6 +1585,26 @@ def extract_single_rep_file_aligned_curves(
                 )
                 position_values = cleaned_position
 
+        movement_window = detect_position_deg_movement_window(position_values)
+        if movement_window is not None:
+            trim_start = int(movement_window["start_idx"])
+            trim_end = int(movement_window["end_idx"])
+            rep_df = rep_df.iloc[trim_start:trim_end + 1].reset_index(drop=True)
+            time_values = rep_df[time_col].to_numpy(dtype=float)
+            torque_values = rep_df[value_col].to_numpy(dtype=float)
+            position_values = (
+                rep_df["Position_Deg"].to_numpy(dtype=float)
+                if "Position_Deg" in rep_df.columns and rep_df["Position_Deg"].notna().any()
+                else None
+            )
+            plateau_idx_in_trimmed = (
+                int(movement_window["plateau_idx"] - trim_start)
+                if movement_window["plateau_idx"] is not None and movement_window["plateau_idx"] >= trim_start
+                else None
+            )
+        else:
+            plateau_idx_in_trimmed = None
+
         peak_pos_idx = int(np.argmax(torque_values))
         zero_torque_rise_idx = peak_pos_idx
         for idx in range(peak_pos_idx, 0, -1):
@@ -1535,32 +1621,7 @@ def extract_single_rep_file_aligned_curves(
                 zero_torque_fall_idx = idx
                 break
 
-        rom_plateau_idx = None
-        if position_values is not None and len(position_values) >= 7:
-            smooth_position_window = min(len(position_values), 11)
-            if smooth_position_window % 2 == 0:
-                smooth_position_window = max(1, smooth_position_window - 1)
-            if smooth_position_window >= 5:
-                smooth_position = savgol_filter(position_values, window_length=smooth_position_window, polyorder=min(3, smooth_position_window - 2))
-            else:
-                smooth_position = position_values
-
-            peak_position_idx = int(np.argmax(smooth_position))
-            peak_position_value = float(smooth_position[peak_position_idx])
-            plateau_threshold = peak_position_value * 0.95
-            plateau_tolerance = max(3.0, abs(peak_position_value) * 0.03)
-            sustain_needed = 3
-
-            for idx in range(peak_position_idx, -1, -1):
-                window_end = min(len(smooth_position), idx + sustain_needed)
-                if window_end - idx < sustain_needed:
-                    continue
-                within_plateau = smooth_position[idx:window_end] >= plateau_threshold
-                stable_band = np.abs(smooth_position[idx:window_end] - peak_position_value) <= plateau_tolerance
-                if np.all(within_plateau) and np.all(stable_band):
-                    rom_plateau_idx = idx
-                elif rom_plateau_idx is not None:
-                    break
+        rom_plateau_idx = plateau_idx_in_trimmed
 
         if anchor_mode == "peak_positive_torque":
             anchor_idx = int(np.argmax(torque_values))
