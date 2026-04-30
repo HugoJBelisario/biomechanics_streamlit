@@ -1607,19 +1607,38 @@ def extract_single_rep_file_aligned_curves(
 
         peak_pos_idx = int(np.argmax(torque_values))
         zero_torque_rise_idx = peak_pos_idx
+        zero_torque_rise_found = False
         for idx in range(peak_pos_idx, 0, -1):
             prev_val = float(torque_values[idx - 1])
             curr_val = float(torque_values[idx])
             if prev_val <= 0.0 < curr_val:
                 zero_torque_rise_idx = idx
+                zero_torque_rise_found = True
                 break
+        if not zero_torque_rise_found:
+            positive_candidates = np.flatnonzero(torque_values[:peak_pos_idx + 1] > 0.0)
+            if positive_candidates.size > 0:
+                zero_torque_rise_idx = int(positive_candidates[0])
+            else:
+                zero_torque_rise_idx = 0
+
         zero_torque_fall_idx = peak_pos_idx
+        zero_torque_fall_found = False
         for idx in range(peak_pos_idx + 1, len(torque_values)):
             prev_val = float(torque_values[idx - 1])
             curr_val = float(torque_values[idx])
             if prev_val >= 0.0 > curr_val:
                 zero_torque_fall_idx = idx
+                zero_torque_fall_found = True
                 break
+        if not zero_torque_fall_found:
+            negative_candidates = np.flatnonzero(torque_values[peak_pos_idx + 1:] < 0.0)
+            if negative_candidates.size > 0:
+                zero_torque_fall_idx = int(peak_pos_idx + 1 + negative_candidates[0])
+            elif rom_plateau_idx is not None and rom_plateau_idx > peak_pos_idx:
+                zero_torque_fall_idx = int(rom_plateau_idx)
+            else:
+                zero_torque_fall_idx = len(torque_values) - 1
 
         rom_plateau_idx = plateau_idx_in_trimmed
 
