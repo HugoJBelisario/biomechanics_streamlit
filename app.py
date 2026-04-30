@@ -8000,36 +8000,65 @@ with tab6:
                         f"{row['source_file_name']} | {processing_label}"
                     )
 
-                selected_restore_biodex_test_id = st.selectbox(
-                    "Stored Biodex test",
+                selected_restore_biodex_test_ids = st.multiselect(
+                    "Stored Biodex test(s)",
                     options=restore_options,
                     format_func=lambda test_id: restore_labels.get(test_id, f"Test {test_id}"),
+                    default=restore_options,
                     key="biodex_test_restore_selection",
                 )
-                if st.button(
-                    "Load Stored Test into Preview",
-                    key="biodex_test_restore_button",
-                    use_container_width=True,
-                ):
-                    try:
-                        restored_preview_item = build_biodex_preview_item_from_db(
-                            cur,
-                            biodex_test_id=int(selected_restore_biodex_test_id),
-                        )
-                    except Exception as exc:
-                        st.error(f"Could not restore the stored Biodex test: {exc}")
-                    else:
-                        current_previews = st.session_state.get("biodex_test_uploaded_previews", [])
-                        current_previews = [
-                            item for item in current_previews
-                            if int(item["biodex_test_id"]) != int(restored_preview_item["biodex_test_id"])
-                        ]
-                        current_previews.append(restored_preview_item)
-                        st.session_state["biodex_test_uploaded_previews"] = current_previews
-                        st.session_state["biodex_test_preview_file"] = restored_preview_item["name"]
+                restore_action_col1, restore_action_col2 = st.columns(2)
+                with restore_action_col1:
+                    load_selected_restore_tests = st.button(
+                        "Load Selected Tests into Preview",
+                        key="biodex_test_restore_button",
+                        use_container_width=True,
+                        disabled=not selected_restore_biodex_test_ids,
+                    )
+                with restore_action_col2:
+                    load_all_restore_tests = st.button(
+                        "Load All Stored Tests",
+                        key="biodex_test_restore_all_button",
+                        use_container_width=True,
+                        disabled=not restore_options,
+                    )
+
+                if load_selected_restore_tests or load_all_restore_tests:
+                    target_restore_ids = (
+                        [int(test_id) for test_id in restore_options]
+                        if load_all_restore_tests
+                        else [int(test_id) for test_id in selected_restore_biodex_test_ids]
+                    )
+                    restored_preview_items = []
+                    restore_errors = []
+                    for biodex_test_id in target_restore_ids:
+                        try:
+                            restored_preview_items.append(
+                                build_biodex_preview_item_from_db(
+                                    cur,
+                                    biodex_test_id=int(biodex_test_id),
+                                )
+                            )
+                        except Exception as exc:
+                            restore_errors.append(f"Test {int(biodex_test_id)}: {exc}")
+
+                    current_previews = st.session_state.get("biodex_test_uploaded_previews", [])
+                    existing_by_id = {
+                        int(item["biodex_test_id"]): item
+                        for item in current_previews
+                    }
+                    for restored_item in restored_preview_items:
+                        existing_by_id[int(restored_item["biodex_test_id"])] = restored_item
+
+                    merged_previews = list(existing_by_id.values())
+                    st.session_state["biodex_test_uploaded_previews"] = merged_previews
+                    if restored_preview_items:
+                        st.session_state["biodex_test_preview_file"] = restored_preview_items[0]["name"]
                         st.success(
-                            f"Loaded `{restored_preview_item['name']}` back into Upload & Process for rep-detection preview."
+                            f"Loaded {len(restored_preview_items)} stored Biodex test(s) back into Upload & Process."
                         )
+                    if restore_errors:
+                        st.error("Some tests could not be restored:\n\n" + "\n".join(restore_errors))
 
         uploaded_previews = st.session_state.get("biodex_test_uploaded_previews", [])
         if uploaded_previews:
