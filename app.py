@@ -8287,21 +8287,24 @@ with tab6:
                 )
                 st.plotly_chart(preview_fig, use_container_width=True)
 
-                if preview_item.get("movement", selected_biodex_test_movement) == "d2_shoulder_pattern" and "Position_Deg" in preview_item["numeric_columns"]:
-                    d2_position_fig = go.Figure()
-                    d2_position_fig.add_trace(go.Scatter(
+                if "Position_Deg" in preview_item["numeric_columns"]:
+                    position_preview_fig = go.Figure()
+                    position_preview_fig.add_trace(go.Scatter(
                         x=preview_df["Elapsed Seconds"],
                         y=preview_df["Position_Deg"],
                         mode="lines",
                         name="Position_Deg",
                     ))
-                    d2_position_fig.update_layout(
-                        title="D2 Shoulder Pattern Position",
+                    position_preview_title = "Stored Raw Position Preview"
+                    if preview_item.get("movement", selected_biodex_test_movement) == "d2_shoulder_pattern":
+                        position_preview_title = "D2 Shoulder Pattern Position"
+                    position_preview_fig.update_layout(
+                        title=position_preview_title,
                         xaxis_title="Elapsed Time (s)",
                         yaxis_title="Position_Deg",
-                        height=450,
+                        height=500,
                     )
-                    st.plotly_chart(d2_position_fig, use_container_width=True)
+                    st.plotly_chart(position_preview_fig, use_container_width=True)
 
                 preview_movement = preview_item.get("movement", selected_biodex_test_movement)
                 preview_protocol_type = preview_item.get("protocol_type", selected_biodex_test_protocol)
