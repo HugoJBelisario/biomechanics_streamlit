@@ -1615,6 +1615,25 @@ def extract_single_rep_file_aligned_curves(
                 )
                 position_values = cleaned_position
 
+        position_rep_bounds = (
+            detect_position_deg_rep_bounds(position_values)
+            if position_values is not None
+            else None
+        )
+        position_start_idx = (
+            int(position_rep_bounds["start_idx"])
+            if position_rep_bounds is not None
+            else 0
+        )
+        position_end_idx = (
+            int(position_rep_bounds["end_idx"])
+            if position_rep_bounds is not None
+            else max(0, len(torque_values) - 1)
+        )
+        if position_end_idx <= position_start_idx:
+            position_start_idx = 0
+            position_end_idx = max(0, len(torque_values) - 1)
+
         peak_pos_idx = int(np.argmax(torque_values))
         zero_torque_rise_idx = peak_pos_idx
         for idx in range(peak_pos_idx, 0, -1):
@@ -1709,6 +1728,8 @@ def extract_single_rep_file_aligned_curves(
             "peak_positive_idx": peak_pos_idx,
             "zero_torque_fall_idx": zero_torque_fall_idx,
             "rom_plateau_idx": rom_plateau_idx,
+            "position_start_idx": position_start_idx,
+            "position_end_idx": position_end_idx,
             "anchor_time": anchor_time,
             "anchor_torque": float(torque_values[anchor_idx]),
             "anchor_label": anchor_label,
@@ -1721,7 +1742,67 @@ def extract_single_rep_file_aligned_curves(
     interpolated_curves = []
     rom_rep_rows = []
     interpolated_rom_curves = []
-    if x_axis_mode == "zero_to_peak_normalized":
+    if x_axis_mode == "position_window_normalized":
+        percent_axis = np.linspace(0.0, 100.0, int(n_points))
+        segment_fraction_rows = []
+        valid_segment_reps = []
+
+        for rep in aligned_reps:
+            start_pct = (float(rep["position_start_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
+            end_pct = (float(rep["position_end_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
+            if not (0.0 <= start_pct < end_pct <= 100.0):
+                continue
+            segment_fraction_rows.append(np.array([
+                start_pct,
+                end_pct - start_pct,
+                100.0 - end_pct,
+            ], dtype=float) / 100.0)
+            valid_segment_reps.append((rep, start_pct, end_pct))
+
+        if not valid_segment_reps:
+            return pd.DataFrame(), pd.DataFrame(), aligned_reps, pd.DataFrame(), pd.DataFrame()
+
+        median_segment_fractions = np.nanmedian(np.vstack(segment_fraction_rows), axis=0)
+        median_segment_fractions = median_segment_fractions / median_segment_fractions.sum()
+        start_target_pct = float(median_segment_fractions[0] * 100.0)
+        end_target_pct = float((median_segment_fractions[0] + median_segment_fractions[1]) * 100.0)
+
+        for rep, start_pct, end_pct in valid_segment_reps:
+            mapped_pct = np.interp(
+                rep["sample_pct"],
+                [0.0, start_pct, end_pct, 100.0],
+                [0.0, start_target_pct, end_target_pct, 100.0],
+            )
+            interp_torque = np.interp(percent_axis, mapped_pct, rep["torque_values"])
+            interpolated_curves.append(interp_torque)
+            rep_rows.append(pd.DataFrame({
+                "rep_number": rep["rep_number"],
+                "file_name": rep["file_name"],
+                "alignment_x": percent_axis,
+                "torque_nm": interp_torque,
+            }))
+            if rep["position_values"] is not None:
+                interp_position = np.interp(percent_axis, mapped_pct, rep["position_values"])
+                interpolated_rom_curves.append(interp_position)
+                rom_rep_rows.append(pd.DataFrame({
+                    "rep_number": rep["rep_number"],
+                    "file_name": rep["file_name"],
+                    "alignment_x": percent_axis,
+                    "position_deg": interp_position,
+                }))
+
+        mean_df = pd.DataFrame({
+            "alignment_x": percent_axis,
+            "mean_torque_nm": np.nanmean(np.vstack(interpolated_curves), axis=0),
+            "std_torque_nm": np.nanstd(np.vstack(interpolated_curves), axis=0),
+        })
+        mean_df.attrs["x_axis_mode"] = "position_window_normalized"
+        mean_df.attrs["x_axis_title"] = "Normalized Rep Duration (%)"
+        mean_df.attrs["anchor_x"] = start_target_pct
+        mean_df.attrs["anchor_label"] = "Position Start"
+        mean_df.attrs["secondary_anchor_x"] = end_target_pct
+        mean_df.attrs["secondary_anchor_label"] = "Position End"
+    elif x_axis_mode == "zero_to_peak_normalized":
         percent_axis = np.linspace(0.0, 100.0, int(n_points))
         segment_fraction_rows = []
         valid_segment_reps = []
@@ -8283,8 +8364,9 @@ with tab6:
                         )
                         posterior_x_axis_mode = st.selectbox(
                             "Alignment view",
-                            options=["zero_to_peak_normalized", "normalized_duration", "raw_time"],
+                            options=["position_window_normalized", "zero_to_peak_normalized", "normalized_duration", "raw_time"],
                             format_func=lambda value: {
+                                "position_window_normalized": "Position Start -> End Normalized",
                                 "zero_to_peak_normalized": "0 Torque -> Peak Positive Normalized",
                                 "normalized_duration": "Normalized Rep Duration",
                                 "raw_time": "Raw Time Around Anchor",
