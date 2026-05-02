@@ -1716,6 +1716,9 @@ def extract_single_rep_file_aligned_curves(
             anchor_label = "Peak Negative Torque"
 
         anchor_time = float(time_values[anchor_idx])
+        zero_torque_rise_time = float(time_values[zero_torque_rise_idx])
+        peak_positive_time = float(time_values[peak_pos_idx])
+        zero_to_peak_duration = peak_positive_time - zero_torque_rise_time
         aligned_reps.append({
             "rep_number": rep_number,
             "file_name": item["name"],
@@ -1733,6 +1736,9 @@ def extract_single_rep_file_aligned_curves(
             "anchor_time": anchor_time,
             "anchor_torque": float(torque_values[anchor_idx]),
             "anchor_label": anchor_label,
+            "zero_torque_rise_time": zero_torque_rise_time,
+            "peak_positive_time": peak_positive_time,
+            "zero_to_peak_duration_s": float(zero_to_peak_duration),
         })
 
     if not aligned_reps:
@@ -8701,6 +8707,9 @@ with tab6:
                                 "Anchor": rep_meta["anchor_label"],
                                 "Anchor Time (s)": rep_meta["anchor_time"],
                                 "Anchor Torque (Nm)": rep_meta["anchor_torque"],
+                                "0 Torque Rise Time (s)": rep_meta.get("zero_torque_rise_time"),
+                                "Peak Positive Time (s)": rep_meta.get("peak_positive_time"),
+                                "0 Torque -> Peak Positive (s)": rep_meta.get("zero_to_peak_duration_s"),
                             })
                         st.markdown("### Single-Rep Alignment Summary")
                         st.dataframe(pd.DataFrame(posterior_summary_rows), use_container_width=True)
