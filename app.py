@@ -8353,35 +8353,42 @@ with tab6:
                             default=default_posterior_rep_selection,
                             key="posterior_cuff_single_rep_files",
                         )
-                        posterior_anchor_mode = st.selectbox(
-                            "Alignment anchor",
-                            options=[
-                                "zero_torque_rise",
-                                "positive_rise_onset",
-                                "negative_torque_onset",
-                                "peak_negative_torque",
-                                "peak_positive_torque",
-                            ],
-                            format_func=lambda value: {
-                                "zero_torque_rise": "0 Torque Rise",
-                                "positive_rise_onset": "Positive Rise Onset",
-                                "negative_torque_onset": "Negative Torque Onset",
-                                "peak_negative_torque": "Peak Negative Torque",
-                                "peak_positive_torque": "Peak Positive Torque",
-                            }.get(value, value.replace("_", " ").title()),
-                            key="posterior_cuff_single_rep_anchor",
-                        )
                         posterior_x_axis_mode = st.selectbox(
                             "Alignment view",
                             options=["position_window_normalized", "zero_to_peak_normalized", "normalized_duration", "raw_time"],
                             format_func=lambda value: {
-                                "position_window_normalized": "Position Start -> End Normalized",
+                                "position_window_normalized": "ROM Start -> End Normalized",
                                 "zero_to_peak_normalized": "0 Torque -> Peak Positive Normalized",
                                 "normalized_duration": "Normalized Rep Duration",
                                 "raw_time": "Raw Time Around Anchor",
                             }.get(value, value.replace("_", " ").title()),
                             key="posterior_cuff_single_rep_x_axis_mode",
                         )
+                        if posterior_x_axis_mode == "position_window_normalized":
+                            posterior_anchor_mode = "zero_torque_rise"
+                            st.caption(
+                                "Default posterior cuff workflow: each file is aligned by the smoothed "
+                                "`Position_Deg` / ROM start and end of the rep."
+                            )
+                        else:
+                            posterior_anchor_mode = st.selectbox(
+                                "Alignment anchor",
+                                options=[
+                                    "zero_torque_rise",
+                                    "positive_rise_onset",
+                                    "negative_torque_onset",
+                                    "peak_negative_torque",
+                                    "peak_positive_torque",
+                                ],
+                                format_func=lambda value: {
+                                    "zero_torque_rise": "0 Torque Rise",
+                                    "positive_rise_onset": "Positive Rise Onset",
+                                    "negative_torque_onset": "Negative Torque Onset",
+                                    "peak_negative_torque": "Peak Negative Torque",
+                                    "peak_positive_torque": "Peak Positive Torque",
+                                }.get(value, value.replace("_", " ").title()),
+                                key="posterior_cuff_single_rep_anchor",
+                            )
                         posterior_n_points = st.number_input(
                             "Aligned points per file",
                             min_value=51,
