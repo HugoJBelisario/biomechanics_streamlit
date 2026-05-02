@@ -1146,6 +1146,102 @@ def smooth_biodex_display_curve(values, window_length=9, polyorder=3):
         return arr
     return savgol_filter(arr, window_length=valid_window, polyorder=polyorder)
 
+def detect_position_deg_rep_bounds(position_values):
+    """Detect start/end of a movement from a smoothed Position_Deg signal."""
+    arr = np.asarray(position_values, dtype=float)
+    if len(arr) < 7:
+        return {
+            "clean_position": arr,
+            "smooth_position": arr,
+            "start_idx": 0,
+            "end_idx": max(0, len(arr) - 1),
+            "plateau_idx": None,
+        }
+
+    finite_mask = np.isfinite(arr)
+    if not finite_mask.any():
+        return {
+            "clean_position": arr,
+            "smooth_position": arr,
+            "start_idx": 0,
+            "end_idx": max(0, len(arr) - 1),
+            "plateau_idx": None,
+        }
+
+    clean_position = arr.copy()
+    if not finite_mask.all():
+        valid_idx = np.flatnonzero(finite_mask)
+        clean_position[~finite_mask] = np.interp(
+            np.flatnonzero(~finite_mask),
+            valid_idx,
+            arr[finite_mask],
+        )
+
+    smooth_window = get_valid_savgol_window(31, len(clean_position), 3)
+    if smooth_window is not None:
+        smooth_position = savgol_filter(clean_position, window_length=smooth_window, polyorder=3)
+    else:
+        smooth_position = clean_position
+
+    position_span = float(np.nanmax(smooth_position) - np.nanmin(smooth_position))
+    if position_span <= 0:
+        return {
+            "clean_position": clean_position,
+            "smooth_position": smooth_position,
+            "start_idx": 0,
+            "end_idx": max(0, len(clean_position) - 1),
+            "plateau_idx": None,
+        }
+
+    baseline_window = max(5, min(len(smooth_position) // 4, 50))
+    baseline_value = float(np.nanmedian(smooth_position[:baseline_window]))
+    rise_threshold = baseline_value + max(8.0, position_span * 0.10)
+    positive_slope_threshold = max(0.5, position_span * 0.003)
+    slope = np.gradient(smooth_position)
+    sustain_needed = max(3, min(8, len(smooth_position) // 20))
+
+    start_idx = 0
+    for idx in range(0, len(smooth_position) - sustain_needed + 1):
+        value_window = smooth_position[idx:idx + sustain_needed]
+        slope_window = slope[idx:idx + sustain_needed]
+        if np.all(value_window >= rise_threshold) and np.nanmean(slope_window) > positive_slope_threshold:
+            start_idx = idx
+            break
+
+    peak_position_idx = int(np.nanargmax(smooth_position))
+    peak_position_value = float(smooth_position[peak_position_idx])
+    plateau_threshold = peak_position_value * 0.95
+    plateau_tolerance = max(3.0, abs(peak_position_value) * 0.03)
+    flat_slope_threshold = max(0.75, position_span * 0.004)
+
+    plateau_idx = None
+    for idx in range(start_idx, peak_position_idx + 1):
+        window_end = min(len(smooth_position), idx + sustain_needed)
+        if window_end - idx < sustain_needed:
+            continue
+        value_window = smooth_position[idx:window_end]
+        slope_window = slope[idx:window_end]
+        within_plateau = value_window >= plateau_threshold
+        stable_band = np.abs(value_window - peak_position_value) <= plateau_tolerance
+        flat_enough = np.nanmean(np.abs(slope_window)) <= flat_slope_threshold
+        if np.all(within_plateau) and np.all(stable_band) and flat_enough:
+            plateau_idx = idx
+            break
+
+    if plateau_idx is None:
+        plateau_idx = peak_position_idx
+
+    plateau_padding = max(3, min(12, len(smooth_position) // 25))
+    end_idx = min(len(smooth_position) - 1, int(plateau_idx) + plateau_padding)
+
+    return {
+        "clean_position": clean_position,
+        "smooth_position": smooth_position,
+        "start_idx": int(start_idx),
+        "end_idx": int(end_idx),
+        "plateau_idx": int(plateau_idx) if plateau_idx is not None else None,
+    }
+
 def _build_contiguous_regions(index_values):
     if not index_values:
         return []
@@ -8449,24 +8545,65 @@ with tab6:
                                     rep_df = rep_df.dropna(subset=["Elapsed Seconds", "Position_Deg"]).reset_index(drop=True)
                                     if rep_df.empty:
                                         continue
-                                    raw_position_items.append((rep_item["name"], rep_df))
+                                    position_bounds = detect_position_deg_rep_bounds(
+                                        rep_df["Position_Deg"].to_numpy(dtype=float)
+                                    )
+                                    raw_position_items.append((rep_item["name"], rep_df, position_bounds))
 
                                 if raw_position_items:
                                     posterior_raw_position_fig = go.Figure()
-                                    for file_name, rep_df in raw_position_items:
+                                    for file_name, rep_df, position_bounds in raw_position_items:
+                                        smooth_position = np.asarray(position_bounds["smooth_position"], dtype=float)
+                                        start_idx = int(position_bounds["start_idx"])
+                                        end_idx = int(position_bounds["end_idx"])
                                         posterior_raw_position_fig.add_trace(go.Scatter(
                                             x=rep_df["Elapsed Seconds"],
                                             y=rep_df["Position_Deg"],
                                             mode="lines",
-                                            line=dict(width=1.75),
-                                            opacity=0.7,
+                                            line=dict(width=1.5),
+                                            opacity=0.45,
                                             name=file_name,
                                         ))
+                                        posterior_raw_position_fig.add_trace(go.Scatter(
+                                            x=rep_df["Elapsed Seconds"],
+                                            y=smooth_position,
+                                            mode="lines",
+                                            line=dict(width=2.5, dash="dash"),
+                                            opacity=0.9,
+                                            name=f"{file_name} (Smoothed)",
+                                        ))
+                                        posterior_raw_position_fig.add_trace(go.Scatter(
+                                            x=[float(rep_df["Elapsed Seconds"].iloc[start_idx])],
+                                            y=[float(smooth_position[start_idx])],
+                                            mode="markers",
+                                            marker=dict(size=10, symbol="circle", color="#7bd389"),
+                                            name=f"{file_name} Start",
+                                            showlegend=False,
+                                        ))
+                                        posterior_raw_position_fig.add_trace(go.Scatter(
+                                            x=[float(rep_df["Elapsed Seconds"].iloc[end_idx])],
+                                            y=[float(smooth_position[end_idx])],
+                                            mode="markers",
+                                            marker=dict(size=10, symbol="diamond", color="#ffb86c"),
+                                            name=f"{file_name} End",
+                                            showlegend=False,
+                                        ))
                                     posterior_raw_position_fig.update_layout(
-                                        title="Posterior Cuff Reactive Eccentric: Raw Position Signals",
+                                        title="Posterior Cuff Reactive Eccentric: Raw Position Signals with Smoothed Start/End",
                                         xaxis_title="Elapsed Time (s)",
                                         yaxis_title="Position_Deg",
                                         height=450,
+                                    )
+                                    posterior_raw_position_fig.add_annotation(
+                                        x=1.0,
+                                        y=1.10,
+                                        xref="paper",
+                                        yref="paper",
+                                        xanchor="right",
+                                        yanchor="bottom",
+                                        text="Dashed line = smoothed Position_Deg, green marker = detected start, orange marker = detected end",
+                                        showarrow=False,
+                                        font=dict(size=11),
                                     )
                                     st.plotly_chart(
                                         posterior_raw_position_fig,
