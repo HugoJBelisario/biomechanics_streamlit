@@ -8419,6 +8419,23 @@ with tab6:
                         n_points=int(posterior_n_points),
                         x_axis_mode=posterior_x_axis_mode,
                     )
+                    zero_rise_rom_reps_long_df = pd.DataFrame()
+                    zero_rise_rom_mean_df = pd.DataFrame()
+                    if selected_posterior_rep_items:
+                        (
+                            _zero_rise_torque_reps_long_df,
+                            _zero_rise_torque_mean_df,
+                            _zero_rise_alignment_metadata,
+                            zero_rise_rom_reps_long_df,
+                            zero_rise_rom_mean_df,
+                        ) = extract_single_rep_file_aligned_curves(
+                            selected_posterior_rep_items,
+                            anchor_mode="zero_torque_rise",
+                            value_col="Torque_Nm",
+                            time_col="Elapsed Seconds",
+                            n_points=int(posterior_n_points),
+                            x_axis_mode="raw_time",
+                        )
 
                     with single_rep_plot_col:
                         if posterior_reps_long_df.empty or posterior_mean_df.empty:
@@ -8633,6 +8650,68 @@ with tab6:
                                     use_container_width=True,
                                     key=f"posterior_cuff_single_rep_rom_plot_{posterior_anchor_mode}_{posterior_x_axis_mode}_{posterior_n_points}_{len(selected_posterior_rep_items)}",
                                 )
+                                if not zero_rise_rom_reps_long_df.empty and not zero_rise_rom_mean_df.empty:
+                                    zero_rise_rom_fig = go.Figure()
+                                    for rep_number, rep_df in zero_rise_rom_reps_long_df.groupby("rep_number"):
+                                        file_name = rep_df["file_name"].iloc[0]
+                                        zero_rise_rom_fig.add_trace(go.Scatter(
+                                            x=rep_df["alignment_x"],
+                                            y=rep_df["position_deg"],
+                                            mode="lines",
+                                            line=dict(width=1.5),
+                                            opacity=0.45,
+                                            name=file_name,
+                                        ))
+                                    zero_rise_rom_fig.add_trace(go.Scatter(
+                                        x=zero_rise_rom_mean_df["alignment_x"],
+                                        y=zero_rise_rom_mean_df["upper_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        showlegend=False,
+                                        hoverinfo="skip",
+                                    ))
+                                    zero_rise_rom_fig.add_trace(go.Scatter(
+                                        x=zero_rise_rom_mean_df["alignment_x"],
+                                        y=zero_rise_rom_mean_df["lower_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        fill="tonexty",
+                                        name="±1 SD",
+                                    ))
+                                    zero_rise_rom_fig.add_trace(go.Scatter(
+                                        x=zero_rise_rom_mean_df["alignment_x"],
+                                        y=zero_rise_rom_mean_df["mean_position_deg"],
+                                        mode="lines",
+                                        line=dict(width=4),
+                                        name="Mean Position",
+                                    ))
+                                    zero_rise_anchor_x = float(zero_rise_rom_mean_df.attrs.get("anchor_x", 0.0))
+                                    zero_rise_rom_fig.add_vline(
+                                        x=zero_rise_anchor_x,
+                                        line_width=2,
+                                        line_dash="dot",
+                                        line_color="rgba(255,255,255,0.45)",
+                                    )
+                                    zero_rise_rom_fig.add_annotation(
+                                        x=zero_rise_anchor_x,
+                                        y=1.03,
+                                        xref="x",
+                                        yref="paper",
+                                        text="0 Torque Rise",
+                                        showarrow=False,
+                                        font=dict(size=11),
+                                    )
+                                    zero_rise_rom_fig.update_layout(
+                                        title="Posterior Cuff ROM When Torque Is Aligned at 0 Torque Rise",
+                                        xaxis_title=str(zero_rise_rom_mean_df.attrs.get("x_axis_title", "Aligned Time (s)")),
+                                        yaxis_title="Position_Deg",
+                                        height=500,
+                                    )
+                                    st.plotly_chart(
+                                        zero_rise_rom_fig,
+                                        use_container_width=True,
+                                        key=f"posterior_cuff_zero_rise_rom_plot_{posterior_n_points}_{len(selected_posterior_rep_items)}",
+                                    )
                                 raw_position_items = []
                                 for rep_item in selected_posterior_rep_items:
                                     rep_df = rep_item["df"].copy()
