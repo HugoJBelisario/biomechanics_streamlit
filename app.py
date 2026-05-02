@@ -1177,9 +1177,12 @@ def detect_position_deg_rep_bounds(position_values):
             arr[finite_mask],
         )
 
-    smooth_window = get_valid_savgol_window(31, len(clean_position), 3)
+    smooth_window = get_valid_savgol_window(51, len(clean_position), 3)
     if smooth_window is not None:
         smooth_position = savgol_filter(clean_position, window_length=smooth_window, polyorder=3)
+        secondary_window = get_valid_savgol_window(max(9, smooth_window // 2), len(smooth_position), 2)
+        if secondary_window is not None:
+            smooth_position = savgol_filter(smooth_position, window_length=secondary_window, polyorder=2)
     else:
         smooth_position = clean_position
 
