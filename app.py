@@ -1234,8 +1234,9 @@ def detect_position_deg_rep_bounds(position_values):
     if plateau_idx is None:
         plateau_idx = peak_position_idx
 
-    plateau_padding = max(3, min(12, len(smooth_position) // 25))
-    end_idx = min(len(smooth_position) - 1, int(plateau_idx) + plateau_padding)
+    # Use the first stable near-peak point itself as the effective ROM end,
+    # rather than padding farther into the plateau.
+    end_idx = min(len(smooth_position) - 1, int(plateau_idx))
 
     return {
         "clean_position": clean_position,
