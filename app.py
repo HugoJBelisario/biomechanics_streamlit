@@ -1218,11 +1218,12 @@ def detect_position_deg_rep_bounds(position_values):
     plateau_tolerance = max(3.0, abs(peak_position_value) * 0.03)
     flat_slope_threshold = max(0.75, position_span * 0.004)
     high_zone_flat_slope_threshold = flat_slope_threshold * 1.25
+    meaningful_descent_threshold = max(3.0, position_span * 0.05)
 
     first_high_local_max_idx = None
     for idx in range(start_idx + sustain_needed, peak_position_idx):
         prev_window_start = max(start_idx, idx - sustain_needed)
-        next_window_end = min(len(smooth_position), idx + sustain_needed + 1)
+        next_window_end = min(len(smooth_position), idx + (sustain_needed * 3) + 1)
         prev_slope_window = slope[prev_window_start:idx]
         next_slope_window = slope[idx:next_window_end]
         if len(prev_slope_window) < sustain_needed or len(next_slope_window) < sustain_needed:
@@ -1234,7 +1235,9 @@ def detect_position_deg_rep_bounds(position_values):
         is_local_max = smooth_position[idx] >= np.nanmax(smooth_position[local_window_start:local_window_end])
         was_climbing = np.nanmean(prev_slope_window) > positive_slope_threshold
         has_started_descending = np.nanmean(next_slope_window) <= 0.0
-        if is_local_max and was_climbing and has_started_descending:
+        following_min = float(np.nanmin(smooth_position[idx:next_window_end]))
+        has_meaningful_descent = (float(smooth_position[idx]) - following_min) >= meaningful_descent_threshold
+        if is_local_max and was_climbing and has_started_descending and has_meaningful_descent:
             first_high_local_max_idx = idx
             break
 
