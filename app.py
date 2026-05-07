@@ -1217,6 +1217,7 @@ def detect_position_deg_rep_bounds(position_values):
     plateau_tolerance = max(3.0, abs(peak_position_value) * 0.03)
     flat_slope_threshold = max(0.75, position_span * 0.004)
     relaxed_positive_slope_threshold = positive_slope_threshold * 0.5
+    high_motion_threshold = baseline_value + (position_span * 0.85)
 
     ascent_end_idx = None
     for idx in range(start_idx + sustain_needed, peak_position_idx + 1):
@@ -1224,6 +1225,8 @@ def detect_position_deg_rep_bounds(position_values):
         next_window_end = min(len(smooth_position), idx + sustain_needed)
         next_slope_window = slope[idx:next_window_end]
         if len(prior_slope_window) < sustain_needed or len(next_slope_window) < sustain_needed:
+            continue
+        if smooth_position[idx] < high_motion_threshold:
             continue
         was_climbing = np.nanmean(prior_slope_window) > relaxed_positive_slope_threshold
         has_flattened = np.nanmean(np.abs(next_slope_window)) <= flat_slope_threshold
