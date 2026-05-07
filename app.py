@@ -8794,6 +8794,17 @@ with tab6:
                                         smooth_position = np.asarray(position_bounds["smooth_position"], dtype=float)
                                         start_idx = int(position_bounds["start_idx"])
                                         end_idx = int(position_bounds["end_idx"])
+                                        if common_smoothed_rom_end is not None:
+                                            common_end_tolerance = max(0.5, abs(common_smoothed_rom_end) * 0.002)
+                                            first_touch_idx = None
+                                            for idx in range(start_idx, len(smooth_position)):
+                                                if not np.isfinite(smooth_position[idx]):
+                                                    continue
+                                                if smooth_position[idx] >= (common_smoothed_rom_end - common_end_tolerance):
+                                                    first_touch_idx = idx
+                                                    break
+                                            if first_touch_idx is not None:
+                                                end_idx = int(first_touch_idx)
                                         posterior_raw_position_fig.add_trace(go.Scatter(
                                             x=rep_df["Elapsed Seconds"],
                                             y=rep_df["Position_Deg"],
@@ -8857,7 +8868,7 @@ with tab6:
                                         yref="paper",
                                         xanchor="right",
                                         yanchor="bottom",
-                                        text="Dashed line = smoothed Position_Deg, green marker = detected start, orange marker = detected end",
+                                        text="Dashed line = smoothed Position_Deg, green marker = detected start, orange marker = first touch of common smoothed ROM end",
                                         showarrow=False,
                                         font=dict(size=11),
                                     )
