@@ -8772,21 +8772,21 @@ with tab6:
                                     raw_position_items.append((rep_item["name"], rep_df, position_bounds))
 
                                 if raw_position_items:
-                                    common_raw_rom_end_values = []
-                                    for _file_name, rep_df, position_bounds in raw_position_items:
+                                    common_smoothed_rom_end_values = []
+                                    for _file_name, _rep_df, position_bounds in raw_position_items:
                                         start_idx = int(position_bounds["start_idx"])
-                                        raw_position = pd.to_numeric(rep_df["Position_Deg"], errors="coerce").to_numpy(dtype=float)
-                                        if len(raw_position) <= start_idx:
+                                        smooth_position = np.asarray(position_bounds["smooth_position"], dtype=float)
+                                        if len(smooth_position) <= start_idx:
                                             continue
-                                        finite_slice = raw_position[start_idx:]
+                                        finite_slice = smooth_position[start_idx:]
                                         finite_slice = finite_slice[np.isfinite(finite_slice)]
                                         if finite_slice.size == 0:
                                             continue
-                                        common_raw_rom_end_values.append(float(np.nanmax(finite_slice)))
+                                        common_smoothed_rom_end_values.append(float(np.nanmax(finite_slice)))
 
-                                    common_raw_rom_end = (
-                                        float(np.nanmedian(common_raw_rom_end_values))
-                                        if common_raw_rom_end_values
+                                    common_smoothed_rom_end = (
+                                        float(np.nanmedian(common_smoothed_rom_end_values))
+                                        if common_smoothed_rom_end_values
                                         else None
                                     )
                                     posterior_raw_position_fig = go.Figure()
@@ -8826,21 +8826,21 @@ with tab6:
                                             name=f"{file_name} End",
                                             showlegend=False,
                                         ))
-                                    if common_raw_rom_end is not None:
+                                    if common_smoothed_rom_end is not None:
                                         posterior_raw_position_fig.add_hline(
-                                            y=common_raw_rom_end,
+                                            y=common_smoothed_rom_end,
                                             line_width=1.5,
                                             line_dash="dot",
                                             line_color="rgba(255,184,108,0.55)",
                                         )
                                         posterior_raw_position_fig.add_annotation(
                                             x=1.0,
-                                            y=common_raw_rom_end,
+                                            y=common_smoothed_rom_end,
                                             xref="paper",
                                             yref="y",
                                             xanchor="right",
                                             yanchor="bottom",
-                                            text="Common Raw ROM End",
+                                            text="Common Smoothed ROM End",
                                             showarrow=False,
                                             font=dict(size=11, color="rgba(255,184,108,0.95)"),
                                         )
