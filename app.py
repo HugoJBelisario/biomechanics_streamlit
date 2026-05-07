@@ -1219,6 +1219,25 @@ def detect_position_deg_rep_bounds(position_values):
     flat_slope_threshold = max(0.75, position_span * 0.004)
     high_zone_flat_slope_threshold = flat_slope_threshold * 1.25
 
+    first_high_local_max_idx = None
+    for idx in range(start_idx + sustain_needed, peak_position_idx):
+        prev_window_start = max(start_idx, idx - sustain_needed)
+        next_window_end = min(len(smooth_position), idx + sustain_needed + 1)
+        prev_slope_window = slope[prev_window_start:idx]
+        next_slope_window = slope[idx:next_window_end]
+        if len(prev_slope_window) < sustain_needed or len(next_slope_window) < sustain_needed:
+            continue
+        if smooth_position[idx] < high_zone_threshold:
+            continue
+        local_window_start = max(start_idx, idx - 1)
+        local_window_end = min(len(smooth_position), idx + 2)
+        is_local_max = smooth_position[idx] >= np.nanmax(smooth_position[local_window_start:local_window_end])
+        was_climbing = np.nanmean(prev_slope_window) > positive_slope_threshold
+        has_started_descending = np.nanmean(next_slope_window) <= 0.0
+        if is_local_max and was_climbing and has_started_descending:
+            first_high_local_max_idx = idx
+            break
+
     first_high_flat_idx = None
     for idx in range(start_idx, peak_position_idx + 1):
         window_end = min(len(smooth_position), idx + sustain_needed)
@@ -1249,7 +1268,9 @@ def detect_position_deg_rep_bounds(position_values):
 
     # Use the first stable near-peak point itself as the effective ROM end,
     # rather than padding farther into the plateau.
-    if first_high_flat_idx is not None:
+    if first_high_local_max_idx is not None:
+        end_idx = min(len(smooth_position) - 1, int(first_high_local_max_idx))
+    elif first_high_flat_idx is not None:
         end_idx = min(len(smooth_position) - 1, int(first_high_flat_idx))
     else:
         end_idx = min(len(smooth_position) - 1, int(plateau_idx))
@@ -8748,35 +8769,11 @@ with tab6:
                                     raw_position_items.append((rep_item["name"], rep_df, position_bounds))
 
                                 if raw_position_items:
-                                    common_end_candidates = []
-                                    for _file_name, _rep_df, position_bounds in raw_position_items:
-                                        smooth_position = np.asarray(position_bounds["smooth_position"], dtype=float)
-                                        start_idx = int(position_bounds["start_idx"])
-                                        if len(smooth_position) <= start_idx:
-                                            continue
-                                        common_end_candidates.append(float(np.nanmax(smooth_position[start_idx:])))
-
-                                    common_end_target = (
-                                        float(np.nanmedian(common_end_candidates))
-                                        if common_end_candidates
-                                        else None
-                                    )
                                     posterior_raw_position_fig = go.Figure()
                                     for file_name, rep_df, position_bounds in raw_position_items:
                                         smooth_position = np.asarray(position_bounds["smooth_position"], dtype=float)
                                         start_idx = int(position_bounds["start_idx"])
                                         end_idx = int(position_bounds["end_idx"])
-                                        if common_end_target is not None:
-                                            common_end_tolerance = max(1.5, abs(common_end_target) * 0.01)
-                                            common_end_window = max(2, min(5, len(smooth_position) // 25))
-                                            common_end_idx = None
-                                            for idx in range(start_idx, len(smooth_position) - common_end_window + 1):
-                                                value_window = smooth_position[idx:idx + common_end_window]
-                                                if np.all(value_window >= (common_end_target - common_end_tolerance)):
-                                                    common_end_idx = idx
-                                                    break
-                                            if common_end_idx is not None:
-                                                end_idx = int(common_end_idx)
                                         posterior_raw_position_fig.add_trace(go.Scatter(
                                             x=rep_df["Elapsed Seconds"],
                                             y=rep_df["Position_Deg"],
@@ -8809,13 +8806,6 @@ with tab6:
                                             name=f"{file_name} End",
                                             showlegend=False,
                                         ))
-                                    if common_end_target is not None:
-                                        posterior_raw_position_fig.add_hline(
-                                            y=common_end_target,
-                                            line_width=1.5,
-                                            line_dash="dot",
-                                            line_color="rgba(255,184,108,0.45)",
-                                        )
                                     posterior_raw_position_fig.update_layout(
                                         title="Posterior Cuff Reactive Eccentric: Raw Position Signals with Smoothed Start/End",
                                         xaxis_title="Elapsed Time (s)",
@@ -8829,7 +8819,7 @@ with tab6:
                                         yref="paper",
                                         xanchor="right",
                                         yanchor="bottom",
-                                        text="Dashed line = smoothed Position_Deg, green marker = detected start, orange marker = common ROM end target",
+                                        text="Dashed line = smoothed Position_Deg, green marker = detected start, orange marker = detected end",
                                         showarrow=False,
                                         font=dict(size=11),
                                     )
