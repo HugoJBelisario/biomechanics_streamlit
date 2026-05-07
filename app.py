@@ -8785,7 +8785,7 @@ with tab6:
                                         common_smoothed_rom_end_values.append(float(np.nanmax(finite_slice)))
 
                                     common_smoothed_rom_end = (
-                                        float(np.nanmedian(common_smoothed_rom_end_values))
+                                        float(np.nanmin(common_smoothed_rom_end_values))
                                         if common_smoothed_rom_end_values
                                         else None
                                     )
