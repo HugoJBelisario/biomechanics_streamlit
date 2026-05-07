@@ -1213,9 +1213,22 @@ def detect_position_deg_rep_bounds(position_values):
 
     peak_position_idx = int(np.nanargmax(smooth_position))
     peak_position_value = float(smooth_position[peak_position_idx])
+    high_zone_threshold = baseline_value + (position_span * 0.90)
     plateau_threshold = peak_position_value * 0.95
     plateau_tolerance = max(3.0, abs(peak_position_value) * 0.03)
     flat_slope_threshold = max(0.75, position_span * 0.004)
+    high_zone_flat_slope_threshold = flat_slope_threshold * 1.25
+
+    first_high_flat_idx = None
+    for idx in range(start_idx, peak_position_idx + 1):
+        window_end = min(len(smooth_position), idx + sustain_needed)
+        if window_end - idx < sustain_needed:
+            continue
+        value_window = smooth_position[idx:window_end]
+        slope_window = slope[idx:window_end]
+        if np.all(value_window >= high_zone_threshold) and np.nanmean(np.abs(slope_window)) <= high_zone_flat_slope_threshold:
+            first_high_flat_idx = idx
+            break
 
     plateau_idx = None
     for idx in range(start_idx, peak_position_idx + 1):
@@ -1236,7 +1249,10 @@ def detect_position_deg_rep_bounds(position_values):
 
     # Use the first stable near-peak point itself as the effective ROM end,
     # rather than padding farther into the plateau.
-    end_idx = min(len(smooth_position) - 1, int(plateau_idx))
+    if first_high_flat_idx is not None:
+        end_idx = min(len(smooth_position) - 1, int(first_high_flat_idx))
+    else:
+        end_idx = min(len(smooth_position) - 1, int(plateau_idx))
 
     return {
         "clean_position": clean_position,
