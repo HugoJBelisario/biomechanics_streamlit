@@ -1216,6 +1216,20 @@ def detect_position_deg_rep_bounds(position_values):
     plateau_threshold = peak_position_value * 0.95
     plateau_tolerance = max(3.0, abs(peak_position_value) * 0.03)
     flat_slope_threshold = max(0.75, position_span * 0.004)
+    relaxed_positive_slope_threshold = positive_slope_threshold * 0.5
+
+    ascent_end_idx = None
+    for idx in range(start_idx + sustain_needed, peak_position_idx + 1):
+        prior_slope_window = slope[max(start_idx, idx - sustain_needed):idx]
+        next_window_end = min(len(smooth_position), idx + sustain_needed)
+        next_slope_window = slope[idx:next_window_end]
+        if len(prior_slope_window) < sustain_needed or len(next_slope_window) < sustain_needed:
+            continue
+        was_climbing = np.nanmean(prior_slope_window) > relaxed_positive_slope_threshold
+        has_flattened = np.nanmean(np.abs(next_slope_window)) <= flat_slope_threshold
+        if was_climbing and has_flattened:
+            ascent_end_idx = idx
+            break
 
     plateau_idx = None
     for idx in range(start_idx, peak_position_idx + 1):
@@ -1234,9 +1248,12 @@ def detect_position_deg_rep_bounds(position_values):
     if plateau_idx is None:
         plateau_idx = peak_position_idx
 
-    # Use the first stable near-peak point itself as the effective ROM end,
-    # rather than padding farther into the plateau.
-    end_idx = min(len(smooth_position) - 1, int(plateau_idx))
+    # Prefer the first point where the sustained climb stops; fall back to the
+    # first stable near-peak point if the turning point is not clean enough.
+    if ascent_end_idx is not None:
+        end_idx = min(len(smooth_position) - 1, int(ascent_end_idx))
+    else:
+        end_idx = min(len(smooth_position) - 1, int(plateau_idx))
 
     return {
         "clean_position": clean_position,
