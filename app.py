@@ -1387,6 +1387,99 @@ def find_first_position_ascent_threshold(
 
     return None
 
+def extract_position_fraction_aligned_curves(
+    preview_items,
+    rom_fraction=0.50,
+    time_col="Elapsed Seconds",
+    position_col="Position_Deg",
+    n_points=201,
+    lowpass_cutoff_hz=1.0,
+):
+    if not preview_items:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    aligned_reps = []
+    for rep_number, item in enumerate(preview_items, start=1):
+        rep_df = item["df"].copy()
+        if time_col not in rep_df.columns or position_col not in rep_df.columns:
+            continue
+
+        rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
+        rep_df[position_col] = pd.to_numeric(rep_df[position_col], errors="coerce")
+        rep_df = rep_df.dropna(subset=[time_col, position_col]).reset_index(drop=True)
+        if len(rep_df) < 7:
+            continue
+
+        time_values = rep_df[time_col].to_numpy(dtype=float)
+        position_values = rep_df[position_col].to_numpy(dtype=float)
+        smooth_position, _fs, _clean_position = smooth_position_deg_signal(
+            time_values,
+            position_values,
+            lowpass_cutoff_hz=float(lowpass_cutoff_hz),
+        )
+        position_bounds = detect_position_deg_rep_bounds(
+            time_values,
+            position_values,
+        )
+        start_idx = int(position_bounds["start_idx"])
+        final_plateau_value = float(position_bounds["final_plateau_value"])
+        baseline_value = float(np.nanmedian(smooth_position[:max(start_idx + 1, 1)]))
+        target_angle = baseline_value + ((final_plateau_value - baseline_value) * float(rom_fraction))
+        anchor_idx = find_first_position_ascent_threshold(
+            smooth_position,
+            start_idx,
+            target_angle,
+        )
+        if anchor_idx is None:
+            continue
+
+        aligned_reps.append({
+            "rep_number": rep_number,
+            "file_name": item["name"],
+            "aligned_time": time_values - float(time_values[anchor_idx]),
+            "position_values": np.asarray(smooth_position, dtype=float),
+            "anchor_idx": int(anchor_idx),
+            "anchor_time": float(time_values[anchor_idx]),
+            "anchor_position_deg": float(smooth_position[anchor_idx]),
+            "anchor_label": f"{int(round(float(rom_fraction) * 100.0))}% ROM",
+        })
+
+    if not aligned_reps:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    common_start = max(float(rep["aligned_time"][0]) for rep in aligned_reps)
+    common_end = min(float(rep["aligned_time"][-1]) for rep in aligned_reps)
+    if common_end <= common_start:
+        return pd.DataFrame(), pd.DataFrame(), aligned_reps
+
+    common_axis = np.linspace(common_start, common_end, int(n_points))
+    rep_rows = []
+    interpolated_curves = []
+    for rep in aligned_reps:
+        interp_position = np.interp(common_axis, rep["aligned_time"], rep["position_values"])
+        interpolated_curves.append(interp_position)
+        rep_rows.append(pd.DataFrame({
+            "rep_number": rep["rep_number"],
+            "file_name": rep["file_name"],
+            "alignment_x": common_axis,
+            "position_deg": interp_position,
+        }))
+
+    reps_long_df = pd.concat(rep_rows, ignore_index=True)
+    curves_arr = np.vstack(interpolated_curves)
+    mean_df = pd.DataFrame({
+        "alignment_x": common_axis,
+        "mean_position_deg": np.nanmean(curves_arr, axis=0),
+        "std_position_deg": np.nanstd(curves_arr, axis=0),
+    })
+    mean_df["upper_band"] = mean_df["mean_position_deg"] + mean_df["std_position_deg"]
+    mean_df["lower_band"] = mean_df["mean_position_deg"] - mean_df["std_position_deg"]
+    mean_df.attrs["x_axis_title"] = "Aligned Time (s)"
+    mean_df.attrs["anchor_x"] = 0.0
+    mean_df.attrs["anchor_label"] = f"{int(round(float(rom_fraction) * 100.0))}% ROM"
+
+    return reps_long_df, mean_df, aligned_reps
+
 def detect_position_deg_rep_bounds(
     time_values,
     position_values,
@@ -8953,6 +9046,8 @@ with tab6:
                     )
                     zero_rise_rom_reps_long_df = pd.DataFrame()
                     zero_rise_rom_mean_df = pd.DataFrame()
+                    fifty_rom_reps_long_df = pd.DataFrame()
+                    fifty_rom_mean_df = pd.DataFrame()
                     if selected_posterior_rep_items:
                         (
                             _zero_rise_torque_reps_long_df,
@@ -8967,6 +9062,18 @@ with tab6:
                             time_col="Elapsed Seconds",
                             n_points=int(posterior_n_points),
                             x_axis_mode="raw_time",
+                        )
+                        (
+                            fifty_rom_reps_long_df,
+                            fifty_rom_mean_df,
+                            _fifty_rom_alignment_metadata,
+                        ) = extract_position_fraction_aligned_curves(
+                            selected_posterior_rep_items,
+                            rom_fraction=0.50,
+                            time_col="Elapsed Seconds",
+                            position_col="Position_Deg",
+                            n_points=int(posterior_n_points),
+                            lowpass_cutoff_hz=1.0,
                         )
 
                     with single_rep_plot_col:
@@ -9247,6 +9354,68 @@ with tab6:
                                         zero_rise_rom_fig,
                                         use_container_width=True,
                                         key=f"posterior_cuff_zero_rise_rom_plot_{posterior_n_points}_{len(selected_posterior_rep_items)}",
+                                    )
+                                if not fifty_rom_reps_long_df.empty and not fifty_rom_mean_df.empty:
+                                    fifty_rom_fig = go.Figure()
+                                    for rep_number, rep_df in fifty_rom_reps_long_df.groupby("rep_number"):
+                                        file_name = rep_df["file_name"].iloc[0]
+                                        fifty_rom_fig.add_trace(go.Scatter(
+                                            x=rep_df["alignment_x"],
+                                            y=rep_df["position_deg"],
+                                            mode="lines",
+                                            line=dict(width=1.5),
+                                            opacity=0.45,
+                                            name=file_name,
+                                        ))
+                                    fifty_rom_fig.add_trace(go.Scatter(
+                                        x=fifty_rom_mean_df["alignment_x"],
+                                        y=fifty_rom_mean_df["upper_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        showlegend=False,
+                                        hoverinfo="skip",
+                                    ))
+                                    fifty_rom_fig.add_trace(go.Scatter(
+                                        x=fifty_rom_mean_df["alignment_x"],
+                                        y=fifty_rom_mean_df["lower_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        fill="tonexty",
+                                        name="±1 SD",
+                                    ))
+                                    fifty_rom_fig.add_trace(go.Scatter(
+                                        x=fifty_rom_mean_df["alignment_x"],
+                                        y=fifty_rom_mean_df["mean_position_deg"],
+                                        mode="lines",
+                                        line=dict(width=4),
+                                        name="Mean Position",
+                                    ))
+                                    fifty_rom_anchor_x = float(fifty_rom_mean_df.attrs.get("anchor_x", 0.0))
+                                    fifty_rom_fig.add_vline(
+                                        x=fifty_rom_anchor_x,
+                                        line_width=2,
+                                        line_dash="dot",
+                                        line_color="rgba(255,255,255,0.45)",
+                                    )
+                                    fifty_rom_fig.add_annotation(
+                                        x=fifty_rom_anchor_x,
+                                        y=1.03,
+                                        xref="x",
+                                        yref="paper",
+                                        text=str(fifty_rom_mean_df.attrs.get("anchor_label", "50% ROM")),
+                                        showarrow=False,
+                                        font=dict(size=11),
+                                    )
+                                    fifty_rom_fig.update_layout(
+                                        title="Posterior Cuff ROM When Aligned at 50% ROM (1 Hz Filtered)",
+                                        xaxis_title=str(fifty_rom_mean_df.attrs.get("x_axis_title", "Aligned Time (s)")),
+                                        yaxis_title="Position_Deg",
+                                        height=500,
+                                    )
+                                    st.plotly_chart(
+                                        fifty_rom_fig,
+                                        use_container_width=True,
+                                        key=f"posterior_cuff_fifty_rom_plot_{posterior_n_points}_{len(selected_posterior_rep_items)}",
                                     )
                                 raw_position_items = []
                                 for rep_item in selected_posterior_rep_items:
