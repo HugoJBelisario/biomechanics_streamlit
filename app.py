@@ -2022,6 +2022,15 @@ def extract_single_rep_file_aligned_curves(
             if position_values is not None
             else None
         )
+        filtered_position_rep_bounds = (
+            detect_position_deg_rep_bounds(
+                time_values,
+                position_values,
+                lowpass_cutoff_hz=1.0,
+            )
+            if position_values is not None
+            else None
+        )
         position_start_idx = (
             int(position_rep_bounds["start_idx"])
             if position_rep_bounds is not None
@@ -2035,6 +2044,20 @@ def extract_single_rep_file_aligned_curves(
         if position_end_idx <= position_start_idx:
             position_start_idx = 0
             position_end_idx = max(0, len(torque_values) - 1)
+
+        filtered_position_start_idx = (
+            int(filtered_position_rep_bounds["start_idx"])
+            if filtered_position_rep_bounds is not None
+            else position_start_idx
+        )
+        filtered_position_end_idx = (
+            int(filtered_position_rep_bounds["end_idx"])
+            if filtered_position_rep_bounds is not None
+            else position_end_idx
+        )
+        if filtered_position_end_idx <= filtered_position_start_idx:
+            filtered_position_start_idx = position_start_idx
+            filtered_position_end_idx = position_end_idx
 
         manual_rom_end = item.get("manual_rom_end") or {}
         manual_position_end_idx = None
@@ -2055,6 +2078,7 @@ def extract_single_rep_file_aligned_curves(
                     manual_position_end_idx = None
                 else:
                     position_end_idx = int(manual_position_end_idx)
+                    filtered_position_end_idx = int(manual_position_end_idx)
                     manual_position_end_time = float(time_values[manual_position_end_idx])
 
         peak_pos_idx = int(np.argmax(torque_values))
@@ -2172,6 +2196,8 @@ def extract_single_rep_file_aligned_curves(
             "rom_plateau_idx": rom_plateau_idx,
             "position_start_idx": position_start_idx,
             "position_end_idx": position_end_idx,
+            "filtered_position_start_idx": filtered_position_start_idx,
+            "filtered_position_end_idx": filtered_position_end_idx,
             "manual_position_end_idx": manual_position_end_idx,
             "manual_position_end_time": manual_position_end_time,
             "anchor_time": anchor_time,
@@ -2329,6 +2355,67 @@ def extract_single_rep_file_aligned_curves(
         mean_df.attrs["secondary_anchor_x"] = 100.0
         mean_df.attrs["secondary_anchor_label"] = "Stabilized Peak ROM End"
         mean_df.attrs["common_plateau_angle"] = common_plateau_angle
+    elif x_axis_mode == "filtered_position_window_normalized":
+        percent_axis = np.linspace(0.0, 100.0, int(n_points))
+        segment_fraction_rows = []
+        valid_segment_reps = []
+
+        for rep in aligned_reps:
+            start_pct = (float(rep["filtered_position_start_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
+            end_pct = (float(rep["filtered_position_end_idx"]) / max(1.0, float(len(rep["torque_values"]) - 1))) * 100.0
+            if not (0.0 <= start_pct < end_pct <= 100.0):
+                continue
+            segment_fraction_rows.append(np.array([
+                start_pct,
+                end_pct - start_pct,
+                100.0 - end_pct,
+            ], dtype=float) / 100.0)
+            valid_segment_reps.append((rep, start_pct, end_pct))
+
+        if not valid_segment_reps:
+            return pd.DataFrame(), pd.DataFrame(), aligned_reps, pd.DataFrame(), pd.DataFrame()
+
+        median_segment_fractions = np.nanmedian(np.vstack(segment_fraction_rows), axis=0)
+        median_segment_fractions = median_segment_fractions / median_segment_fractions.sum()
+        start_target_pct = float(median_segment_fractions[0] * 100.0)
+        end_target_pct = float((median_segment_fractions[0] + median_segment_fractions[1]) * 100.0)
+
+        for rep, start_pct, end_pct in valid_segment_reps:
+            mapped_pct = np.interp(
+                rep["sample_pct"],
+                [0.0, start_pct, end_pct, 100.0],
+                [0.0, start_target_pct, end_target_pct, 100.0],
+            )
+            interp_torque = np.interp(percent_axis, mapped_pct, rep["torque_values"])
+            interpolated_curves.append(interp_torque)
+            rep_rows.append(pd.DataFrame({
+                "rep_number": rep["rep_number"],
+                "file_name": rep["file_name"],
+                "alignment_x": percent_axis,
+                "torque_nm": interp_torque,
+            }))
+            display_position_values = rep.get("rom_display_position_values")
+            if display_position_values is not None:
+                interp_position = np.interp(percent_axis, mapped_pct, display_position_values)
+                interpolated_rom_curves.append(interp_position)
+                rom_rep_rows.append(pd.DataFrame({
+                    "rep_number": rep["rep_number"],
+                    "file_name": rep["file_name"],
+                    "alignment_x": percent_axis,
+                    "position_deg": interp_position,
+                }))
+
+        mean_df = pd.DataFrame({
+            "alignment_x": percent_axis,
+            "mean_torque_nm": np.nanmean(np.vstack(interpolated_curves), axis=0),
+            "std_torque_nm": np.nanstd(np.vstack(interpolated_curves), axis=0),
+        })
+        mean_df.attrs["x_axis_mode"] = "filtered_position_window_normalized"
+        mean_df.attrs["x_axis_title"] = "Filtered ROM Window (%)"
+        mean_df.attrs["anchor_x"] = start_target_pct
+        mean_df.attrs["anchor_label"] = "Filtered ROM Start"
+        mean_df.attrs["secondary_anchor_x"] = end_target_pct
+        mean_df.attrs["secondary_anchor_label"] = "Filtered ROM End"
     elif x_axis_mode == "position_window_normalized":
         percent_axis = np.linspace(0.0, 100.0, int(n_points))
         segment_fraction_rows = []
@@ -8941,8 +9028,9 @@ with tab6:
                         )
                         posterior_x_axis_mode = st.selectbox(
                             "Alignment view",
-                            options=["position_window_normalized", "zero_to_position_136_ascent_normalized", "zero_to_common_smoothed_rom_end_normalized", "zero_to_peak_normalized", "normalized_duration", "raw_time"],
+                            options=["filtered_position_window_normalized", "position_window_normalized", "zero_to_position_136_ascent_normalized", "zero_to_common_smoothed_rom_end_normalized", "zero_to_peak_normalized", "normalized_duration", "raw_time"],
                             format_func=lambda value: {
+                                "filtered_position_window_normalized": "Filtered ROM Start -> End Normalized",
                                 "position_window_normalized": "ROM Start -> End Normalized",
                                 "zero_to_position_136_ascent_normalized": "0 Torque Rise -> 136° On Ascent",
                                 "zero_to_common_smoothed_rom_end_normalized": "0 Torque Rise -> Stabilized Peak ROM End",
@@ -8952,11 +9040,11 @@ with tab6:
                             }.get(value, value.replace("_", " ").title()),
                             key="posterior_cuff_single_rep_x_axis_mode",
                         )
-                        if posterior_x_axis_mode == "position_window_normalized":
+                        if posterior_x_axis_mode in {"position_window_normalized", "filtered_position_window_normalized"}:
                             posterior_anchor_mode = "zero_torque_rise"
                             st.caption(
-                                "Default posterior cuff workflow: each file is aligned by the smoothed "
-                                "`Position_Deg` / ROM start and end of the rep."
+                                "This posterior cuff workflow defines the torque window from ROM start to ROM end "
+                                "using the position signal rather than a torque-event endpoint."
                             )
                         else:
                             posterior_anchor_mode = st.selectbox(
