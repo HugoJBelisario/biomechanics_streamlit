@@ -1514,7 +1514,7 @@ def extract_torque_fraction_window_curves(
 
         time_values = rep_df[time_col].to_numpy(dtype=float)
         torque_values = rep_df[value_col].to_numpy(dtype=float)
-        smooth_torque = smooth_biodex_display_curve(torque_values, preferred_window=31, polyorder=3)
+        smooth_torque = smooth_biodex_display_curve(torque_values, window_length=31, polyorder=3)
         if smooth_torque is None:
             smooth_torque = torque_values
 
