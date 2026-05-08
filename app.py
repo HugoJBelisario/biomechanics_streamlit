@@ -9344,7 +9344,7 @@ with tab6:
                                             positive_diffs = time_diffs[np.isfinite(time_diffs) & (time_diffs > 0)]
                                             if positive_diffs.size > 0:
                                                 manual_editor_step = max(0.001, float(np.nanmedian(positive_diffs)))
-                                        manual_end_time_seconds = st.number_input(
+                                        manual_end_time_seconds = st.slider(
                                             "Manual ROM end time (s)",
                                             min_value=float(manual_editor_rep_df["Elapsed Seconds"].min()),
                                             max_value=float(manual_editor_rep_df["Elapsed Seconds"].max()),
@@ -9356,6 +9356,11 @@ with tab6:
                                             manual_editor_rep_df["Elapsed Seconds"].to_numpy(dtype=float) - float(manual_end_time_seconds)
                                         )))
                                         manual_end_position = float(manual_editor_filtered_position[manual_end_idx])
+                                        st.caption(
+                                            "Drag the slider to scrub the filtered ROM line. "
+                                            f"Selected endpoint: `{float(manual_editor_rep_df['Elapsed Seconds'].iloc[manual_end_idx]):.3f} s`, "
+                                            f"`{manual_end_position:.1f} deg`."
+                                        )
                                         manual_editor_fig = go.Figure()
                                         manual_editor_fig.add_trace(go.Scatter(
                                             x=manual_editor_rep_df["Elapsed Seconds"],
