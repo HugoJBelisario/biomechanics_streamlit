@@ -1000,6 +1000,113 @@ def fetch_biodex_tests_for_restore(cur):
         ],
     )
 
+def ensure_biodex_manual_landmarks_table(cur):
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS biodex_manual_landmarks (
+            biodex_manual_landmark_id BIGSERIAL PRIMARY KEY,
+            biodex_test_id BIGINT NOT NULL REFERENCES biodex_tests(biodex_test_id) ON DELETE CASCADE,
+            landmark_type TEXT NOT NULL,
+            sample_index INTEGER,
+            time_seconds DOUBLE PRECISION,
+            position_deg DOUBLE PRECISION,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_biodex_manual_landmarks_test_type
+        ON biodex_manual_landmarks (biodex_test_id, landmark_type)
+        """
+    )
+
+def fetch_biodex_manual_landmark(cur, biodex_test_id, landmark_type):
+    ensure_biodex_manual_landmarks_table(cur)
+    cur.execute(
+        """
+        SELECT
+            biodex_manual_landmark_id,
+            biodex_test_id,
+            landmark_type,
+            sample_index,
+            time_seconds,
+            position_deg,
+            created_at
+        FROM biodex_manual_landmarks
+        WHERE biodex_test_id = %s
+          AND landmark_type = %s
+        LIMIT 1
+        """,
+        (int(biodex_test_id), landmark_type),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None
+    return {
+        "biodex_manual_landmark_id": int(row[0]),
+        "biodex_test_id": int(row[1]),
+        "landmark_type": row[2],
+        "sample_index": int(row[3]) if row[3] is not None else None,
+        "time_seconds": float(row[4]) if row[4] is not None else None,
+        "position_deg": float(row[5]) if row[5] is not None else None,
+        "created_at": row[6],
+    }
+
+def upsert_biodex_manual_landmark(
+    cur,
+    conn,
+    biodex_test_id,
+    landmark_type,
+    sample_index,
+    time_seconds,
+    position_deg,
+):
+    ensure_biodex_manual_landmarks_table(cur)
+    cur.execute(
+        """
+        INSERT INTO biodex_manual_landmarks (
+            biodex_test_id,
+            landmark_type,
+            sample_index,
+            time_seconds,
+            position_deg
+        )
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (biodex_test_id, landmark_type)
+        DO UPDATE SET
+            sample_index = EXCLUDED.sample_index,
+            time_seconds = EXCLUDED.time_seconds,
+            position_deg = EXCLUDED.position_deg,
+            created_at = NOW()
+        RETURNING biodex_manual_landmark_id
+        """,
+        (
+            int(biodex_test_id),
+            landmark_type,
+            int(sample_index) if sample_index is not None else None,
+            float(time_seconds) if time_seconds is not None else None,
+            float(position_deg) if position_deg is not None else None,
+        ),
+    )
+    landmark_id = int(cur.fetchone()[0])
+    conn.commit()
+    return landmark_id
+
+def delete_biodex_manual_landmark(cur, conn, biodex_test_id, landmark_type):
+    ensure_biodex_manual_landmarks_table(cur)
+    cur.execute(
+        """
+        DELETE FROM biodex_manual_landmarks
+        WHERE biodex_test_id = %s
+          AND landmark_type = %s
+        """,
+        (int(biodex_test_id), landmark_type),
+    )
+    deleted_count = cur.rowcount
+    conn.commit()
+    return int(deleted_count)
+
 def build_biodex_preview_item_from_db(cur, biodex_test_id):
     restore_tests_df = fetch_biodex_tests_for_restore(cur)
     selected_rows = restore_tests_df.loc[
@@ -1033,6 +1140,11 @@ def build_biodex_preview_item_from_db(cur, biodex_test_id):
         col for col in ["Angular_Velocity_Deg/Sec", "Position_Deg", "Torque_Nm"]
         if col in preview_df.columns and preview_df[col].notna().any()
     ]
+    manual_rom_end = fetch_biodex_manual_landmark(
+        cur,
+        biodex_test_id=int(test_row["biodex_test_id"]),
+        landmark_type="posterior_cuff_rom_end",
+    )
 
     return {
         "biodex_test_id": int(test_row["biodex_test_id"]),
@@ -1045,6 +1157,7 @@ def build_biodex_preview_item_from_db(cur, biodex_test_id):
         "protocol_type": test_row["protocol_type"],
         "test_date": test_row["test_date"],
         "throwing_context": test_row["throwing_context"],
+        "manual_rom_end": manual_rom_end,
     }
 
 def fetch_biodex_rep_windows(cur, biodex_processing_run_id):
@@ -1819,6 +1932,27 @@ def extract_single_rep_file_aligned_curves(
             position_start_idx = 0
             position_end_idx = max(0, len(torque_values) - 1)
 
+        manual_rom_end = item.get("manual_rom_end") or {}
+        manual_position_end_idx = None
+        manual_position_end_time = None
+        if manual_rom_end:
+            manual_time_seconds = manual_rom_end.get("time_seconds")
+            if manual_time_seconds is not None and np.isfinite(manual_time_seconds):
+                manual_position_end_idx = int(np.argmin(np.abs(time_values - float(manual_time_seconds))))
+            else:
+                manual_sample_index = manual_rom_end.get("sample_index")
+                if manual_sample_index is not None:
+                    manual_position_end_idx = min(
+                        max(int(manual_sample_index) - 1, 0),
+                        max(len(torque_values) - 1, 0),
+                    )
+            if manual_position_end_idx is not None:
+                if manual_position_end_idx <= position_start_idx:
+                    manual_position_end_idx = None
+                else:
+                    position_end_idx = int(manual_position_end_idx)
+                    manual_position_end_time = float(time_values[manual_position_end_idx])
+
         peak_pos_idx = int(np.argmax(torque_values))
         zero_torque_rise_idx = peak_pos_idx
         for idx in range(peak_pos_idx, 0, -1):
@@ -1933,6 +2067,8 @@ def extract_single_rep_file_aligned_curves(
             "rom_plateau_idx": rom_plateau_idx,
             "position_start_idx": position_start_idx,
             "position_end_idx": position_end_idx,
+            "manual_position_end_idx": manual_position_end_idx,
+            "manual_position_end_time": manual_position_end_time,
             "anchor_time": anchor_time,
             "anchor_torque": float(torque_values[anchor_idx]),
             "anchor_label": anchor_label,
@@ -2022,16 +2158,20 @@ def extract_single_rep_file_aligned_curves(
         valid_segment_reps = []
         for rep in aligned_reps:
             zero_idx = int(rep["zero_torque_rise_idx"])
-            smooth_position_values = rep.get("smooth_position_values")
-            position_end_idx = find_first_common_rom_band_entry(
-                smooth_position_values,
-                zero_idx,
-                rep.get("position_fs"),
-                common_plateau_angle,
-                angle_tolerance_deg=common_angle_tolerance,
-                velocity_tolerance_deg_per_second=15.0,
-                hold_time_seconds=float(common_rom_end_hold_time_seconds),
-            )
+            manual_position_end_idx = rep.get("manual_position_end_idx")
+            if manual_position_end_idx is not None:
+                position_end_idx = int(manual_position_end_idx)
+            else:
+                smooth_position_values = rep.get("smooth_position_values")
+                position_end_idx = find_first_common_rom_band_entry(
+                    smooth_position_values,
+                    zero_idx,
+                    rep.get("position_fs"),
+                    common_plateau_angle,
+                    angle_tolerance_deg=common_angle_tolerance,
+                    velocity_tolerance_deg_per_second=15.0,
+                    hold_time_seconds=float(common_rom_end_hold_time_seconds),
+                )
             if position_end_idx is None:
                 position_end_idx = int(rep["position_end_idx"])
             if position_end_idx <= zero_idx:
@@ -8417,6 +8557,7 @@ with tab6:
                     "protocol_type": selected_biodex_test_protocol,
                     "test_date": stored_test_datetime,
                     "throwing_context": selected_biodex_test_throwing_context,
+                    "manual_rom_end": None,
                 })
 
             if stored_uploads:
@@ -9094,11 +9235,24 @@ with tab6:
                                         rep_df["Elapsed Seconds"].to_numpy(dtype=float),
                                         rep_df["Position_Deg"].to_numpy(dtype=float)
                                     )
-                                    raw_position_items.append((rep_item["name"], rep_df, position_bounds))
+                                    filtered_position, _filtered_fs, _clean_position = smooth_position_deg_signal(
+                                        rep_df["Elapsed Seconds"].to_numpy(dtype=float),
+                                        rep_df["Position_Deg"].to_numpy(dtype=float),
+                                        lowpass_cutoff_hz=float(posterior_filtered_cutoff_hz),
+                                    )
+                                    raw_position_items.append({
+                                        "rep_item": rep_item,
+                                        "file_name": rep_item["name"],
+                                        "rep_df": rep_df,
+                                        "position_bounds": position_bounds,
+                                        "filtered_position": filtered_position,
+                                    })
 
                                 if raw_position_items:
                                     posterior_raw_only_position_fig = go.Figure()
-                                    for file_name, rep_df, _position_bounds in raw_position_items:
+                                    for position_item in raw_position_items:
+                                        file_name = position_item["file_name"]
+                                        rep_df = position_item["rep_df"]
                                         posterior_raw_only_position_fig.add_trace(go.Scatter(
                                             x=rep_df["Elapsed Seconds"],
                                             y=rep_df["Position_Deg"],
@@ -9120,12 +9274,10 @@ with tab6:
                                     )
 
                                     posterior_filtered_position_fig = go.Figure()
-                                    for file_name, rep_df, _position_bounds in raw_position_items:
-                                        filtered_position, _fs, _clean_position = smooth_position_deg_signal(
-                                            rep_df["Elapsed Seconds"].to_numpy(dtype=float),
-                                            rep_df["Position_Deg"].to_numpy(dtype=float),
-                                            lowpass_cutoff_hz=float(posterior_filtered_cutoff_hz),
-                                        )
+                                    for position_item in raw_position_items:
+                                        file_name = position_item["file_name"]
+                                        rep_df = position_item["rep_df"]
+                                        filtered_position = np.asarray(position_item["filtered_position"], dtype=float)
                                         posterior_filtered_position_fig.add_trace(go.Scatter(
                                             x=rep_df["Elapsed Seconds"],
                                             y=filtered_position,
@@ -9146,8 +9298,165 @@ with tab6:
                                         key=f"posterior_cuff_single_rep_filtered_position_plot_{len(raw_position_items)}",
                                     )
 
+                                    manual_editor_options = [
+                                        int(position_item["rep_item"]["biodex_test_id"])
+                                        for position_item in raw_position_items
+                                        if position_item["rep_item"].get("biodex_test_id") is not None
+                                    ]
+                                    if manual_editor_options:
+                                        manual_editor_labels = {
+                                            int(position_item["rep_item"]["biodex_test_id"]): position_item["file_name"]
+                                            for position_item in raw_position_items
+                                            if position_item["rep_item"].get("biodex_test_id") is not None
+                                        }
+                                        st.markdown("#### Manual ROM End Override")
+                                        st.caption(
+                                            "Pick a stored rep, set the ROM end time from the filtered position view, and save it. "
+                                            "That saved endpoint will override the automatic ROM end in the posterior cuff torque normalization modes that use ROM end."
+                                        )
+                                        manual_editor_test_id = st.selectbox(
+                                            "Rep to edit",
+                                            options=manual_editor_options,
+                                            format_func=lambda test_id: manual_editor_labels.get(int(test_id), f"Test {int(test_id)}"),
+                                            key="posterior_cuff_manual_rom_end_test_id",
+                                        )
+                                        manual_editor_item = next(
+                                            position_item
+                                            for position_item in raw_position_items
+                                            if int(position_item["rep_item"]["biodex_test_id"]) == int(manual_editor_test_id)
+                                        )
+                                        manual_editor_rep_df = manual_editor_item["rep_df"]
+                                        manual_editor_filtered_position = np.asarray(manual_editor_item["filtered_position"], dtype=float)
+                                        manual_editor_bounds = manual_editor_item["position_bounds"]
+                                        manual_editor_existing = manual_editor_item["rep_item"].get("manual_rom_end") or {}
+                                        if (
+                                            manual_editor_existing.get("time_seconds") is not None
+                                            and np.isfinite(float(manual_editor_existing["time_seconds"]))
+                                        ):
+                                            default_manual_end_time = float(manual_editor_existing["time_seconds"])
+                                        else:
+                                            default_manual_end_time = float(
+                                                manual_editor_rep_df["Elapsed Seconds"].iloc[int(manual_editor_bounds["end_idx"])]
+                                            )
+                                        manual_editor_step = 0.01
+                                        if len(manual_editor_rep_df) > 1:
+                                            time_diffs = np.diff(manual_editor_rep_df["Elapsed Seconds"].to_numpy(dtype=float))
+                                            positive_diffs = time_diffs[np.isfinite(time_diffs) & (time_diffs > 0)]
+                                            if positive_diffs.size > 0:
+                                                manual_editor_step = max(0.001, float(np.nanmedian(positive_diffs)))
+                                        manual_end_time_seconds = st.number_input(
+                                            "Manual ROM end time (s)",
+                                            min_value=float(manual_editor_rep_df["Elapsed Seconds"].min()),
+                                            max_value=float(manual_editor_rep_df["Elapsed Seconds"].max()),
+                                            value=float(default_manual_end_time),
+                                            step=float(manual_editor_step),
+                                            key="posterior_cuff_manual_rom_end_time_seconds",
+                                        )
+                                        manual_end_idx = int(np.argmin(np.abs(
+                                            manual_editor_rep_df["Elapsed Seconds"].to_numpy(dtype=float) - float(manual_end_time_seconds)
+                                        )))
+                                        manual_end_position = float(manual_editor_filtered_position[manual_end_idx])
+                                        manual_editor_fig = go.Figure()
+                                        manual_editor_fig.add_trace(go.Scatter(
+                                            x=manual_editor_rep_df["Elapsed Seconds"],
+                                            y=manual_editor_filtered_position,
+                                            mode="lines",
+                                            line=dict(width=3),
+                                            name=f"{manual_editor_item['file_name']} (Filtered)",
+                                        ))
+                                        manual_editor_fig.add_vline(
+                                            x=float(manual_editor_rep_df["Elapsed Seconds"].iloc[manual_end_idx]),
+                                            line_width=2,
+                                            line_dash="dot",
+                                            line_color="rgba(255,184,108,0.75)",
+                                        )
+                                        manual_editor_fig.add_trace(go.Scatter(
+                                            x=[float(manual_editor_rep_df["Elapsed Seconds"].iloc[manual_end_idx])],
+                                            y=[manual_end_position],
+                                            mode="markers",
+                                            marker=dict(size=11, symbol="diamond", color="#ffb86c"),
+                                            name="Manual ROM End",
+                                        ))
+                                        manual_editor_fig.update_layout(
+                                            title="Posterior Cuff Reactive Eccentric: Manual ROM End Editor",
+                                            xaxis_title="Elapsed Time (s)",
+                                            yaxis_title="Position_Deg",
+                                            height=420,
+                                        )
+                                        st.plotly_chart(
+                                            manual_editor_fig,
+                                            use_container_width=True,
+                                            key=f"posterior_cuff_manual_rom_end_editor_{int(manual_editor_test_id)}",
+                                        )
+                                        manual_action_col1, manual_action_col2 = st.columns(2)
+                                        with manual_action_col1:
+                                            save_manual_rom_end = st.button(
+                                                "Save Manual ROM End",
+                                                key="posterior_cuff_save_manual_rom_end",
+                                                use_container_width=True,
+                                            )
+                                        with manual_action_col2:
+                                            clear_manual_rom_end = st.button(
+                                                "Clear Manual ROM End Override",
+                                                key="posterior_cuff_clear_manual_rom_end",
+                                                use_container_width=True,
+                                            )
+
+                                        if save_manual_rom_end:
+                                            try:
+                                                upsert_biodex_manual_landmark(
+                                                    cur,
+                                                    conn,
+                                                    biodex_test_id=int(manual_editor_test_id),
+                                                    landmark_type="posterior_cuff_rom_end",
+                                                    sample_index=int(manual_end_idx + 1),
+                                                    time_seconds=float(manual_editor_rep_df["Elapsed Seconds"].iloc[manual_end_idx]),
+                                                    position_deg=float(manual_end_position),
+                                                )
+                                            except Exception as exc:
+                                                conn.rollback()
+                                                st.error(f"Could not save the manual ROM end: {exc}")
+                                            else:
+                                                updated_manual_landmark = fetch_biodex_manual_landmark(
+                                                    cur,
+                                                    biodex_test_id=int(manual_editor_test_id),
+                                                    landmark_type="posterior_cuff_rom_end",
+                                                )
+                                                updated_previews = []
+                                                for preview_item_entry in st.session_state.get("biodex_test_uploaded_previews", []):
+                                                    if int(preview_item_entry.get("biodex_test_id", -1)) == int(manual_editor_test_id):
+                                                        preview_item_entry = dict(preview_item_entry)
+                                                        preview_item_entry["manual_rom_end"] = updated_manual_landmark
+                                                    updated_previews.append(preview_item_entry)
+                                                st.session_state["biodex_test_uploaded_previews"] = updated_previews
+                                                st.success("Saved the manual ROM end override for this rep.")
+                                                st.rerun()
+
+                                        if clear_manual_rom_end:
+                                            try:
+                                                delete_biodex_manual_landmark(
+                                                    cur,
+                                                    conn,
+                                                    biodex_test_id=int(manual_editor_test_id),
+                                                    landmark_type="posterior_cuff_rom_end",
+                                                )
+                                            except Exception as exc:
+                                                conn.rollback()
+                                                st.error(f"Could not clear the manual ROM end override: {exc}")
+                                            else:
+                                                updated_previews = []
+                                                for preview_item_entry in st.session_state.get("biodex_test_uploaded_previews", []):
+                                                    if int(preview_item_entry.get("biodex_test_id", -1)) == int(manual_editor_test_id):
+                                                        preview_item_entry = dict(preview_item_entry)
+                                                        preview_item_entry["manual_rom_end"] = None
+                                                    updated_previews.append(preview_item_entry)
+                                                st.session_state["biodex_test_uploaded_previews"] = updated_previews
+                                                st.success("Cleared the manual ROM end override for this rep.")
+                                                st.rerun()
+
                                     common_smoothed_rom_end_values = []
-                                    for _file_name, _rep_df, position_bounds in raw_position_items:
+                                    for position_item in raw_position_items:
+                                        position_bounds = position_item["position_bounds"]
                                         smooth_position = np.asarray(position_bounds["smooth_position"], dtype=float)
                                         final_plateau_value = position_bounds.get("final_plateau_value")
                                         if final_plateau_value is None or not np.isfinite(final_plateau_value):
@@ -9161,11 +9470,26 @@ with tab6:
                                     )
                                     posterior_raw_position_fig = go.Figure()
                                     target_angle_136 = 136.0
-                                    for file_name, rep_df, position_bounds in raw_position_items:
+                                    any_manual_rom_override = False
+                                    for position_item in raw_position_items:
+                                        file_name = position_item["file_name"]
+                                        rep_df = position_item["rep_df"]
+                                        position_bounds = position_item["position_bounds"]
+                                        rep_item = position_item["rep_item"]
                                         smooth_position = np.asarray(position_bounds["smooth_position"], dtype=float)
                                         start_idx = int(position_bounds["start_idx"])
                                         end_idx = int(position_bounds["end_idx"])
-                                        if posterior_x_axis_mode == "zero_to_position_136_ascent_normalized":
+                                        manual_rom_end = rep_item.get("manual_rom_end") or {}
+                                        if (
+                                            manual_rom_end.get("time_seconds") is not None
+                                            and np.isfinite(float(manual_rom_end["time_seconds"]))
+                                        ):
+                                            manual_end_time = float(manual_rom_end["time_seconds"])
+                                            end_idx = int(np.argmin(np.abs(
+                                                rep_df["Elapsed Seconds"].to_numpy(dtype=float) - manual_end_time
+                                            )))
+                                            any_manual_rom_override = True
+                                        elif posterior_x_axis_mode == "zero_to_position_136_ascent_normalized":
                                             threshold_end_idx = find_first_position_ascent_threshold(
                                                 smooth_position,
                                                 start_idx,
@@ -9268,19 +9592,29 @@ with tab6:
                                         yaxis_title="Position_Deg",
                                         height=450,
                                     )
+                                    if posterior_x_axis_mode == "zero_to_position_136_ascent_normalized":
+                                        raw_position_note = (
+                                            "Dashed line = smoothed Position_Deg, green marker = detected start, "
+                                            "orange marker = manual ROM end override when saved, otherwise 136° ascent end"
+                                        )
+                                    elif posterior_x_axis_mode == "zero_to_common_smoothed_rom_end_normalized":
+                                        raw_position_note = (
+                                            "Dashed line = smoothed Position_Deg, green marker = detected start, "
+                                            "orange marker = manual ROM end override when saved, otherwise first entry into shared stabilized ROM band"
+                                        )
+                                    else:
+                                        raw_position_note = (
+                                            "Dashed line = smoothed Position_Deg, green marker = detected start, "
+                                            "orange marker = manual ROM end override when saved, otherwise detected end"
+                                        )
                                     posterior_raw_position_fig.add_annotation(
                                         x=1.0,
                                         y=1.10,
-                                        xref="paper",
-                                        yref="paper",
+                                            xref="paper",
+                                            yref="paper",
                                         xanchor="right",
                                         yanchor="bottom",
-                                        text=(
-                                            "Dashed line = smoothed Position_Deg, green marker = detected start, "
-                                            "orange marker = 136° ascent end"
-                                            if posterior_x_axis_mode == "zero_to_position_136_ascent_normalized"
-                                            else "Dashed line = smoothed Position_Deg, green marker = detected start, orange marker = first entry into shared stabilized ROM band"
-                                        ),
+                                        text=raw_position_note,
                                         showarrow=False,
                                         font=dict(size=11),
                                     )
