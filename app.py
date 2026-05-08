@@ -1252,6 +1252,28 @@ def find_first_common_rom_band_entry(
 
     return None
 
+def find_first_position_ascent_threshold(
+    smooth_position_values,
+    start_idx,
+    target_angle,
+):
+    """Find the first time a smoothed ROM curve reaches a target angle on ascent."""
+    values = np.asarray(smooth_position_values, dtype=float)
+    if len(values) == 0:
+        return None
+
+    start_idx = int(max(0, start_idx))
+    if start_idx >= len(values):
+        return None
+
+    for idx in range(start_idx, len(values)):
+        if not np.isfinite(values[idx]):
+            continue
+        if values[idx] >= float(target_angle):
+            return int(idx)
+
+    return None
+
 def detect_position_deg_rep_bounds(
     time_values,
     position_values,
@@ -1926,7 +1948,66 @@ def extract_single_rep_file_aligned_curves(
     interpolated_curves = []
     rom_rep_rows = []
     interpolated_rom_curves = []
-    if x_axis_mode == "zero_to_common_smoothed_rom_end_normalized":
+    if x_axis_mode == "zero_to_position_136_ascent_normalized":
+        percent_axis = np.linspace(0.0, 100.0, int(n_points))
+        target_angle = 136.0
+        valid_segment_reps = []
+        for rep in aligned_reps:
+            zero_idx = int(rep["zero_torque_rise_idx"])
+            smooth_position_values = rep.get("smooth_position_values")
+            position_end_idx = find_first_position_ascent_threshold(
+                smooth_position_values,
+                zero_idx,
+                target_angle,
+            )
+            if position_end_idx is None or position_end_idx <= zero_idx:
+                continue
+            valid_segment_reps.append((rep, zero_idx, position_end_idx))
+
+        if not valid_segment_reps:
+            return pd.DataFrame(), pd.DataFrame(), aligned_reps, pd.DataFrame(), pd.DataFrame()
+
+        for rep, zero_idx, position_end_idx in valid_segment_reps:
+            torque_window = rep["torque_values"][zero_idx:position_end_idx + 1]
+            interp_torque = np.interp(
+                percent_axis,
+                np.linspace(0.0, 100.0, len(torque_window)),
+                torque_window,
+            )
+            interpolated_curves.append(interp_torque)
+            rep_rows.append(pd.DataFrame({
+                "rep_number": rep["rep_number"],
+                "file_name": rep["file_name"],
+                "alignment_x": percent_axis,
+                "torque_nm": interp_torque,
+            }))
+            if rep["position_values"] is not None:
+                position_window = rep["position_values"][zero_idx:position_end_idx + 1]
+                interp_position = np.interp(
+                    percent_axis,
+                    np.linspace(0.0, 100.0, len(position_window)),
+                    position_window,
+                )
+                interpolated_rom_curves.append(interp_position)
+                rom_rep_rows.append(pd.DataFrame({
+                    "rep_number": rep["rep_number"],
+                    "file_name": rep["file_name"],
+                    "alignment_x": percent_axis,
+                    "position_deg": interp_position,
+                }))
+
+        mean_df = pd.DataFrame({
+            "alignment_x": percent_axis,
+            "mean_torque_nm": np.nanmean(np.vstack(interpolated_curves), axis=0),
+            "std_torque_nm": np.nanstd(np.vstack(interpolated_curves), axis=0),
+        })
+        mean_df.attrs["x_axis_mode"] = "zero_to_position_136_ascent_normalized"
+        mean_df.attrs["x_axis_title"] = "0 Torque Rise to 136° Ascent (%)"
+        mean_df.attrs["anchor_x"] = 0.0
+        mean_df.attrs["anchor_label"] = "0 Torque Rise"
+        mean_df.attrs["secondary_anchor_x"] = 100.0
+        mean_df.attrs["secondary_anchor_label"] = "136° On Ascent"
+    elif x_axis_mode == "zero_to_common_smoothed_rom_end_normalized":
         percent_axis = np.linspace(0.0, 100.0, int(n_points))
         common_plateau_values = [
             float(rep["final_plateau_value"])
@@ -8608,9 +8689,10 @@ with tab6:
                         )
                         posterior_x_axis_mode = st.selectbox(
                             "Alignment view",
-                            options=["position_window_normalized", "zero_to_common_smoothed_rom_end_normalized", "zero_to_peak_normalized", "normalized_duration", "raw_time"],
+                            options=["position_window_normalized", "zero_to_position_136_ascent_normalized", "zero_to_common_smoothed_rom_end_normalized", "zero_to_peak_normalized", "normalized_duration", "raw_time"],
                             format_func=lambda value: {
                                 "position_window_normalized": "ROM Start -> End Normalized",
+                                "zero_to_position_136_ascent_normalized": "0 Torque Rise -> 136° On Ascent",
                                 "zero_to_common_smoothed_rom_end_normalized": "0 Torque Rise -> Stabilized Peak ROM End",
                                 "zero_to_peak_normalized": "0 Torque -> Peak Positive Normalized",
                                 "normalized_duration": "Normalized Rep Duration",
@@ -9078,11 +9160,20 @@ with tab6:
                                         else None
                                     )
                                     posterior_raw_position_fig = go.Figure()
+                                    target_angle_136 = 136.0
                                     for file_name, rep_df, position_bounds in raw_position_items:
                                         smooth_position = np.asarray(position_bounds["smooth_position"], dtype=float)
                                         start_idx = int(position_bounds["start_idx"])
                                         end_idx = int(position_bounds["end_idx"])
-                                        if common_smoothed_rom_end is not None:
+                                        if posterior_x_axis_mode == "zero_to_position_136_ascent_normalized":
+                                            threshold_end_idx = find_first_position_ascent_threshold(
+                                                smooth_position,
+                                                start_idx,
+                                                target_angle_136,
+                                            )
+                                            if threshold_end_idx is not None:
+                                                end_idx = int(threshold_end_idx)
+                                        elif common_smoothed_rom_end is not None:
                                             common_end_idx = find_first_common_rom_band_entry(
                                                 smooth_position,
                                                 start_idx,
@@ -9126,7 +9217,25 @@ with tab6:
                                             name=f"{file_name} End",
                                             showlegend=False,
                                         ))
-                                    if common_smoothed_rom_end is not None:
+                                    if posterior_x_axis_mode == "zero_to_position_136_ascent_normalized":
+                                        posterior_raw_position_fig.add_hline(
+                                            y=target_angle_136,
+                                            line_width=1.5,
+                                            line_dash="dot",
+                                            line_color="rgba(255,184,108,0.55)",
+                                        )
+                                        posterior_raw_position_fig.add_annotation(
+                                            x=1.0,
+                                            y=target_angle_136,
+                                            xref="paper",
+                                            yref="y",
+                                            xanchor="right",
+                                            yanchor="bottom",
+                                            text="136° On Ascent",
+                                            showarrow=False,
+                                            font=dict(size=11, color="rgba(255,184,108,0.95)"),
+                                        )
+                                    elif common_smoothed_rom_end is not None:
                                         posterior_raw_position_fig.add_hline(
                                             y=common_smoothed_rom_end,
                                             line_width=1.5,
@@ -9166,7 +9275,12 @@ with tab6:
                                         yref="paper",
                                         xanchor="right",
                                         yanchor="bottom",
-                                        text="Dashed line = smoothed Position_Deg, green marker = detected start, orange marker = first entry into shared stabilized ROM band",
+                                        text=(
+                                            "Dashed line = smoothed Position_Deg, green marker = detected start, "
+                                            "orange marker = 136° ascent end"
+                                            if posterior_x_axis_mode == "zero_to_position_136_ascent_normalized"
+                                            else "Dashed line = smoothed Position_Deg, green marker = detected start, orange marker = first entry into shared stabilized ROM band"
+                                        ),
                                         showarrow=False,
                                         font=dict(size=11),
                                     )
