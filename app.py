@@ -1737,6 +1737,8 @@ def extract_single_rep_file_aligned_curves(
     time_col="Elapsed Seconds",
     n_points=201,
     x_axis_mode="raw_time",
+    common_rom_end_tolerance_deg=2.5,
+    common_rom_end_hold_time_seconds=0.08,
 ):
     if not preview_items:
         return pd.DataFrame(), pd.DataFrame(), [], pd.DataFrame(), pd.DataFrame()
@@ -1935,7 +1937,7 @@ def extract_single_rep_file_aligned_curves(
             return pd.DataFrame(), pd.DataFrame(), aligned_reps, pd.DataFrame(), pd.DataFrame()
 
         common_plateau_angle = float(np.nanmedian(common_plateau_values))
-        common_angle_tolerance = 2.5
+        common_angle_tolerance = float(common_rom_end_tolerance_deg)
         valid_segment_reps = []
         for rep in aligned_reps:
             zero_idx = int(rep["zero_torque_rise_idx"])
@@ -1947,7 +1949,7 @@ def extract_single_rep_file_aligned_curves(
                 common_plateau_angle,
                 angle_tolerance_deg=common_angle_tolerance,
                 velocity_tolerance_deg_per_second=15.0,
-                hold_time_seconds=0.08,
+                hold_time_seconds=float(common_rom_end_hold_time_seconds),
             )
             if position_end_idx is None:
                 position_end_idx = int(rep["position_end_idx"])
@@ -8649,6 +8651,25 @@ with tab6:
                             step=10,
                             key="posterior_cuff_single_rep_points",
                         )
+                        posterior_common_rom_end_tolerance_deg = 2.5
+                        posterior_common_rom_end_hold_time_seconds = 0.08
+                        if posterior_x_axis_mode == "zero_to_common_smoothed_rom_end_normalized":
+                            posterior_common_rom_end_tolerance_deg = st.slider(
+                                "Shared ROM band tolerance (deg)",
+                                min_value=1.0,
+                                max_value=6.0,
+                                value=2.5,
+                                step=0.5,
+                                key="posterior_cuff_common_rom_end_tolerance_deg",
+                            )
+                            posterior_common_rom_end_hold_time_seconds = st.slider(
+                                "Shared ROM end hold (s)",
+                                min_value=0.00,
+                                max_value=0.30,
+                                value=0.08,
+                                step=0.01,
+                                key="posterior_cuff_common_rom_end_hold_time_seconds",
+                            )
                         posterior_filtered_cutoff_hz = st.slider(
                             "Filtered position smoothing cutoff (Hz)",
                             min_value=1.0,
@@ -8681,6 +8702,8 @@ with tab6:
                         time_col="Elapsed Seconds",
                         n_points=int(posterior_n_points),
                         x_axis_mode=posterior_x_axis_mode,
+                        common_rom_end_tolerance_deg=float(posterior_common_rom_end_tolerance_deg),
+                        common_rom_end_hold_time_seconds=float(posterior_common_rom_end_hold_time_seconds),
                     )
                     zero_rise_rom_reps_long_df = pd.DataFrame()
                     zero_rise_rom_mean_df = pd.DataFrame()
@@ -9065,9 +9088,9 @@ with tab6:
                                                 start_idx,
                                                 position_bounds.get("fs"),
                                                 common_smoothed_rom_end,
-                                                angle_tolerance_deg=2.5,
+                                                angle_tolerance_deg=float(posterior_common_rom_end_tolerance_deg),
                                                 velocity_tolerance_deg_per_second=15.0,
-                                                hold_time_seconds=0.08,
+                                                hold_time_seconds=float(posterior_common_rom_end_hold_time_seconds),
                                             )
                                             if common_end_idx is not None:
                                                 end_idx = int(common_end_idx)
