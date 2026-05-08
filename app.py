@@ -1872,46 +1872,19 @@ def extract_single_rep_file_aligned_curves(
     interpolated_rom_curves = []
     if x_axis_mode == "zero_to_common_smoothed_rom_end_normalized":
         percent_axis = np.linspace(0.0, 100.0, int(n_points))
-        common_smoothed_rom_end_values = []
-        for rep in aligned_reps:
-            smooth_position_values = rep.get("smooth_position_values")
-            start_idx = int(rep["position_start_idx"])
-            if smooth_position_values is None or len(smooth_position_values) <= start_idx:
-                continue
-            finite_slice = smooth_position_values[start_idx:]
-            finite_slice = finite_slice[np.isfinite(finite_slice)]
-            if finite_slice.size == 0:
-                continue
-            common_smoothed_rom_end_values.append(float(np.nanmax(finite_slice)))
-
-        if not common_smoothed_rom_end_values:
-            return pd.DataFrame(), pd.DataFrame(), aligned_reps, pd.DataFrame(), pd.DataFrame()
-
-        common_smoothed_rom_end = float(np.nanmin(common_smoothed_rom_end_values))
-        common_end_tolerance = max(0.5, abs(common_smoothed_rom_end) * 0.002)
-
         valid_segment_reps = []
         for rep in aligned_reps:
-            smooth_position_values = rep.get("smooth_position_values")
             zero_idx = int(rep["zero_torque_rise_idx"])
-            if smooth_position_values is None or len(smooth_position_values) <= zero_idx:
+            position_end_idx = int(rep["position_end_idx"])
+            if position_end_idx <= zero_idx:
                 continue
-            end_touch_idx = None
-            for idx in range(zero_idx, len(smooth_position_values)):
-                if not np.isfinite(smooth_position_values[idx]):
-                    continue
-                if smooth_position_values[idx] >= (common_smoothed_rom_end - common_end_tolerance):
-                    end_touch_idx = idx
-                    break
-            if end_touch_idx is None or end_touch_idx <= zero_idx:
-                continue
-            valid_segment_reps.append((rep, zero_idx, int(end_touch_idx)))
+            valid_segment_reps.append((rep, zero_idx, position_end_idx))
 
         if not valid_segment_reps:
             return pd.DataFrame(), pd.DataFrame(), aligned_reps, pd.DataFrame(), pd.DataFrame()
 
-        for rep, zero_idx, end_touch_idx in valid_segment_reps:
-            torque_window = rep["torque_values"][zero_idx:end_touch_idx + 1]
+        for rep, zero_idx, position_end_idx in valid_segment_reps:
+            torque_window = rep["torque_values"][zero_idx:position_end_idx + 1]
             interp_torque = np.interp(
                 percent_axis,
                 np.linspace(0.0, 100.0, len(torque_window)),
@@ -1925,7 +1898,7 @@ def extract_single_rep_file_aligned_curves(
                 "torque_nm": interp_torque,
             }))
             if rep["position_values"] is not None:
-                position_window = rep["position_values"][zero_idx:end_touch_idx + 1]
+                position_window = rep["position_values"][zero_idx:position_end_idx + 1]
                 interp_position = np.interp(
                     percent_axis,
                     np.linspace(0.0, 100.0, len(position_window)),
@@ -1945,11 +1918,11 @@ def extract_single_rep_file_aligned_curves(
             "std_torque_nm": np.nanstd(np.vstack(interpolated_curves), axis=0),
         })
         mean_df.attrs["x_axis_mode"] = "zero_to_common_smoothed_rom_end_normalized"
-        mean_df.attrs["x_axis_title"] = "0 Torque Rise to Common Smoothed ROM End (%)"
+        mean_df.attrs["x_axis_title"] = "0 Torque Rise to Stabilized Peak ROM End (%)"
         mean_df.attrs["anchor_x"] = 0.0
         mean_df.attrs["anchor_label"] = "0 Torque Rise"
         mean_df.attrs["secondary_anchor_x"] = 100.0
-        mean_df.attrs["secondary_anchor_label"] = "Common Smoothed ROM End"
+        mean_df.attrs["secondary_anchor_label"] = "Stabilized Peak ROM End"
     elif x_axis_mode == "position_window_normalized":
         percent_axis = np.linspace(0.0, 100.0, int(n_points))
         segment_fraction_rows = []
@@ -8560,7 +8533,7 @@ with tab6:
                             options=["position_window_normalized", "zero_to_common_smoothed_rom_end_normalized", "zero_to_peak_normalized", "normalized_duration", "raw_time"],
                             format_func=lambda value: {
                                 "position_window_normalized": "ROM Start -> End Normalized",
-                                "zero_to_common_smoothed_rom_end_normalized": "0 Torque Rise -> Common Smoothed ROM End",
+                                "zero_to_common_smoothed_rom_end_normalized": "0 Torque Rise -> Stabilized Peak ROM End",
                                 "zero_to_peak_normalized": "0 Torque -> Peak Positive Normalized",
                                 "normalized_duration": "Normalized Rep Duration",
                                 "raw_time": "Raw Time Around Anchor",
