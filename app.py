@@ -1147,7 +1147,12 @@ def smooth_biodex_display_curve(values, window_length=9, polyorder=3):
         return arr
     return savgol_filter(arr, window_length=valid_window, polyorder=polyorder)
 
-def smooth_position_deg_signal(time_values, position_values, lowpass_cutoff_hz=4.0):
+def smooth_position_deg_signal(
+    time_values,
+    position_values,
+    lowpass_cutoff_hz=4.0,
+    secondary_window_length=31,
+):
     """Create a low-pass filtered Position_Deg signal suitable for ROM inspection."""
     time_arr = np.asarray(time_values, dtype=float)
     arr = np.asarray(position_values, dtype=float)
@@ -1197,7 +1202,7 @@ def smooth_position_deg_signal(time_values, position_values, lowpass_cutoff_hz=4
         smooth_window = get_valid_savgol_window(51, len(clean_position), 3)
         smooth_position = savgol_filter(clean_position, window_length=smooth_window, polyorder=3) if smooth_window is not None else clean_position
 
-    secondary_window = get_valid_savgol_window(31, len(smooth_position), 2)
+    secondary_window = get_valid_savgol_window(int(secondary_window_length), len(smooth_position), 2)
     if secondary_window is not None:
         smooth_position = savgol_filter(smooth_position, window_length=secondary_window, polyorder=2)
 
@@ -8595,6 +8600,17 @@ with tab6:
                             step=10,
                             key="posterior_cuff_single_rep_points",
                         )
+                        posterior_filtered_cutoff_hz = st.slider(
+                            "Filtered position smoothing cutoff (Hz)",
+                            min_value=1.0,
+                            max_value=8.0,
+                            value=4.0,
+                            step=0.5,
+                            key="posterior_cuff_filtered_position_cutoff_hz",
+                        )
+                        st.caption(
+                            "Lower cutoff = smoother ROM line in the filtered position plot only."
+                        )
 
                     selected_posterior_rep_items = []
                     for biodex_test_id in selected_posterior_rep_files:
@@ -8954,6 +8970,7 @@ with tab6:
                                         filtered_position, _fs, _clean_position = smooth_position_deg_signal(
                                             rep_df["Elapsed Seconds"].to_numpy(dtype=float),
                                             rep_df["Position_Deg"].to_numpy(dtype=float),
+                                            lowpass_cutoff_hz=float(posterior_filtered_cutoff_hz),
                                         )
                                         posterior_filtered_position_fig.add_trace(go.Scatter(
                                             x=rep_df["Elapsed Seconds"],
