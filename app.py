@@ -1208,6 +1208,50 @@ def smooth_position_deg_signal(
 
     return smooth_position, fs, clean_position
 
+def find_first_common_rom_band_entry(
+    smooth_position_values,
+    start_idx,
+    fs,
+    target_angle,
+    angle_tolerance_deg=2.5,
+    velocity_tolerance_deg_per_second=15.0,
+    hold_time_seconds=0.08,
+):
+    """Find the first sustained entry into a shared end-ROM band."""
+    values = np.asarray(smooth_position_values, dtype=float)
+    if len(values) == 0:
+        return None
+
+    start_idx = int(max(0, start_idx))
+    if start_idx >= len(values):
+        return None
+
+    if fs is not None and fs > 0:
+        velocity = np.gradient(values, 1.0 / float(fs))
+        hold_samples = max(2, int(round(float(fs) * float(hold_time_seconds))))
+        velocity_tolerance = float(velocity_tolerance_deg_per_second)
+    else:
+        velocity = np.gradient(values)
+        hold_samples = 2
+        velocity_tolerance = max(0.35, float(angle_tolerance_deg) * 0.5)
+
+    target_low = float(target_angle) - float(angle_tolerance_deg)
+    target_high = float(target_angle) + float(angle_tolerance_deg)
+
+    for idx in range(start_idx, len(values) - hold_samples + 1):
+        value_window = values[idx:idx + hold_samples]
+        velocity_window = velocity[idx:idx + hold_samples]
+        in_band = np.all((value_window >= target_low) & (value_window <= target_high))
+        low_velocity = np.nanmean(np.abs(velocity_window)) <= velocity_tolerance
+        if in_band and low_velocity:
+            return int(idx)
+
+    for idx in range(start_idx, len(values)):
+        if target_low <= values[idx] <= target_high:
+            return int(idx)
+
+    return None
+
 def detect_position_deg_rep_bounds(
     time_values,
     position_values,
@@ -1848,6 +1892,16 @@ def extract_single_rep_file_aligned_curves(
                 if position_rep_bounds is not None
                 else None
             ),
+            "position_fs": (
+                float(position_rep_bounds["fs"])
+                if position_rep_bounds is not None and position_rep_bounds.get("fs") is not None
+                else None
+            ),
+            "final_plateau_value": (
+                float(position_rep_bounds["final_plateau_value"])
+                if position_rep_bounds is not None and position_rep_bounds.get("final_plateau_value") is not None
+                else None
+            ),
             "anchor_idx": anchor_idx,
             "zero_torque_rise_idx": zero_torque_rise_idx,
             "peak_positive_idx": peak_pos_idx,
@@ -1872,10 +1926,31 @@ def extract_single_rep_file_aligned_curves(
     interpolated_rom_curves = []
     if x_axis_mode == "zero_to_common_smoothed_rom_end_normalized":
         percent_axis = np.linspace(0.0, 100.0, int(n_points))
+        common_plateau_values = [
+            float(rep["final_plateau_value"])
+            for rep in aligned_reps
+            if rep.get("final_plateau_value") is not None and np.isfinite(rep["final_plateau_value"])
+        ]
+        if not common_plateau_values:
+            return pd.DataFrame(), pd.DataFrame(), aligned_reps, pd.DataFrame(), pd.DataFrame()
+
+        common_plateau_angle = float(np.nanmedian(common_plateau_values))
+        common_angle_tolerance = 2.5
         valid_segment_reps = []
         for rep in aligned_reps:
             zero_idx = int(rep["zero_torque_rise_idx"])
-            position_end_idx = int(rep["position_end_idx"])
+            smooth_position_values = rep.get("smooth_position_values")
+            position_end_idx = find_first_common_rom_band_entry(
+                smooth_position_values,
+                zero_idx,
+                rep.get("position_fs"),
+                common_plateau_angle,
+                angle_tolerance_deg=common_angle_tolerance,
+                velocity_tolerance_deg_per_second=15.0,
+                hold_time_seconds=0.08,
+            )
+            if position_end_idx is None:
+                position_end_idx = int(rep["position_end_idx"])
             if position_end_idx <= zero_idx:
                 continue
             valid_segment_reps.append((rep, zero_idx, position_end_idx))
@@ -1923,6 +1998,7 @@ def extract_single_rep_file_aligned_curves(
         mean_df.attrs["anchor_label"] = "0 Torque Rise"
         mean_df.attrs["secondary_anchor_x"] = 100.0
         mean_df.attrs["secondary_anchor_label"] = "Stabilized Peak ROM End"
+        mean_df.attrs["common_plateau_angle"] = common_plateau_angle
     elif x_axis_mode == "position_window_normalized":
         percent_axis = np.linspace(0.0, 100.0, int(n_points))
         segment_fraction_rows = []
@@ -8967,18 +9043,14 @@ with tab6:
 
                                     common_smoothed_rom_end_values = []
                                     for _file_name, _rep_df, position_bounds in raw_position_items:
-                                        start_idx = int(position_bounds["start_idx"])
                                         smooth_position = np.asarray(position_bounds["smooth_position"], dtype=float)
-                                        if len(smooth_position) <= start_idx:
+                                        final_plateau_value = position_bounds.get("final_plateau_value")
+                                        if final_plateau_value is None or not np.isfinite(final_plateau_value):
                                             continue
-                                        finite_slice = smooth_position[start_idx:]
-                                        finite_slice = finite_slice[np.isfinite(finite_slice)]
-                                        if finite_slice.size == 0:
-                                            continue
-                                        common_smoothed_rom_end_values.append(float(np.nanmax(finite_slice)))
+                                        common_smoothed_rom_end_values.append(float(final_plateau_value))
 
                                     common_smoothed_rom_end = (
-                                        float(np.nanmin(common_smoothed_rom_end_values))
+                                        float(np.nanmedian(common_smoothed_rom_end_values))
                                         if common_smoothed_rom_end_values
                                         else None
                                     )
@@ -8987,6 +9059,18 @@ with tab6:
                                         smooth_position = np.asarray(position_bounds["smooth_position"], dtype=float)
                                         start_idx = int(position_bounds["start_idx"])
                                         end_idx = int(position_bounds["end_idx"])
+                                        if common_smoothed_rom_end is not None:
+                                            common_end_idx = find_first_common_rom_band_entry(
+                                                smooth_position,
+                                                start_idx,
+                                                position_bounds.get("fs"),
+                                                common_smoothed_rom_end,
+                                                angle_tolerance_deg=2.5,
+                                                velocity_tolerance_deg_per_second=15.0,
+                                                hold_time_seconds=0.08,
+                                            )
+                                            if common_end_idx is not None:
+                                                end_idx = int(common_end_idx)
                                         posterior_raw_position_fig.add_trace(go.Scatter(
                                             x=rep_df["Elapsed Seconds"],
                                             y=rep_df["Position_Deg"],
@@ -9059,7 +9143,7 @@ with tab6:
                                         yref="paper",
                                         xanchor="right",
                                         yanchor="bottom",
-                                        text="Dashed line = smoothed Position_Deg, green marker = detected start, orange marker = per-rep plateau end",
+                                        text="Dashed line = smoothed Position_Deg, green marker = detected start, orange marker = first entry into shared stabilized ROM band",
                                         showarrow=False,
                                         font=dict(size=11),
                                     )
