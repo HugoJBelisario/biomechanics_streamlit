@@ -7,6 +7,7 @@ import numpy as np
 from scipy.stats import linregress
 from scipy.signal import savgol_filter
 from scipy.signal import find_peaks
+from scipy.signal import butter, filtfilt
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime
@@ -1147,12 +1148,14 @@ def smooth_biodex_display_curve(values, window_length=9, polyorder=3):
     return savgol_filter(arr, window_length=valid_window, polyorder=polyorder)
 
 def detect_position_deg_rep_bounds(
+    time_values,
     position_values,
     plateau_window_fraction=0.20,
     rom_fraction=0.90,
     angle_tolerance_deg=3.0,
-    velocity_tolerance_deg_per_sample=None,
-    hold_samples=12,
+    velocity_tolerance_deg_per_second=15.0,
+    hold_time_seconds=0.20,
+    lowpass_cutoff_hz=6.0,
 ):
     """
     Detect the active Position_Deg movement window.
@@ -1161,6 +1164,7 @@ def detect_position_deg_rep_bounds(
     the final ROM plateau and remains stable, instead of the later noisy oscillation
     around that same end-range angle.
     """
+    time_arr = np.asarray(time_values, dtype=float)
     arr = np.asarray(position_values, dtype=float)
     if len(arr) < 7:
         return {
@@ -1169,6 +1173,9 @@ def detect_position_deg_rep_bounds(
             "start_idx": 0,
             "end_idx": max(0, len(arr) - 1),
             "plateau_idx": None,
+            "final_plateau_value": float(arr[-1]) if len(arr) else np.nan,
+            "plateau_band_low": np.nan,
+            "plateau_band_high": np.nan,
         }
 
     finite_mask = np.isfinite(arr)
@@ -1179,6 +1186,9 @@ def detect_position_deg_rep_bounds(
             "start_idx": 0,
             "end_idx": max(0, len(arr) - 1),
             "plateau_idx": None,
+            "final_plateau_value": np.nan,
+            "plateau_band_low": np.nan,
+            "plateau_band_high": np.nan,
         }
 
     clean_position = arr.copy()
@@ -1190,16 +1200,44 @@ def detect_position_deg_rep_bounds(
             arr[finite_mask],
         )
 
+    finite_time_mask = np.isfinite(time_arr)
+    if finite_time_mask.any():
+        clean_time = time_arr.copy()
+        if not finite_time_mask.all():
+            valid_time_idx = np.flatnonzero(finite_time_mask)
+            clean_time[~finite_time_mask] = np.interp(
+                np.flatnonzero(~finite_time_mask),
+                valid_time_idx,
+                time_arr[finite_time_mask],
+            )
+    else:
+        clean_time = np.arange(len(clean_position), dtype=float)
+
+    dt = np.diff(clean_time)
+    dt = dt[np.isfinite(dt) & (dt > 0)]
+    fs = float(1.0 / np.nanmedian(dt)) if dt.size else None
+
     # Step 1: smooth the position curve enough to remove Biodex jitter while
     # preserving the broad movement shape.
-    smooth_window = get_valid_savgol_window(51, len(clean_position), 3)
-    if smooth_window is not None:
-        smooth_position = savgol_filter(clean_position, window_length=smooth_window, polyorder=3)
-        secondary_window = get_valid_savgol_window(max(9, smooth_window // 2), len(smooth_position), 2)
-        if secondary_window is not None:
-            smooth_position = savgol_filter(smooth_position, window_length=secondary_window, polyorder=2)
+    if fs is not None and fs > (lowpass_cutoff_hz * 2.5) and len(clean_position) >= 9:
+        nyquist = fs / 2.0
+        normalized_cutoff = min(0.99, float(lowpass_cutoff_hz) / nyquist)
+        if 0.0 < normalized_cutoff < 1.0:
+            b, a = butter(4, normalized_cutoff, btype="low")
+            smooth_position = filtfilt(b, a, clean_position)
+        else:
+            smooth_window = get_valid_savgol_window(51, len(clean_position), 3)
+            smooth_position = savgol_filter(clean_position, window_length=smooth_window, polyorder=3) if smooth_window is not None else clean_position
     else:
-        smooth_position = clean_position
+        smooth_window = get_valid_savgol_window(51, len(clean_position), 3)
+        if smooth_window is not None:
+            smooth_position = savgol_filter(clean_position, window_length=smooth_window, polyorder=3)
+        else:
+            smooth_position = clean_position
+
+    secondary_window = get_valid_savgol_window(21, len(smooth_position), 2)
+    if secondary_window is not None:
+        smooth_position = savgol_filter(smooth_position, window_length=secondary_window, polyorder=2)
 
     position_span = float(np.nanmax(smooth_position) - np.nanmin(smooth_position))
     if position_span <= 0:
@@ -1209,6 +1247,9 @@ def detect_position_deg_rep_bounds(
             "start_idx": 0,
             "end_idx": max(0, len(clean_position) - 1),
             "plateau_idx": None,
+            "final_plateau_value": float(np.nanmedian(smooth_position)),
+            "plateau_band_low": float(np.nanmedian(smooth_position)),
+            "plateau_band_high": float(np.nanmedian(smooth_position)),
         }
 
     # Step 2: estimate the starting baseline from the first quiet portion.
@@ -1244,11 +1285,15 @@ def detect_position_deg_rep_bounds(
     # Step 5: search for the first sustained end-range plateau.
     # This ignores torque after the player has already reached max ROM.
     near_plateau_threshold = signed_baseline + (signed_span * float(rom_fraction))
-    velocity = np.gradient(signed_position)
-    if velocity_tolerance_deg_per_sample is None:
-        velocity_tolerance_deg_per_sample = max(0.35, abs(signed_span) * 0.003)
+    if fs is not None and fs > 0:
+        velocity = np.gradient(smooth_position, 1.0 / fs) * movement_direction
+        hold_samples = max(3, int(round(fs * float(hold_time_seconds))))
+        velocity_tolerance = float(velocity_tolerance_deg_per_second)
+    else:
+        velocity = np.gradient(signed_position)
+        hold_samples = max(3, int(round(len(smooth_position) * 0.02)))
+        velocity_tolerance = max(0.35, abs(signed_span) * 0.003)
 
-    hold_samples = max(3, int(hold_samples))
     plateau_idx = None
     for idx in range(start_idx, len(signed_position) - hold_samples + 1):
         value_window = signed_position[idx:idx + hold_samples]
@@ -1256,7 +1301,7 @@ def detect_position_deg_rep_bounds(
 
         is_near_final_rom = np.all(value_window >= near_plateau_threshold)
         is_inside_plateau_band = np.all(np.abs(value_window - signed_plateau) <= float(angle_tolerance_deg))
-        is_stable = np.nanmean(np.abs(velocity_window)) <= float(velocity_tolerance_deg_per_sample)
+        is_stable = np.nanmean(np.abs(velocity_window)) <= float(velocity_tolerance)
 
         if is_near_final_rom and is_inside_plateau_band and is_stable:
             plateau_idx = idx
@@ -1280,6 +1325,10 @@ def detect_position_deg_rep_bounds(
         "start_idx": int(start_idx),
         "end_idx": int(end_idx),
         "plateau_idx": int(plateau_idx) if plateau_idx is not None else None,
+        "final_plateau_value": float(final_plateau_value),
+        "plateau_band_low": float(final_plateau_value - float(angle_tolerance_deg)),
+        "plateau_band_high": float(final_plateau_value + float(angle_tolerance_deg)),
+        "fs": fs,
     }
 
 def _build_contiguous_regions(index_values):
@@ -1656,7 +1705,7 @@ def extract_single_rep_file_aligned_curves(
                 position_values = cleaned_position
 
         position_rep_bounds = (
-            detect_position_deg_rep_bounds(position_values)
+            detect_position_deg_rep_bounds(time_values, position_values)
             if position_values is not None
             else None
         )
@@ -8849,6 +8898,7 @@ with tab6:
                                     if rep_df.empty:
                                         continue
                                     position_bounds = detect_position_deg_rep_bounds(
+                                        rep_df["Elapsed Seconds"].to_numpy(dtype=float),
                                         rep_df["Position_Deg"].to_numpy(dtype=float)
                                     )
                                     raw_position_items.append((rep_item["name"], rep_df, position_bounds))
@@ -8958,6 +9008,15 @@ with tab6:
                                             text="Common Smoothed ROM End",
                                             showarrow=False,
                                             font=dict(size=11, color="rgba(255,184,108,0.95)"),
+                                        )
+                                    if len(raw_position_items) == 1:
+                                        _file_name, _rep_df, position_bounds = raw_position_items[0]
+                                        posterior_raw_position_fig.add_hrect(
+                                            y0=float(position_bounds.get("plateau_band_low", np.nan)),
+                                            y1=float(position_bounds.get("plateau_band_high", np.nan)),
+                                            fillcolor="rgba(255,184,108,0.10)",
+                                            line_width=0,
+                                            layer="below",
                                         )
                                     posterior_raw_position_fig.update_layout(
                                         title="Posterior Cuff Reactive Eccentric: Raw Position Signals with Smoothed Start/End",
