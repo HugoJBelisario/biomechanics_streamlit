@@ -8858,6 +8858,28 @@ with tab6:
                                     raw_position_items.append((rep_item["name"], rep_df, position_bounds))
 
                                 if raw_position_items:
+                                    posterior_raw_only_position_fig = go.Figure()
+                                    for file_name, rep_df, _position_bounds in raw_position_items:
+                                        posterior_raw_only_position_fig.add_trace(go.Scatter(
+                                            x=rep_df["Elapsed Seconds"],
+                                            y=rep_df["Position_Deg"],
+                                            mode="lines",
+                                            line=dict(width=1.75),
+                                            opacity=0.8,
+                                            name=file_name,
+                                        ))
+                                    posterior_raw_only_position_fig.update_layout(
+                                        title="Posterior Cuff Reactive Eccentric: Raw Position Signals",
+                                        xaxis_title="Elapsed Time (s)",
+                                        yaxis_title="Position_Deg",
+                                        height=450,
+                                    )
+                                    st.plotly_chart(
+                                        posterior_raw_only_position_fig,
+                                        use_container_width=True,
+                                        key=f"posterior_cuff_single_rep_raw_only_position_plot_{len(raw_position_items)}",
+                                    )
+
                                     common_smoothed_rom_end_values = []
                                     for _file_name, _rep_df, position_bounds in raw_position_items:
                                         start_idx = int(position_bounds["start_idx"])
