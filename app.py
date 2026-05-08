@@ -1480,6 +1480,145 @@ def extract_position_fraction_aligned_curves(
 
     return reps_long_df, mean_df, aligned_reps
 
+def extract_torque_fraction_window_curves(
+    preview_items,
+    start_fraction=0.05,
+    end_fraction=0.98,
+    value_col="Torque_Nm",
+    time_col="Elapsed Seconds",
+    position_col="Position_Deg",
+    n_points=201,
+):
+    if not preview_items:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), []
+
+    percent_axis = np.linspace(0.0, 100.0, int(n_points))
+    torque_rep_rows = []
+    torque_curves = []
+    position_rep_rows = []
+    position_curves = []
+    aligned_metadata = []
+
+    for rep_number, item in enumerate(preview_items, start=1):
+        rep_df = item["df"].copy()
+        if value_col not in rep_df.columns or time_col not in rep_df.columns:
+            continue
+
+        rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
+        rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
+        if position_col in rep_df.columns:
+            rep_df[position_col] = pd.to_numeric(rep_df[position_col], errors="coerce")
+        rep_df = rep_df.dropna(subset=[time_col, value_col]).reset_index(drop=True)
+        if len(rep_df) < 7:
+            continue
+
+        time_values = rep_df[time_col].to_numpy(dtype=float)
+        torque_values = rep_df[value_col].to_numpy(dtype=float)
+        smooth_torque = smooth_biodex_display_curve(torque_values, preferred_window=31, polyorder=3)
+        if smooth_torque is None:
+            smooth_torque = torque_values
+
+        peak_idx = int(np.nanargmax(smooth_torque))
+        baseline_window = max(3, min(len(smooth_torque), max(5, peak_idx)))
+        baseline_value = float(np.nanmedian(smooth_torque[:baseline_window]))
+        peak_value = float(smooth_torque[peak_idx])
+        amplitude = peak_value - baseline_value
+        if not np.isfinite(amplitude) or amplitude <= 0:
+            continue
+
+        start_threshold = baseline_value + (float(start_fraction) * amplitude)
+        end_threshold = baseline_value + (float(end_fraction) * amplitude)
+
+        start_idx = None
+        end_idx = None
+        for idx in range(0, peak_idx + 1):
+            if np.isfinite(smooth_torque[idx]) and smooth_torque[idx] >= start_threshold:
+                start_idx = int(idx)
+                break
+        if start_idx is None:
+            continue
+        for idx in range(start_idx, peak_idx + 1):
+            if np.isfinite(smooth_torque[idx]) and smooth_torque[idx] >= end_threshold:
+                end_idx = int(idx)
+                break
+        if end_idx is None or end_idx <= start_idx:
+            continue
+
+        torque_window = torque_values[start_idx:end_idx + 1]
+        interp_torque = np.interp(
+            percent_axis,
+            np.linspace(0.0, 100.0, len(torque_window)),
+            torque_window,
+        )
+        torque_curves.append(interp_torque)
+        torque_rep_rows.append(pd.DataFrame({
+            "rep_number": rep_number,
+            "file_name": item["name"],
+            "alignment_x": percent_axis,
+            "torque_nm": interp_torque,
+        }))
+
+        if position_col in rep_df.columns and rep_df[position_col].notna().any():
+            position_values = rep_df[position_col].to_numpy(dtype=float)
+            position_window = position_values[start_idx:end_idx + 1]
+            interp_position = np.interp(
+                percent_axis,
+                np.linspace(0.0, 100.0, len(position_window)),
+                position_window,
+            )
+            position_curves.append(interp_position)
+            position_rep_rows.append(pd.DataFrame({
+                "rep_number": rep_number,
+                "file_name": item["name"],
+                "alignment_x": percent_axis,
+                "position_deg": interp_position,
+            }))
+
+        aligned_metadata.append({
+            "rep_number": rep_number,
+            "file_name": item["name"],
+            "start_idx": int(start_idx),
+            "end_idx": int(end_idx),
+            "start_time": float(time_values[start_idx]),
+            "end_time": float(time_values[end_idx]),
+            "start_threshold": float(start_threshold),
+            "end_threshold": float(end_threshold),
+            "peak_positive_torque": float(peak_value),
+        })
+
+    if not torque_curves:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), []
+
+    torque_reps_long_df = pd.concat(torque_rep_rows, ignore_index=True)
+    torque_mean_df = pd.DataFrame({
+        "alignment_x": percent_axis,
+        "mean_torque_nm": np.nanmean(np.vstack(torque_curves), axis=0),
+        "std_torque_nm": np.nanstd(np.vstack(torque_curves), axis=0),
+    })
+    torque_mean_df["upper_band"] = torque_mean_df["mean_torque_nm"] + torque_mean_df["std_torque_nm"]
+    torque_mean_df["lower_band"] = torque_mean_df["mean_torque_nm"] - torque_mean_df["std_torque_nm"]
+    torque_mean_df.attrs["x_axis_title"] = f"{int(round(start_fraction * 100))}% to {int(round(end_fraction * 100))}% Peak Positive Torque (%)"
+    torque_mean_df.attrs["anchor_x"] = 0.0
+    torque_mean_df.attrs["anchor_label"] = f"{int(round(start_fraction * 100))}% Torque"
+    torque_mean_df.attrs["secondary_anchor_x"] = 100.0
+    torque_mean_df.attrs["secondary_anchor_label"] = f"{int(round(end_fraction * 100))}% Torque"
+
+    if position_curves:
+        position_reps_long_df = pd.concat(position_rep_rows, ignore_index=True)
+        position_mean_df = pd.DataFrame({
+            "alignment_x": percent_axis,
+            "mean_position_deg": np.nanmean(np.vstack(position_curves), axis=0),
+            "std_position_deg": np.nanstd(np.vstack(position_curves), axis=0),
+        })
+        position_mean_df["upper_band"] = position_mean_df["mean_position_deg"] + position_mean_df["std_position_deg"]
+        position_mean_df["lower_band"] = position_mean_df["mean_position_deg"] - position_mean_df["std_position_deg"]
+        position_mean_df.attrs = torque_mean_df.attrs.copy()
+    else:
+        position_reps_long_df = pd.DataFrame()
+        position_mean_df = pd.DataFrame()
+
+    return torque_reps_long_df, torque_mean_df, position_reps_long_df, position_mean_df, aligned_metadata
+
 def detect_position_deg_rep_bounds(
     time_values,
     position_values,
@@ -9140,6 +9279,10 @@ with tab6:
                     ninety_rom_mean_df = pd.DataFrame()
                     ninety_five_rom_reps_long_df = pd.DataFrame()
                     ninety_five_rom_mean_df = pd.DataFrame()
+                    five_to_ninety_eight_torque_reps_long_df = pd.DataFrame()
+                    five_to_ninety_eight_torque_mean_df = pd.DataFrame()
+                    five_to_ninety_eight_position_reps_long_df = pd.DataFrame()
+                    five_to_ninety_eight_position_mean_df = pd.DataFrame()
                     if selected_posterior_rep_items:
                         (
                             _zero_rise_torque_reps_long_df,
@@ -9190,6 +9333,21 @@ with tab6:
                             position_col="Position_Deg",
                             n_points=int(posterior_n_points),
                             lowpass_cutoff_hz=1.0,
+                        )
+                        (
+                            five_to_ninety_eight_torque_reps_long_df,
+                            five_to_ninety_eight_torque_mean_df,
+                            five_to_ninety_eight_position_reps_long_df,
+                            five_to_ninety_eight_position_mean_df,
+                            _five_to_ninety_eight_alignment_metadata,
+                        ) = extract_torque_fraction_window_curves(
+                            selected_posterior_rep_items,
+                            start_fraction=0.05,
+                            end_fraction=0.98,
+                            value_col="Torque_Nm",
+                            time_col="Elapsed Seconds",
+                            position_col="Position_Deg",
+                            n_points=int(posterior_n_points),
                         )
 
                     with single_rep_plot_col:
@@ -9656,6 +9814,158 @@ with tab6:
                                         ninety_five_rom_fig,
                                         use_container_width=True,
                                         key=f"posterior_cuff_ninety_five_rom_plot_{posterior_n_points}_{len(selected_posterior_rep_items)}",
+                                    )
+                                if not five_to_ninety_eight_torque_reps_long_df.empty and not five_to_ninety_eight_torque_mean_df.empty:
+                                    five_to_ninety_eight_torque_fig = go.Figure()
+                                    for rep_number, rep_df in five_to_ninety_eight_torque_reps_long_df.groupby("rep_number"):
+                                        file_name = rep_df["file_name"].iloc[0]
+                                        five_to_ninety_eight_torque_fig.add_trace(go.Scatter(
+                                            x=rep_df["alignment_x"],
+                                            y=rep_df["torque_nm"],
+                                            mode="lines",
+                                            line=dict(width=1.5),
+                                            opacity=0.45,
+                                            name=file_name,
+                                        ))
+                                    five_to_ninety_eight_torque_fig.add_trace(go.Scatter(
+                                        x=five_to_ninety_eight_torque_mean_df["alignment_x"],
+                                        y=five_to_ninety_eight_torque_mean_df["upper_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        showlegend=False,
+                                        hoverinfo="skip",
+                                    ))
+                                    five_to_ninety_eight_torque_fig.add_trace(go.Scatter(
+                                        x=five_to_ninety_eight_torque_mean_df["alignment_x"],
+                                        y=five_to_ninety_eight_torque_mean_df["lower_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        fill="tonexty",
+                                        name="±1 SD",
+                                    ))
+                                    five_to_ninety_eight_torque_fig.add_trace(go.Scatter(
+                                        x=five_to_ninety_eight_torque_mean_df["alignment_x"],
+                                        y=five_to_ninety_eight_torque_mean_df["mean_torque_nm"],
+                                        mode="lines",
+                                        line=dict(width=4),
+                                        name="Mean Torque",
+                                    ))
+                                    five_to_ninety_eight_torque_fig.add_vline(
+                                        x=0.0,
+                                        line_width=2,
+                                        line_dash="dot",
+                                        line_color="rgba(255,255,255,0.45)",
+                                    )
+                                    five_to_ninety_eight_torque_fig.add_annotation(
+                                        x=0.0,
+                                        y=1.03,
+                                        xref="x",
+                                        yref="paper",
+                                        text="5% Torque",
+                                        showarrow=False,
+                                        font=dict(size=11),
+                                    )
+                                    five_to_ninety_eight_torque_fig.add_vline(
+                                        x=100.0,
+                                        line_width=2,
+                                        line_dash="dot",
+                                        line_color="rgba(255,255,255,0.30)",
+                                    )
+                                    five_to_ninety_eight_torque_fig.add_annotation(
+                                        x=100.0,
+                                        y=1.03,
+                                        xref="x",
+                                        yref="paper",
+                                        text="98% Torque",
+                                        showarrow=False,
+                                        font=dict(size=11),
+                                    )
+                                    five_to_ninety_eight_torque_fig.update_layout(
+                                        title="Posterior Cuff Torque from 5% to 98% Peak Positive Torque",
+                                        xaxis_title=str(five_to_ninety_eight_torque_mean_df.attrs.get("x_axis_title", "5% to 98% Peak Positive Torque (%)")),
+                                        yaxis_title="Torque_Nm",
+                                        height=500,
+                                    )
+                                    st.plotly_chart(
+                                        five_to_ninety_eight_torque_fig,
+                                        use_container_width=True,
+                                        key=f"posterior_cuff_five_to_ninety_eight_torque_plot_{posterior_n_points}_{len(selected_posterior_rep_items)}",
+                                    )
+                                if not five_to_ninety_eight_position_reps_long_df.empty and not five_to_ninety_eight_position_mean_df.empty:
+                                    five_to_ninety_eight_position_fig = go.Figure()
+                                    for rep_number, rep_df in five_to_ninety_eight_position_reps_long_df.groupby("rep_number"):
+                                        file_name = rep_df["file_name"].iloc[0]
+                                        five_to_ninety_eight_position_fig.add_trace(go.Scatter(
+                                            x=rep_df["alignment_x"],
+                                            y=rep_df["position_deg"],
+                                            mode="lines",
+                                            line=dict(width=1.5),
+                                            opacity=0.45,
+                                            name=file_name,
+                                        ))
+                                    five_to_ninety_eight_position_fig.add_trace(go.Scatter(
+                                        x=five_to_ninety_eight_position_mean_df["alignment_x"],
+                                        y=five_to_ninety_eight_position_mean_df["upper_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        showlegend=False,
+                                        hoverinfo="skip",
+                                    ))
+                                    five_to_ninety_eight_position_fig.add_trace(go.Scatter(
+                                        x=five_to_ninety_eight_position_mean_df["alignment_x"],
+                                        y=five_to_ninety_eight_position_mean_df["lower_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        fill="tonexty",
+                                        name="±1 SD",
+                                    ))
+                                    five_to_ninety_eight_position_fig.add_trace(go.Scatter(
+                                        x=five_to_ninety_eight_position_mean_df["alignment_x"],
+                                        y=five_to_ninety_eight_position_mean_df["mean_position_deg"],
+                                        mode="lines",
+                                        line=dict(width=4),
+                                        name="Mean Position",
+                                    ))
+                                    five_to_ninety_eight_position_fig.add_vline(
+                                        x=0.0,
+                                        line_width=2,
+                                        line_dash="dot",
+                                        line_color="rgba(255,255,255,0.45)",
+                                    )
+                                    five_to_ninety_eight_position_fig.add_annotation(
+                                        x=0.0,
+                                        y=1.03,
+                                        xref="x",
+                                        yref="paper",
+                                        text="5% Torque",
+                                        showarrow=False,
+                                        font=dict(size=11),
+                                    )
+                                    five_to_ninety_eight_position_fig.add_vline(
+                                        x=100.0,
+                                        line_width=2,
+                                        line_dash="dot",
+                                        line_color="rgba(255,255,255,0.30)",
+                                    )
+                                    five_to_ninety_eight_position_fig.add_annotation(
+                                        x=100.0,
+                                        y=1.03,
+                                        xref="x",
+                                        yref="paper",
+                                        text="98% Torque",
+                                        showarrow=False,
+                                        font=dict(size=11),
+                                    )
+                                    five_to_ninety_eight_position_fig.update_layout(
+                                        title="Posterior Cuff Position Degrees over 5% to 98% Peak Positive Torque",
+                                        xaxis_title=str(five_to_ninety_eight_position_mean_df.attrs.get("x_axis_title", "5% to 98% Peak Positive Torque (%)")),
+                                        yaxis_title="Position_Deg",
+                                        height=500,
+                                    )
+                                    st.plotly_chart(
+                                        five_to_ninety_eight_position_fig,
+                                        use_container_width=True,
+                                        key=f"posterior_cuff_five_to_ninety_eight_position_plot_{posterior_n_points}_{len(selected_posterior_rep_items)}",
                                     )
                                 raw_position_items = []
                                 for rep_item in selected_posterior_rep_items:
