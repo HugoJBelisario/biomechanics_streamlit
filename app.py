@@ -1146,8 +1146,21 @@ def smooth_biodex_display_curve(values, window_length=9, polyorder=3):
         return arr
     return savgol_filter(arr, window_length=valid_window, polyorder=polyorder)
 
-def detect_position_deg_rep_bounds(position_values):
-    """Detect start/end of a movement from a smoothed Position_Deg signal."""
+def detect_position_deg_rep_bounds(
+    position_values,
+    plateau_window_fraction=0.20,
+    rom_fraction=0.90,
+    angle_tolerance_deg=3.0,
+    velocity_tolerance_deg_per_sample=None,
+    hold_samples=12,
+):
+    """
+    Detect the active Position_Deg movement window.
+
+    End of rep is defined as the first point where the smoothed position reaches
+    the final ROM plateau and remains stable, instead of the later noisy oscillation
+    around that same end-range angle.
+    """
     arr = np.asarray(position_values, dtype=float)
     if len(arr) < 7:
         return {
@@ -1177,6 +1190,8 @@ def detect_position_deg_rep_bounds(position_values):
             arr[finite_mask],
         )
 
+    # Step 1: smooth the position curve enough to remove Biodex jitter while
+    # preserving the broad movement shape.
     smooth_window = get_valid_savgol_window(51, len(clean_position), 3)
     if smooth_window is not None:
         smooth_position = savgol_filter(clean_position, window_length=smooth_window, polyorder=3)
@@ -1196,87 +1211,68 @@ def detect_position_deg_rep_bounds(position_values):
             "plateau_idx": None,
         }
 
+    # Step 2: estimate the starting baseline from the first quiet portion.
     baseline_window = max(5, min(len(smooth_position) // 4, 50))
     baseline_value = float(np.nanmedian(smooth_position[:baseline_window]))
-    rise_threshold = baseline_value + max(8.0, position_span * 0.10)
-    positive_slope_threshold = max(0.5, position_span * 0.003)
-    slope = np.gradient(smooth_position)
-    sustain_needed = max(3, min(8, len(smooth_position) // 20))
+
+    # Step 3: estimate the final ROM plateau from the last portion of the file.
+    # Using the median makes this robust to end-range oscillations/spikes.
+    plateau_window = max(5, int(len(smooth_position) * float(plateau_window_fraction)))
+    plateau_window = min(plateau_window, len(smooth_position))
+    final_plateau_value = float(np.nanmedian(smooth_position[-plateau_window:]))
+
+    movement_direction = 1.0 if final_plateau_value >= baseline_value else -1.0
+    signed_position = movement_direction * smooth_position
+    signed_baseline = movement_direction * baseline_value
+    signed_plateau = movement_direction * final_plateau_value
+    signed_span = max(1e-9, signed_plateau - signed_baseline)
+
+    # Step 4: find movement start as the first sustained departure from baseline.
+    start_threshold = signed_baseline + max(8.0, signed_span * 0.10)
+    slope = np.gradient(signed_position)
+    positive_slope_threshold = max(0.25, abs(signed_span) * 0.002)
+    start_hold_samples = max(3, min(8, len(smooth_position) // 20))
 
     start_idx = 0
-    for idx in range(0, len(smooth_position) - sustain_needed + 1):
-        value_window = smooth_position[idx:idx + sustain_needed]
-        slope_window = slope[idx:idx + sustain_needed]
-        if np.all(value_window >= rise_threshold) and np.nanmean(slope_window) > positive_slope_threshold:
+    for idx in range(0, len(signed_position) - start_hold_samples + 1):
+        value_window = signed_position[idx:idx + start_hold_samples]
+        slope_window = slope[idx:idx + start_hold_samples]
+        if np.all(value_window >= start_threshold) and np.nanmean(slope_window) > positive_slope_threshold:
             start_idx = idx
             break
 
-    peak_position_idx = int(np.nanargmax(smooth_position))
-    peak_position_value = float(smooth_position[peak_position_idx])
-    high_zone_threshold = baseline_value + (position_span * 0.90)
-    plateau_threshold = peak_position_value * 0.95
-    plateau_tolerance = max(3.0, abs(peak_position_value) * 0.03)
-    flat_slope_threshold = max(0.75, position_span * 0.004)
-    high_zone_flat_slope_threshold = flat_slope_threshold * 1.25
-    meaningful_descent_threshold = max(3.0, position_span * 0.05)
+    # Step 5: search for the first sustained end-range plateau.
+    # This ignores torque after the player has already reached max ROM.
+    near_plateau_threshold = signed_baseline + (signed_span * float(rom_fraction))
+    velocity = np.gradient(signed_position)
+    if velocity_tolerance_deg_per_sample is None:
+        velocity_tolerance_deg_per_sample = max(0.35, abs(signed_span) * 0.003)
 
-    first_high_local_max_idx = None
-    for idx in range(start_idx + sustain_needed, peak_position_idx):
-        prev_window_start = max(start_idx, idx - sustain_needed)
-        next_window_end = min(len(smooth_position), idx + (sustain_needed * 3) + 1)
-        prev_slope_window = slope[prev_window_start:idx]
-        next_slope_window = slope[idx:next_window_end]
-        if len(prev_slope_window) < sustain_needed or len(next_slope_window) < sustain_needed:
-            continue
-        if smooth_position[idx] < high_zone_threshold:
-            continue
-        local_window_start = max(start_idx, idx - 1)
-        local_window_end = min(len(smooth_position), idx + 2)
-        is_local_max = smooth_position[idx] >= np.nanmax(smooth_position[local_window_start:local_window_end])
-        was_climbing = np.nanmean(prev_slope_window) > positive_slope_threshold
-        has_started_descending = np.nanmean(next_slope_window) <= 0.0
-        following_min = float(np.nanmin(smooth_position[idx:next_window_end]))
-        has_meaningful_descent = (float(smooth_position[idx]) - following_min) >= meaningful_descent_threshold
-        if is_local_max and was_climbing and has_started_descending and has_meaningful_descent:
-            first_high_local_max_idx = idx
-            break
-
-    first_high_flat_idx = None
-    for idx in range(start_idx, peak_position_idx + 1):
-        window_end = min(len(smooth_position), idx + sustain_needed)
-        if window_end - idx < sustain_needed:
-            continue
-        value_window = smooth_position[idx:window_end]
-        slope_window = slope[idx:window_end]
-        if np.all(value_window >= high_zone_threshold) and np.nanmean(np.abs(slope_window)) <= high_zone_flat_slope_threshold:
-            first_high_flat_idx = idx
-            break
-
+    hold_samples = max(3, int(hold_samples))
     plateau_idx = None
-    for idx in range(start_idx, peak_position_idx + 1):
-        window_end = min(len(smooth_position), idx + sustain_needed)
-        if window_end - idx < sustain_needed:
-            continue
-        value_window = smooth_position[idx:window_end]
-        slope_window = slope[idx:window_end]
-        within_plateau = value_window >= plateau_threshold
-        stable_band = np.abs(value_window - peak_position_value) <= plateau_tolerance
-        flat_enough = np.nanmean(np.abs(slope_window)) <= flat_slope_threshold
-        if np.all(within_plateau) and np.all(stable_band) and flat_enough:
+    for idx in range(start_idx, len(signed_position) - hold_samples + 1):
+        value_window = signed_position[idx:idx + hold_samples]
+        velocity_window = velocity[idx:idx + hold_samples]
+
+        is_near_final_rom = np.all(value_window >= near_plateau_threshold)
+        is_inside_plateau_band = np.all(np.abs(value_window - signed_plateau) <= float(angle_tolerance_deg))
+        is_stable = np.nanmean(np.abs(velocity_window)) <= float(velocity_tolerance_deg_per_sample)
+
+        if is_near_final_rom and is_inside_plateau_band and is_stable:
             plateau_idx = idx
             break
 
+    # Fallback: if the stability rule is too strict, use the first time the curve
+    # reaches 90% of the final ROM. This is still better than going deep into the
+    # noisy post-movement torque/position oscillation.
     if plateau_idx is None:
-        plateau_idx = peak_position_idx
+        candidates = np.flatnonzero(signed_position[start_idx:] >= near_plateau_threshold)
+        if candidates.size > 0:
+            plateau_idx = int(start_idx + candidates[0])
+        else:
+            plateau_idx = int(np.nanargmax(signed_position))
 
-    # Use the first stable near-peak point itself as the effective ROM end,
-    # rather than padding farther into the plateau.
-    if first_high_local_max_idx is not None:
-        end_idx = min(len(smooth_position) - 1, int(first_high_local_max_idx))
-    elif first_high_flat_idx is not None:
-        end_idx = min(len(smooth_position) - 1, int(first_high_flat_idx))
-    else:
-        end_idx = min(len(smooth_position) - 1, int(plateau_idx))
+    end_idx = int(plateau_idx)
 
     return {
         "clean_position": clean_position,
