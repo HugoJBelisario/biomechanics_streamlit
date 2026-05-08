@@ -9136,6 +9136,8 @@ with tab6:
                     zero_rise_rom_mean_df = pd.DataFrame()
                     fifty_rom_reps_long_df = pd.DataFrame()
                     fifty_rom_mean_df = pd.DataFrame()
+                    ninety_rom_reps_long_df = pd.DataFrame()
+                    ninety_rom_mean_df = pd.DataFrame()
                     if selected_posterior_rep_items:
                         (
                             _zero_rise_torque_reps_long_df,
@@ -9158,6 +9160,18 @@ with tab6:
                         ) = extract_position_fraction_aligned_curves(
                             selected_posterior_rep_items,
                             rom_fraction=0.50,
+                            time_col="Elapsed Seconds",
+                            position_col="Position_Deg",
+                            n_points=int(posterior_n_points),
+                            lowpass_cutoff_hz=1.0,
+                        )
+                        (
+                            ninety_rom_reps_long_df,
+                            ninety_rom_mean_df,
+                            _ninety_rom_alignment_metadata,
+                        ) = extract_position_fraction_aligned_curves(
+                            selected_posterior_rep_items,
+                            rom_fraction=0.90,
                             time_col="Elapsed Seconds",
                             position_col="Position_Deg",
                             n_points=int(posterior_n_points),
@@ -9504,6 +9518,68 @@ with tab6:
                                         fifty_rom_fig,
                                         use_container_width=True,
                                         key=f"posterior_cuff_fifty_rom_plot_{posterior_n_points}_{len(selected_posterior_rep_items)}",
+                                    )
+                                if not ninety_rom_reps_long_df.empty and not ninety_rom_mean_df.empty:
+                                    ninety_rom_fig = go.Figure()
+                                    for rep_number, rep_df in ninety_rom_reps_long_df.groupby("rep_number"):
+                                        file_name = rep_df["file_name"].iloc[0]
+                                        ninety_rom_fig.add_trace(go.Scatter(
+                                            x=rep_df["alignment_x"],
+                                            y=rep_df["position_deg"],
+                                            mode="lines",
+                                            line=dict(width=1.5),
+                                            opacity=0.45,
+                                            name=file_name,
+                                        ))
+                                    ninety_rom_fig.add_trace(go.Scatter(
+                                        x=ninety_rom_mean_df["alignment_x"],
+                                        y=ninety_rom_mean_df["upper_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        showlegend=False,
+                                        hoverinfo="skip",
+                                    ))
+                                    ninety_rom_fig.add_trace(go.Scatter(
+                                        x=ninety_rom_mean_df["alignment_x"],
+                                        y=ninety_rom_mean_df["lower_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        fill="tonexty",
+                                        name="±1 SD",
+                                    ))
+                                    ninety_rom_fig.add_trace(go.Scatter(
+                                        x=ninety_rom_mean_df["alignment_x"],
+                                        y=ninety_rom_mean_df["mean_position_deg"],
+                                        mode="lines",
+                                        line=dict(width=4),
+                                        name="Mean Position",
+                                    ))
+                                    ninety_rom_anchor_x = float(ninety_rom_mean_df.attrs.get("anchor_x", 0.0))
+                                    ninety_rom_fig.add_vline(
+                                        x=ninety_rom_anchor_x,
+                                        line_width=2,
+                                        line_dash="dot",
+                                        line_color="rgba(255,255,255,0.45)",
+                                    )
+                                    ninety_rom_fig.add_annotation(
+                                        x=ninety_rom_anchor_x,
+                                        y=1.03,
+                                        xref="x",
+                                        yref="paper",
+                                        text=str(ninety_rom_mean_df.attrs.get("anchor_label", "90% ROM")),
+                                        showarrow=False,
+                                        font=dict(size=11),
+                                    )
+                                    ninety_rom_fig.update_layout(
+                                        title="Posterior Cuff ROM When Aligned at 90% ROM (1 Hz Filtered)",
+                                        xaxis_title=str(ninety_rom_mean_df.attrs.get("x_axis_title", "Aligned Time (s)")),
+                                        yaxis_title="Position_Deg",
+                                        height=500,
+                                    )
+                                    st.plotly_chart(
+                                        ninety_rom_fig,
+                                        use_container_width=True,
+                                        key=f"posterior_cuff_ninety_rom_plot_{posterior_n_points}_{len(selected_posterior_rep_items)}",
                                     )
                                 raw_position_items = []
                                 for rep_item in selected_posterior_rep_items:
