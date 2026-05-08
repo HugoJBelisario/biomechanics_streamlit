@@ -1874,6 +1874,7 @@ def extract_single_rep_file_aligned_curves(
     x_axis_mode="raw_time",
     common_rom_end_tolerance_deg=2.5,
     common_rom_end_hold_time_seconds=0.08,
+    rom_display_lowpass_cutoff_hz=None,
 ):
     if not preview_items:
         return pd.DataFrame(), pd.DataFrame(), [], pd.DataFrame(), pd.DataFrame()
@@ -1912,6 +1913,16 @@ def extract_single_rep_file_aligned_curves(
                     position_values[finite_position_mask],
                 )
                 position_values = cleaned_position
+
+        rom_display_position_values = position_values
+        if position_values is not None and rom_display_lowpass_cutoff_hz is not None:
+            filtered_position_values, _filtered_fs, _clean_position = smooth_position_deg_signal(
+                time_values,
+                position_values,
+                lowpass_cutoff_hz=float(rom_display_lowpass_cutoff_hz),
+            )
+            if filtered_position_values is not None:
+                rom_display_position_values = np.asarray(filtered_position_values, dtype=float)
 
         position_rep_bounds = (
             detect_position_deg_rep_bounds(time_values, position_values)
@@ -2045,6 +2056,7 @@ def extract_single_rep_file_aligned_curves(
             "sample_pct": np.linspace(0.0, 100.0, len(rep_df)),
             "torque_values": torque_values,
             "position_values": position_values,
+            "rom_display_position_values": rom_display_position_values,
             "smooth_position_values": (
                 np.asarray(position_rep_bounds["smooth_position"], dtype=float)
                 if position_rep_bounds is not None
@@ -2117,8 +2129,9 @@ def extract_single_rep_file_aligned_curves(
                 "alignment_x": percent_axis,
                 "torque_nm": interp_torque,
             }))
-            if rep["position_values"] is not None:
-                position_window = rep["position_values"][zero_idx:position_end_idx + 1]
+            display_position_values = rep.get("rom_display_position_values")
+            if display_position_values is not None:
+                position_window = display_position_values[zero_idx:position_end_idx + 1]
                 interp_position = np.interp(
                     percent_axis,
                     np.linspace(0.0, 100.0, len(position_window)),
@@ -2195,8 +2208,9 @@ def extract_single_rep_file_aligned_curves(
                 "alignment_x": percent_axis,
                 "torque_nm": interp_torque,
             }))
-            if rep["position_values"] is not None:
-                position_window = rep["position_values"][zero_idx:position_end_idx + 1]
+            display_position_values = rep.get("rom_display_position_values")
+            if display_position_values is not None:
+                position_window = display_position_values[zero_idx:position_end_idx + 1]
                 interp_position = np.interp(
                     percent_axis,
                     np.linspace(0.0, 100.0, len(position_window)),
@@ -2261,8 +2275,9 @@ def extract_single_rep_file_aligned_curves(
                 "alignment_x": percent_axis,
                 "torque_nm": interp_torque,
             }))
-            if rep["position_values"] is not None:
-                interp_position = np.interp(percent_axis, mapped_pct, rep["position_values"])
+            display_position_values = rep.get("rom_display_position_values")
+            if display_position_values is not None:
+                interp_position = np.interp(percent_axis, mapped_pct, display_position_values)
                 interpolated_rom_curves.append(interp_position)
                 rom_rep_rows.append(pd.DataFrame({
                     "rep_number": rep["rep_number"],
@@ -2324,8 +2339,9 @@ def extract_single_rep_file_aligned_curves(
                 "alignment_x": percent_axis,
                 "torque_nm": interp_torque,
             }))
-            if rep["position_values"] is not None:
-                interp_position = np.interp(percent_axis, mapped_pct, rep["position_values"])
+            display_position_values = rep.get("rom_display_position_values")
+            if display_position_values is not None:
+                interp_position = np.interp(percent_axis, mapped_pct, display_position_values)
                 interpolated_rom_curves.append(interp_position)
                 rom_rep_rows.append(pd.DataFrame({
                     "rep_number": rep["rep_number"],
@@ -2380,8 +2396,9 @@ def extract_single_rep_file_aligned_curves(
                 "alignment_x": percent_axis,
                 "torque_nm": interp_torque,
             }))
-            if rep["position_values"] is not None:
-                interp_position = np.interp(percent_axis, mapped_pct, rep["position_values"])
+            display_position_values = rep.get("rom_display_position_values")
+            if display_position_values is not None:
+                interp_position = np.interp(percent_axis, mapped_pct, display_position_values)
                 interpolated_rom_curves.append(interp_position)
                 rom_rep_rows.append(pd.DataFrame({
                     "rep_number": rep["rep_number"],
@@ -2414,8 +2431,9 @@ def extract_single_rep_file_aligned_curves(
                 "alignment_x": common_axis,
                 "torque_nm": interp_torque,
             }))
-            if rep["position_values"] is not None:
-                interp_position = np.interp(common_axis, rep["aligned_time"], rep["position_values"])
+            display_position_values = rep.get("rom_display_position_values")
+            if display_position_values is not None:
+                interp_position = np.interp(common_axis, rep["aligned_time"], display_position_values)
                 interpolated_rom_curves.append(interp_position)
                 rom_rep_rows.append(pd.DataFrame({
                     "rep_number": rep["rep_number"],
@@ -8927,6 +8945,11 @@ with tab6:
                         x_axis_mode=posterior_x_axis_mode,
                         common_rom_end_tolerance_deg=float(posterior_common_rom_end_tolerance_deg),
                         common_rom_end_hold_time_seconds=float(posterior_common_rom_end_hold_time_seconds),
+                        rom_display_lowpass_cutoff_hz=(
+                            1.0
+                            if posterior_x_axis_mode == "raw_time" and posterior_anchor_mode == "zero_torque_rise"
+                            else None
+                        ),
                     )
                     zero_rise_rom_reps_long_df = pd.DataFrame()
                     zero_rise_rom_mean_df = pd.DataFrame()
@@ -9149,7 +9172,11 @@ with tab6:
                                         font=dict(size=11, color="rgba(144,238,144,0.95)"),
                                     )
                                 posterior_rom_fig.update_layout(
-                                    title="Posterior Cuff Reactive Eccentric: Across-File Range of Motion",
+                                    title=(
+                                        "Posterior Cuff Reactive Eccentric: Across-File Range of Motion (1 Hz Filtered)"
+                                        if posterior_x_axis_mode == "raw_time" and posterior_anchor_mode == "zero_torque_rise"
+                                        else "Posterior Cuff Reactive Eccentric: Across-File Range of Motion"
+                                    ),
                                     xaxis_title=x_axis_title,
                                     yaxis_title="Position_Deg",
                                     height=500,
