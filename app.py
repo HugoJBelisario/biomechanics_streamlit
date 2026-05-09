@@ -1323,6 +1323,59 @@ def smooth_position_deg_signal(
 
     return smooth_position, fs, clean_position
 
+def lowpass_butterworth_position_signal(
+    time_values,
+    position_values,
+    lowpass_cutoff_hz=4.0,
+    order=4,
+):
+    """Apply a Butterworth low-pass filter to Position_Deg without extra smoothing."""
+    time_arr = np.asarray(time_values, dtype=float)
+    arr = np.asarray(position_values, dtype=float)
+    if len(arr) == 0:
+        return arr, None, arr
+
+    finite_mask = np.isfinite(arr)
+    if not finite_mask.any():
+        return arr, None, arr
+
+    clean_position = arr.copy()
+    if not finite_mask.all():
+        valid_idx = np.flatnonzero(finite_mask)
+        clean_position[~finite_mask] = np.interp(
+            np.flatnonzero(~finite_mask),
+            valid_idx,
+            arr[finite_mask],
+        )
+
+    finite_time_mask = np.isfinite(time_arr)
+    if finite_time_mask.any():
+        clean_time = time_arr.copy()
+        if not finite_time_mask.all():
+            valid_time_idx = np.flatnonzero(finite_time_mask)
+            clean_time[~finite_time_mask] = np.interp(
+                np.flatnonzero(~finite_time_mask),
+                valid_time_idx,
+                time_arr[finite_time_mask],
+            )
+    else:
+        clean_time = np.arange(len(clean_position), dtype=float)
+
+    dt = np.diff(clean_time)
+    dt = dt[np.isfinite(dt) & (dt > 0)]
+    fs = float(1.0 / np.nanmedian(dt)) if dt.size else None
+    if fs is None or fs <= 0 or len(clean_position) < 9:
+        return clean_position, fs, clean_position
+
+    nyquist = fs / 2.0
+    normalized_cutoff = min(0.99, float(lowpass_cutoff_hz) / nyquist)
+    if not (0.0 < normalized_cutoff < 1.0):
+        return clean_position, fs, clean_position
+
+    b, a = butter(int(order), normalized_cutoff, btype="low")
+    filtered_position = filtfilt(b, a, clean_position)
+    return filtered_position, fs, clean_position
+
 def find_first_common_rom_band_entry(
     smooth_position_values,
     start_idx,
@@ -9096,6 +9149,8 @@ with tab6:
                 if item["name"] == preview_file_name
             )
             preview_df = preview_item["df"].copy()
+            preview_movement = preview_item.get("movement", selected_biodex_test_movement)
+            preview_protocol_type = preview_item.get("protocol_type", selected_biodex_test_protocol)
 
             if "Torque_Nm" in preview_item["numeric_columns"]:
                 preview_fig = go.Figure()
@@ -9132,8 +9187,38 @@ with tab6:
                     )
                     st.plotly_chart(position_preview_fig, use_container_width=True)
 
-                preview_movement = preview_item.get("movement", selected_biodex_test_movement)
-                preview_protocol_type = preview_item.get("protocol_type", selected_biodex_test_protocol)
+                    if preview_movement == "shoulder_er_ir" and preview_protocol_type == "speed":
+                        erir_filtered_cutoff_hz = st.slider(
+                            "Shoulder ER/IR position smoothing cutoff (Hz)",
+                            min_value=1.0,
+                            max_value=10.0,
+                            value=4.0,
+                            step=0.5,
+                            key="shoulder_er_ir_speed_position_cutoff_hz",
+                        )
+                        st.caption(
+                            "Lower cutoff = smoother Butterworth-filtered Position_Deg for this ER/IR speed preview."
+                        )
+                        filtered_position_values, _filtered_fs, _clean_position = lowpass_butterworth_position_signal(
+                            preview_df["Elapsed Seconds"].to_numpy(dtype=float),
+                            preview_df["Position_Deg"].to_numpy(dtype=float),
+                            lowpass_cutoff_hz=float(erir_filtered_cutoff_hz),
+                        )
+                        filtered_position_preview_fig = go.Figure()
+                        filtered_position_preview_fig.add_trace(go.Scatter(
+                            x=preview_df["Elapsed Seconds"],
+                            y=filtered_position_values,
+                            mode="lines",
+                            line=dict(width=2.5),
+                            name="Butterworth Filtered Position_Deg",
+                        ))
+                        filtered_position_preview_fig.update_layout(
+                            title="Shoulder ER/IR Speed: Butterworth-Filtered Position Preview",
+                            xaxis_title="Elapsed Time (s)",
+                            yaxis_title="Position_Deg",
+                            height=500,
+                        )
+                        st.plotly_chart(filtered_position_preview_fig, use_container_width=True)
 
                 if (
                     preview_movement == "posterior_cuff"
