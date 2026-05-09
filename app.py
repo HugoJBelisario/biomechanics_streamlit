@@ -353,6 +353,7 @@ def format_biodex_movement_label(value):
 def get_biodex_throwing_context_options():
     return [
         "pre_session",
+        "arm_care",
         "after_1st_inning",
         "after_2nd_inning",
         "after_3rd_inning",
@@ -368,6 +369,7 @@ def get_biodex_throwing_context_options():
 def format_biodex_throwing_context_label(value):
     return {
         "pre_session": "Pre-Session / Before Pen",
+        "arm_care": "Arm Care",
         "after_1st_inning": "After 1st Inning",
         "after_2nd_inning": "After 2nd Inning",
         "after_3rd_inning": "After 3rd Inning",
