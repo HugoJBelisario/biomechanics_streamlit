@@ -2050,7 +2050,9 @@ def detect_shoulder_er_ir_speed_reps(
         }
 
     raw_regions = _build_contiguous_regions(below_threshold_idx.tolist())
-    merge_gap = max(3, int(min_samples))
+    # Merge nearby below-threshold regions so the multiple dips inside one
+    # high-speed ER/IR burst are treated as one rep cluster.
+    merge_gap = max(3, int(min_samples), int(buffer_samples))
     merged_regions = _merge_close_regions(raw_regions, merge_gap)
 
     rep_windows = []
@@ -10932,17 +10934,9 @@ with tab6:
                             )
                             preview_raw_fig.add_trace(go.Scatter(
                                 x=preview_df["Elapsed Seconds"],
-                                y=preview_df["Position_Deg"],
-                                mode="lines",
-                                line=dict(width=1.5),
-                                opacity=0.35,
-                                name=f"{preview_item['name']} (Raw Position)",
-                            ))
-                            preview_raw_fig.add_trace(go.Scatter(
-                                x=preview_df["Elapsed Seconds"],
                                 y=preview_smooth_position,
                                 mode="lines",
-                                line=dict(width=2.5, dash="dash"),
+                                line=dict(width=2.75),
                                 name=f"{preview_item['name']} (Filtered Position)",
                             ))
                         else:
