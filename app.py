@@ -1999,6 +1999,94 @@ def detect_posterior_cuff_reactive_eccentric_reps(
 
     return adjusted_windows
 
+def detect_shoulder_er_ir_speed_reps(
+    df,
+    position_col="Position_Deg",
+    time_col="Elapsed Seconds",
+    lowpass_cutoff_hz=1.0,
+    min_samples=15,
+    buffer_samples=0,
+    drop_fraction=0.10,
+):
+    if df.empty or position_col not in df.columns:
+        return [], None
+
+    position_values = pd.to_numeric(df[position_col], errors="coerce").to_numpy(dtype=float)
+    if len(position_values) < 15 or np.all(np.isnan(position_values)):
+        return [], None
+
+    if time_col in df.columns:
+        time_values = pd.to_numeric(df[time_col], errors="coerce").to_numpy(dtype=float)
+    else:
+        time_values = np.arange(len(position_values), dtype=float)
+
+    smooth_position, fs, clean_position = lowpass_butterworth_position_signal(
+        time_values,
+        position_values,
+        lowpass_cutoff_hz=float(lowpass_cutoff_hz),
+    )
+    smooth_position = np.asarray(smooth_position, dtype=float)
+    if len(smooth_position) == 0 or not np.isfinite(smooth_position).any():
+        return [], None
+
+    high_cutoff = float(np.nanpercentile(smooth_position, 85))
+    high_plateau_samples = smooth_position[smooth_position >= high_cutoff]
+    high_plateau = (
+        float(np.nanmedian(high_plateau_samples))
+        if high_plateau_samples.size
+        else float(np.nanmedian(smooth_position))
+    )
+    low_reference = float(np.nanpercentile(smooth_position, 5))
+    dip_amplitude = max(1.0, high_plateau - low_reference)
+    active_threshold = high_plateau - (dip_amplitude * float(drop_fraction))
+
+    below_threshold_idx = np.flatnonzero(smooth_position <= active_threshold)
+    if below_threshold_idx.size == 0:
+        return [], {
+            "smooth_position": smooth_position,
+            "active_threshold": float(active_threshold),
+            "high_plateau": float(high_plateau),
+            "fs": fs,
+        }
+
+    raw_regions = _build_contiguous_regions(below_threshold_idx.tolist())
+    merge_gap = max(3, int(min_samples))
+    merged_regions = _merge_close_regions(raw_regions, merge_gap)
+
+    rep_windows = []
+    for region_start, region_end in merged_regions:
+        if (region_end - region_start + 1) < int(min_samples):
+            continue
+
+        start_idx = int(region_start)
+        end_idx = int(region_end)
+
+        for idx in range(int(region_start), 0, -1):
+            prev_val = float(smooth_position[idx - 1])
+            curr_val = float(smooth_position[idx])
+            if prev_val > active_threshold >= curr_val:
+                start_idx = int(idx - 1)
+                break
+
+        for idx in range(int(region_end), len(smooth_position) - 1):
+            curr_val = float(smooth_position[idx])
+            next_val = float(smooth_position[idx + 1])
+            if curr_val <= active_threshold < next_val:
+                end_idx = int(idx + 1)
+                break
+
+        buffered_start = max(0, int(start_idx) - int(buffer_samples))
+        buffered_end = min(len(smooth_position) - 1, int(end_idx) + int(buffer_samples))
+        if buffered_end > buffered_start:
+            rep_windows.append((buffered_start, buffered_end))
+
+    return rep_windows, {
+        "smooth_position": smooth_position,
+        "active_threshold": float(active_threshold),
+        "high_plateau": float(high_plateau),
+        "fs": fs,
+    }
+
 def detect_biodex_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.12):
     if rep_df.empty or value_col not in rep_df.columns:
         return None
@@ -10708,6 +10796,23 @@ with tab6:
                             step=0.01,
                             key="biodex_test_preview_prominence",
                         )
+                        preview_position_cutoff_hz = 1.0
+                        if (
+                            preview_movement == "shoulder_er_ir"
+                            and preview_protocol_type == "speed"
+                        ):
+                            preview_position_cutoff_hz = st.slider(
+                                "Position smoothing cutoff (Hz)",
+                                min_value=0.5,
+                                max_value=4.0,
+                                value=1.0,
+                                step=0.1,
+                                key="biodex_test_preview_position_cutoff_hz",
+                            )
+                            st.caption(
+                                "Shoulder ER/IR speed preview uses Butterworth-filtered `Position_Deg` to find each dip-cluster rep window. "
+                                "Minimum active samples, buffer, and this cutoff matter most here."
+                            )
                         if (
                             preview_movement == "d2_shoulder_pattern"
                             and preview_protocol_type != "speed"
@@ -10732,8 +10837,30 @@ with tab6:
                         min_samples=int(preview_min_samples),
                         buffer_samples=int(preview_buffer_samples),
                     )
+                    preview_position_detection_metadata = None
                     preview_processing_version = "shoulder_er_ir_landmark_v1"
                     if (
+                        preview_movement == "shoulder_er_ir"
+                        and preview_protocol_type == "speed"
+                    ):
+                        preview_rep_windows, preview_position_detection_metadata = detect_shoulder_er_ir_speed_reps(
+                            preview_df,
+                            position_col="Position_Deg",
+                            time_col="Elapsed Seconds",
+                            lowpass_cutoff_hz=float(preview_position_cutoff_hz),
+                            min_samples=int(preview_min_samples),
+                            buffer_samples=int(preview_buffer_samples),
+                        )
+                        preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
+                            preview_df,
+                            preview_rep_windows,
+                            time_col="Elapsed Seconds",
+                            value_col="Torque_Nm",
+                            n_points=int(preview_n_points),
+                            prominence_ratio=float(preview_landmark_prominence),
+                        )
+                        preview_processing_version = "shoulder_er_ir_speed_position_windows_v1"
+                    elif (
                         preview_movement == "d2_shoulder_pattern"
                         and preview_protocol_type != "speed"
                     ):
@@ -10784,19 +10911,47 @@ with tab6:
                     with preview_plot_col:
                         preview_plot_suffix = (
                             f"{preview_item['biodex_test_id']}_"
+                            f"{preview_movement}_"
+                            f"{preview_protocol_type}_"
                             f"{preview_threshold}_"
                             f"{preview_min_samples}_"
                             f"{preview_buffer_samples}_"
                             f"{preview_n_points}_"
-                            f"{preview_landmark_prominence}"
+                            f"{preview_landmark_prominence}_"
+                            f"{preview_position_cutoff_hz}"
                         )
                         preview_raw_fig = go.Figure()
-                        preview_raw_fig.add_trace(go.Scatter(
-                            x=preview_df["Elapsed Seconds"],
-                            y=preview_df["Torque_Nm"],
-                            mode="lines",
-                            name=f"{preview_item['name']} (Raw)",
-                        ))
+                        if (
+                            preview_movement == "shoulder_er_ir"
+                            and preview_protocol_type == "speed"
+                            and preview_position_detection_metadata is not None
+                        ):
+                            preview_smooth_position = np.asarray(
+                                preview_position_detection_metadata["smooth_position"],
+                                dtype=float,
+                            )
+                            preview_raw_fig.add_trace(go.Scatter(
+                                x=preview_df["Elapsed Seconds"],
+                                y=preview_df["Position_Deg"],
+                                mode="lines",
+                                line=dict(width=1.5),
+                                opacity=0.35,
+                                name=f"{preview_item['name']} (Raw Position)",
+                            ))
+                            preview_raw_fig.add_trace(go.Scatter(
+                                x=preview_df["Elapsed Seconds"],
+                                y=preview_smooth_position,
+                                mode="lines",
+                                line=dict(width=2.5, dash="dash"),
+                                name=f"{preview_item['name']} (Filtered Position)",
+                            ))
+                        else:
+                            preview_raw_fig.add_trace(go.Scatter(
+                                x=preview_df["Elapsed Seconds"],
+                                y=preview_df["Torque_Nm"],
+                                mode="lines",
+                                name=f"{preview_item['name']} (Raw)",
+                            ))
 
                         preview_shapes = []
                         for rep_number, (start_idx, end_idx) in enumerate(preview_rep_windows, start=1):
@@ -10823,10 +10978,41 @@ with tab6:
                                 showarrow=False,
                             )
 
+                        if (
+                            preview_movement == "shoulder_er_ir"
+                            and preview_protocol_type == "speed"
+                            and preview_position_detection_metadata is not None
+                        ):
+                            preview_raw_fig.add_hline(
+                                y=float(preview_position_detection_metadata["active_threshold"]),
+                                line_width=1.5,
+                                line_dash="dot",
+                                line_color="rgba(255,184,108,0.55)",
+                            )
+                            preview_raw_fig.add_annotation(
+                                x=1.0,
+                                y=float(preview_position_detection_metadata["active_threshold"]),
+                                xref="paper",
+                                yref="y",
+                                xanchor="right",
+                                yanchor="bottom",
+                                text="Rep Threshold",
+                                showarrow=False,
+                                font=dict(size=11, color="rgba(255,184,108,0.95)"),
+                            )
+
                         preview_raw_fig.update_layout(
-                            title="Detected Torque Reps",
+                            title=(
+                                "Detected Position Reps"
+                                if preview_movement == "shoulder_er_ir" and preview_protocol_type == "speed"
+                                else "Detected Torque Reps"
+                            ),
                             xaxis_title="Elapsed Time (s)",
-                            yaxis_title="Torque_Nm",
+                            yaxis_title=(
+                                "Position_Deg"
+                                if preview_movement == "shoulder_er_ir" and preview_protocol_type == "speed"
+                                else "Torque_Nm"
+                            ),
                             shapes=preview_shapes,
                             height=500,
                         )
