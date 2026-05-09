@@ -2049,42 +2049,69 @@ def detect_shoulder_er_ir_speed_reps(
             "fs": fs,
         }
 
+    # A second, higher threshold marks a "true return" to the plateau. We only
+    # close a rep once the filtered signal gets back near the high plateau and
+    # stays there briefly, which keeps multi-dip clusters together.
+    return_threshold = high_plateau - (dip_amplitude * 0.04)
+    if fs is not None and np.isfinite(fs) and fs > 0:
+        plateau_hold_samples = max(3, int(round(float(fs) * 0.08)))
+    else:
+        plateau_hold_samples = max(3, int(min_samples) // 2)
+
     raw_regions = _build_contiguous_regions(below_threshold_idx.tolist())
-    # Merge nearby below-threshold regions so the multiple dips inside one
-    # high-speed ER/IR burst are treated as one rep cluster.
-    merge_gap = max(3, int(min_samples), int(buffer_samples))
-    merged_regions = _merge_close_regions(raw_regions, merge_gap)
-
     rep_windows = []
-    for region_start, region_end in merged_regions:
-        if (region_end - region_start + 1) < int(min_samples):
-            continue
+    region_cursor = 0
+    n_samples = len(smooth_position)
 
-        start_idx = int(region_start)
-        end_idx = int(region_end)
+    while region_cursor < len(raw_regions):
+        region_start, region_end = raw_regions[region_cursor]
+        cluster_start = int(region_start)
+        cluster_end = int(region_end)
 
-        for idx in range(int(region_start), 0, -1):
-            prev_val = float(smooth_position[idx - 1])
-            curr_val = float(smooth_position[idx])
-            if prev_val > active_threshold >= curr_val:
-                start_idx = int(idx - 1)
+        search_idx = int(cluster_end) + 1
+        while search_idx < n_samples:
+            plateau_window_end = min(n_samples, search_idx + plateau_hold_samples)
+            if plateau_window_end - search_idx < plateau_hold_samples:
+                cluster_end = n_samples - 1
                 break
 
-        for idx in range(int(region_end), len(smooth_position) - 1):
-            curr_val = float(smooth_position[idx])
-            next_val = float(smooth_position[idx + 1])
-            if curr_val <= active_threshold < next_val:
-                end_idx = int(idx + 1)
+            plateau_window = smooth_position[search_idx:plateau_window_end]
+            if np.all(plateau_window >= return_threshold):
+                cluster_end = int(search_idx)
                 break
 
-        buffered_start = max(0, int(start_idx) - int(buffer_samples))
-        buffered_end = min(len(smooth_position) - 1, int(end_idx) + int(buffer_samples))
-        if buffered_end > buffered_start:
-            rep_windows.append((buffered_start, buffered_end))
+            next_region_idx = region_cursor + 1
+            if next_region_idx < len(raw_regions):
+                next_start, next_end = raw_regions[next_region_idx]
+                if int(next_start) < plateau_window_end:
+                    cluster_end = int(next_end)
+                    region_cursor = next_region_idx
+                    search_idx = int(next_end) + 1
+                    continue
+            search_idx += 1
+
+        if (cluster_end - cluster_start + 1) >= int(min_samples):
+            start_idx = int(cluster_start)
+            end_idx = int(cluster_end)
+
+            for idx in range(int(cluster_start), 0, -1):
+                prev_val = float(smooth_position[idx - 1])
+                curr_val = float(smooth_position[idx])
+                if prev_val > active_threshold >= curr_val:
+                    start_idx = int(idx - 1)
+                    break
+
+            buffered_start = max(0, int(start_idx) - int(buffer_samples))
+            buffered_end = min(n_samples - 1, int(end_idx) + int(buffer_samples))
+            if buffered_end > buffered_start:
+                rep_windows.append((buffered_start, buffered_end))
+
+        region_cursor += 1
 
     return rep_windows, {
         "smooth_position": smooth_position,
         "active_threshold": float(active_threshold),
+        "return_threshold": float(return_threshold),
         "high_plateau": float(high_plateau),
         "fs": fs,
     }
