@@ -10826,6 +10826,7 @@ with tab6:
                             key="biodex_test_preview_prominence",
                         )
                         preview_position_cutoff_hz = 1.0
+                        preview_position_drop_fraction = 0.10
                         if (
                             preview_movement == "shoulder_er_ir"
                             and preview_protocol_type == "speed"
@@ -10838,9 +10839,18 @@ with tab6:
                                 step=0.1,
                                 key="biodex_test_preview_position_cutoff_hz",
                             )
+                            preview_position_drop_fraction = st.slider(
+                                "Rep threshold depth into dip",
+                                min_value=0.05,
+                                max_value=0.60,
+                                value=0.10,
+                                step=0.01,
+                                key="biodex_test_preview_position_drop_fraction",
+                            )
                             st.caption(
                                 "Shoulder ER/IR speed preview uses Butterworth-filtered `Position_Deg` to find each dip-cluster rep window. "
-                                "Minimum active samples, buffer, and this cutoff matter most here."
+                                "Minimum active samples, buffer, cutoff, and threshold depth matter most here. "
+                                "Higher threshold depth moves the rep-threshold line farther down into the dip."
                             )
                         if (
                             preview_movement == "d2_shoulder_pattern"
@@ -10879,6 +10889,7 @@ with tab6:
                             lowpass_cutoff_hz=float(preview_position_cutoff_hz),
                             min_samples=int(preview_min_samples),
                             buffer_samples=int(preview_buffer_samples),
+                            drop_fraction=float(preview_position_drop_fraction),
                         )
                         preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
                             preview_df,
@@ -10947,7 +10958,8 @@ with tab6:
                             f"{preview_buffer_samples}_"
                             f"{preview_n_points}_"
                             f"{preview_landmark_prominence}_"
-                            f"{preview_position_cutoff_hz}"
+                            f"{preview_position_cutoff_hz}_"
+                            f"{preview_position_drop_fraction}"
                         )
                         preview_raw_fig = go.Figure()
                         if (
