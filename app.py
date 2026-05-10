@@ -2177,6 +2177,99 @@ def detect_biodex_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=
         "smooth_values": smooth_values,
     }
 
+def detect_shoulder_er_ir_speed_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.12):
+    if rep_df.empty or value_col not in rep_df.columns:
+        return None
+
+    torque_values = pd.to_numeric(rep_df[value_col], errors="coerce").to_numpy(dtype=float)
+    if len(torque_values) < 11 or np.all(np.isnan(torque_values)):
+        return None
+
+    finite_mask = np.isfinite(torque_values)
+    if not finite_mask.any():
+        return None
+
+    clean_values = torque_values.copy()
+    if not finite_mask.all():
+        valid_idx = np.flatnonzero(finite_mask)
+        clean_values[~finite_mask] = np.interp(
+            np.flatnonzero(~finite_mask),
+            valid_idx,
+            torque_values[finite_mask],
+        )
+
+    smooth_window = get_valid_savgol_window(11, len(clean_values), 3)
+    if smooth_window is not None:
+        smooth_values = savgol_filter(clean_values, window_length=smooth_window, polyorder=3)
+    else:
+        smooth_values = clean_values
+
+    amplitude_span = float(np.nanmax(smooth_values) - np.nanmin(smooth_values))
+    if amplitude_span <= 0:
+        return None
+
+    min_distance = max(1, len(smooth_values) // 18)
+    prominence = max(1.0, amplitude_span * float(prominence_ratio))
+
+    pos_peaks, pos_props = find_peaks(smooth_values, prominence=prominence, distance=min_distance)
+    neg_peaks, neg_props = find_peaks(-smooth_values, prominence=prominence, distance=min_distance)
+
+    if len(pos_peaks) < 3 or len(neg_peaks) < 3:
+        return None
+
+    candidates = []
+    for idx, prom in zip(pos_peaks, pos_props["prominences"]):
+        candidates.append((int(idx), "pos", float(prom)))
+    for idx, prom in zip(neg_peaks, neg_props["prominences"]):
+        candidates.append((int(idx), "neg", float(prom)))
+    candidates.sort(key=lambda item: item[0])
+
+    # Collapse consecutive same-sign candidates into one meaningful hump/trough.
+    # For the first positive run we keep the earliest peak so POS1 lands on the first hump.
+    # For later runs we keep the most prominent candidate in that run.
+    runs = []
+    current_run = []
+    for candidate in candidates:
+        if not current_run or candidate[1] == current_run[-1][1]:
+            current_run.append(candidate)
+        else:
+            runs.append(current_run)
+            current_run = [candidate]
+    if current_run:
+        runs.append(current_run)
+
+    first_pos_run_idx = next((i for i, run in enumerate(runs) if run and run[0][1] == "pos"), None)
+    if first_pos_run_idx is None:
+        return None
+
+    landmark_pairs = []
+    expected_sequence = ["pos", "neg", "pos", "neg", "pos", "neg"]
+    run_idx = first_pos_run_idx
+
+    for seq_idx, expected_kind in enumerate(expected_sequence):
+        while run_idx < len(runs) and runs[run_idx][0][1] != expected_kind:
+            run_idx += 1
+        if run_idx >= len(runs):
+            return None
+
+        run = runs[run_idx]
+        if seq_idx == 0:
+            chosen = min(run, key=lambda item: item[0])
+        else:
+            chosen = max(run, key=lambda item: item[2])
+        landmark_pairs.append((int(chosen[0]), expected_kind))
+        run_idx += 1
+
+    landmark_indices = [idx for idx, _kind in landmark_pairs]
+    if any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
+        return None
+
+    return {
+        "indices": landmark_indices,
+        "kinds": [kind for _idx, kind in landmark_pairs],
+        "smooth_values": smooth_values,
+    }
+
 def extract_landmark_aligned_biodex_reps(
     df,
     rep_windows,
@@ -2280,6 +2373,115 @@ def extract_landmark_aligned_biodex_reps(
     for kind in aligned_rep_metadata[0]["landmark_kinds"]:
         landmark_counts[kind] = landmark_counts.get(kind, 0) + 1
         landmark_labels.append(f"{kind.upper()}{landmark_counts[kind]}")
+    mean_df.attrs["landmark_boundary_pct"] = boundary_pct[1:-1].tolist()
+    mean_df.attrs["landmark_labels"] = landmark_labels
+
+    return reps_long_df, mean_df, aligned_rep_metadata
+
+def extract_shoulder_er_ir_speed_landmark_aligned_biodex_reps(
+    df,
+    rep_windows,
+    time_col="Elapsed Seconds",
+    value_col="Torque_Nm",
+    n_points=101,
+    prominence_ratio=0.12,
+):
+    if df.empty or not rep_windows:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    percent_axis = np.linspace(0.0, 100.0, int(n_points))
+    valid_reps = []
+    phase_fraction_rows = []
+
+    for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
+        rep_df = df.iloc[int(start_idx):int(end_idx) + 1].copy()
+        if rep_df.empty:
+            continue
+
+        rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
+        rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
+        rep_df = rep_df.dropna(subset=[time_col, value_col]).reset_index(drop=True)
+        if len(rep_df) < 11:
+            continue
+
+        landmark_info = detect_shoulder_er_ir_speed_rep_landmarks(
+            rep_df,
+            value_col=value_col,
+            prominence_ratio=prominence_ratio,
+        )
+        if landmark_info is None:
+            continue
+
+        boundary_idx = [0] + landmark_info["indices"] + [len(rep_df) - 1]
+        if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
+            continue
+
+        phase_lengths = np.diff(boundary_idx).astype(float)
+        if np.any(phase_lengths <= 0):
+            continue
+
+        phase_fraction_rows.append(phase_lengths / phase_lengths.sum())
+        valid_reps.append({
+            "rep_number": rep_number,
+            "rep_df": rep_df,
+            "boundary_idx": boundary_idx,
+            "landmark_indices": landmark_info["indices"],
+            "landmark_kinds": landmark_info["kinds"],
+        })
+
+    if not valid_reps:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    median_phase_fractions = np.nanmedian(np.vstack(phase_fraction_rows), axis=0)
+    median_phase_fractions = median_phase_fractions / median_phase_fractions.sum()
+    boundary_pct = np.concatenate(([0.0], np.cumsum(median_phase_fractions) * 100.0))
+
+    normalized_curves = []
+    rep_rows = []
+    aligned_rep_metadata = []
+
+    for rep_info in valid_reps:
+        rep_df = rep_info["rep_df"]
+        time_values = rep_df[time_col].to_numpy(dtype=float)
+        torque_values = rep_df[value_col].to_numpy(dtype=float)
+        sample_idx = np.arange(len(rep_df), dtype=float)
+        mapped_pct = np.interp(sample_idx, rep_info["boundary_idx"], boundary_pct)
+        interp_torque = np.interp(percent_axis, mapped_pct, torque_values)
+
+        landmark_times = [float(time_values[idx]) for idx in rep_info["landmark_indices"]]
+        landmark_torques = [float(torque_values[idx]) for idx in rep_info["landmark_indices"]]
+
+        normalized_curves.append(interp_torque)
+        rep_rows.append(pd.DataFrame({
+            "rep_number": rep_info["rep_number"],
+            "movement_pct": percent_axis,
+            "torque_nm": interp_torque,
+        }))
+        aligned_rep_metadata.append({
+            "rep_number": rep_info["rep_number"],
+            "landmark_indices": rep_info["landmark_indices"],
+            "landmark_kinds": rep_info["landmark_kinds"],
+            "landmark_times": landmark_times,
+            "landmark_torques": landmark_torques,
+        })
+
+    curves_arr = np.vstack(normalized_curves)
+    reps_long_df = pd.concat(rep_rows, ignore_index=True)
+
+    mean_df = pd.DataFrame({
+        "movement_pct": percent_axis,
+        "mean_torque_nm": np.nanmean(curves_arr, axis=0),
+        "std_torque_nm": np.nanstd(curves_arr, axis=0),
+    })
+    mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
+    mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
+
+    landmark_counts = {}
+    landmark_labels = []
+    for kind in aligned_rep_metadata[0]["landmark_kinds"]:
+        landmark_counts[kind] = landmark_counts.get(kind, 0) + 1
+        landmark_labels.append(f"{kind.upper()}{landmark_counts[kind]}")
+
     mean_df.attrs["landmark_boundary_pct"] = boundary_pct[1:-1].tolist()
     mean_df.attrs["landmark_labels"] = landmark_labels
 
@@ -10892,7 +11094,7 @@ with tab6:
                             buffer_samples=int(preview_buffer_samples),
                             drop_fraction=float(preview_position_drop_fraction),
                         )
-                        preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
+                        preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_shoulder_er_ir_speed_landmark_aligned_biodex_reps(
                             preview_df,
                             preview_rep_windows,
                             time_col="Elapsed Seconds",
