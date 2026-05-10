@@ -2217,49 +2217,16 @@ def detect_shoulder_er_ir_speed_rep_landmarks(rep_df, value_col="Torque_Nm", pro
     if len(pos_peaks) < 3 or len(neg_peaks) < 3:
         return None
 
-    candidates = []
-    for idx, prom in zip(pos_peaks, pos_props["prominences"]):
-        candidates.append((int(idx), "pos", float(prom)))
-    for idx, prom in zip(neg_peaks, neg_props["prominences"]):
-        candidates.append((int(idx), "neg", float(prom)))
-    candidates.sort(key=lambda item: item[0])
-
-    # Collapse consecutive same-sign candidates into one meaningful hump/trough.
-    # For the first positive run we keep the earliest peak so POS1 lands on the first hump.
-    # For later runs we keep the most prominent candidate in that run.
-    runs = []
-    current_run = []
-    for candidate in candidates:
-        if not current_run or candidate[1] == current_run[-1][1]:
-            current_run.append(candidate)
-        else:
-            runs.append(current_run)
-            current_run = [candidate]
-    if current_run:
-        runs.append(current_run)
-
-    first_pos_run_idx = next((i for i, run in enumerate(runs) if run and run[0][1] == "pos"), None)
-    if first_pos_run_idx is None:
-        return None
+    top_pos_idx = np.argsort(pos_props["prominences"])[-3:]
+    top_neg_idx = np.argsort(neg_props["prominences"])[-3:]
 
     landmark_pairs = []
-    expected_sequence = ["pos", "neg", "pos", "neg", "pos", "neg"]
-    run_idx = first_pos_run_idx
+    for idx in top_pos_idx:
+        landmark_pairs.append((int(pos_peaks[idx]), "pos"))
+    for idx in top_neg_idx:
+        landmark_pairs.append((int(neg_peaks[idx]), "neg"))
 
-    for seq_idx, expected_kind in enumerate(expected_sequence):
-        while run_idx < len(runs) and runs[run_idx][0][1] != expected_kind:
-            run_idx += 1
-        if run_idx >= len(runs):
-            return None
-
-        run = runs[run_idx]
-        if seq_idx == 0:
-            chosen = min(run, key=lambda item: item[0])
-        else:
-            chosen = max(run, key=lambda item: item[2])
-        landmark_pairs.append((int(chosen[0]), expected_kind))
-        run_idx += 1
-
+    landmark_pairs = sorted(landmark_pairs, key=lambda item: item[0])
     landmark_indices = [idx for idx, _kind in landmark_pairs]
     if any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
         return None
