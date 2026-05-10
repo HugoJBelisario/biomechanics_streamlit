@@ -2275,10 +2275,11 @@ def extract_landmark_aligned_biodex_reps(
     mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
     mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
 
-    landmark_labels = [
-        f"{kind.upper()}{i + 1}"
-        for i, kind in enumerate(aligned_rep_metadata[0]["landmark_kinds"])
-    ]
+    landmark_counts = {}
+    landmark_labels = []
+    for kind in aligned_rep_metadata[0]["landmark_kinds"]:
+        landmark_counts[kind] = landmark_counts.get(kind, 0) + 1
+        landmark_labels.append(f"{kind.upper()}{landmark_counts[kind]}")
     mean_df.attrs["landmark_boundary_pct"] = boundary_pct[1:-1].tolist()
     mean_df.attrs["landmark_labels"] = landmark_labels
 
