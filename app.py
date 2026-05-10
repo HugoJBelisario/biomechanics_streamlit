@@ -10987,9 +10987,30 @@ with tab6:
                             ))
 
                         preview_shapes = []
+                        preview_elapsed_seconds = pd.to_numeric(
+                            preview_df["Elapsed Seconds"],
+                            errors="coerce",
+                        ).to_numpy(dtype=float)
+                        preview_valid_elapsed = preview_elapsed_seconds[np.isfinite(preview_elapsed_seconds)]
+                        preview_dt = 0.0
+                        if preview_valid_elapsed.size > 1:
+                            preview_diff = np.diff(preview_valid_elapsed)
+                            preview_diff = preview_diff[np.isfinite(preview_diff) & (preview_diff > 0)]
+                            if preview_diff.size:
+                                preview_dt = float(np.median(preview_diff))
+                        preview_min_visible_width = max(preview_dt * 2.0, 0.25)
                         for rep_number, (start_idx, end_idx) in enumerate(preview_rep_windows, start=1):
                             x0 = float(preview_df.iloc[start_idx]["Elapsed Seconds"])
                             x1 = float(preview_df.iloc[end_idx]["Elapsed Seconds"])
+                            if not np.isfinite(x0) or not np.isfinite(x1):
+                                continue
+                            if x1 < x0:
+                                x0, x1 = x1, x0
+                            if (x1 - x0) < preview_min_visible_width:
+                                x_center = (x0 + x1) / 2.0
+                                half_width = preview_min_visible_width / 2.0
+                                x0 = x_center - half_width
+                                x1 = x_center + half_width
                             preview_shapes.append(dict(
                                 type="rect",
                                 xref="x",
@@ -11002,6 +11023,18 @@ with tab6:
                                 line=dict(width=0),
                                 layer="below",
                             ))
+                            preview_raw_fig.add_vline(
+                                x=x0,
+                                line_width=1,
+                                line_dash="dot",
+                                line_color="rgba(0, 123, 255, 0.30)",
+                            )
+                            preview_raw_fig.add_vline(
+                                x=x1,
+                                line_width=1,
+                                line_dash="dot",
+                                line_color="rgba(0, 123, 255, 0.30)",
+                            )
                             preview_raw_fig.add_annotation(
                                 x=(x0 + x1) / 2.0,
                                 y=1.02,
