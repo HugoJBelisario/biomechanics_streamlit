@@ -11496,6 +11496,98 @@ with tab6:
                             if (
                                 preview_movement == "shoulder_er_ir"
                                 and preview_protocol_type == "speed"
+                                and "Position_Deg" in preview_df.columns
+                            ):
+                                preview_position_rows = []
+                                preview_position_curves = []
+                                preview_percent_axis = np.linspace(0.0, 100.0, int(preview_n_points))
+                                for rep_number, (start_idx, end_idx) in enumerate(preview_rep_windows, start=1):
+                                    rep_position_df = preview_df.iloc[int(start_idx):int(end_idx) + 1].copy()
+                                    rep_position_df["Position_Deg"] = pd.to_numeric(
+                                        rep_position_df["Position_Deg"],
+                                        errors="coerce",
+                                    )
+                                    rep_position_df = rep_position_df.dropna(subset=["Position_Deg"]).reset_index(drop=True)
+                                    if len(rep_position_df) < 3:
+                                        continue
+                                    rep_position_values = rep_position_df["Position_Deg"].to_numpy(dtype=float)
+                                    rep_pct = np.linspace(0.0, 100.0, len(rep_position_values))
+                                    interp_position = np.interp(
+                                        preview_percent_axis,
+                                        rep_pct,
+                                        rep_position_values,
+                                    )
+                                    preview_position_curves.append(interp_position)
+                                    preview_position_rows.append(pd.DataFrame({
+                                        "rep_number": rep_number,
+                                        "movement_pct": preview_percent_axis,
+                                        "position_deg": interp_position,
+                                    }))
+
+                                if preview_position_curves:
+                                    preview_position_long_df = pd.concat(preview_position_rows, ignore_index=True)
+                                    preview_position_mean_arr = np.vstack(preview_position_curves)
+                                    preview_position_mean_df = pd.DataFrame({
+                                        "movement_pct": preview_percent_axis,
+                                        "mean_position_deg": np.nanmean(preview_position_mean_arr, axis=0),
+                                        "std_position_deg": np.nanstd(preview_position_mean_arr, axis=0),
+                                    })
+                                    preview_position_mean_df["upper_band"] = (
+                                        preview_position_mean_df["mean_position_deg"]
+                                        + preview_position_mean_df["std_position_deg"]
+                                    )
+                                    preview_position_mean_df["lower_band"] = (
+                                        preview_position_mean_df["mean_position_deg"]
+                                        - preview_position_mean_df["std_position_deg"]
+                                    )
+
+                                    preview_position_fig = go.Figure()
+                                    for rep_number, rep_position_plot_df in preview_position_long_df.groupby("rep_number"):
+                                        preview_position_fig.add_trace(go.Scatter(
+                                            x=rep_position_plot_df["movement_pct"],
+                                            y=rep_position_plot_df["position_deg"],
+                                            mode="lines",
+                                            line=dict(width=1),
+                                            opacity=0.35,
+                                            name=f"Rep {rep_number}",
+                                        ))
+                                    preview_position_fig.add_trace(go.Scatter(
+                                        x=preview_position_mean_df["movement_pct"],
+                                        y=preview_position_mean_df["upper_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        showlegend=False,
+                                        hoverinfo="skip",
+                                    ))
+                                    preview_position_fig.add_trace(go.Scatter(
+                                        x=preview_position_mean_df["movement_pct"],
+                                        y=preview_position_mean_df["lower_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        fill="tonexty",
+                                        name="±1 SD",
+                                    ))
+                                    preview_position_fig.add_trace(go.Scatter(
+                                        x=preview_position_mean_df["movement_pct"],
+                                        y=preview_position_mean_df["mean_position_deg"],
+                                        mode="lines",
+                                        line=dict(width=4),
+                                        name="Mean Position",
+                                    ))
+                                    preview_position_fig.update_layout(
+                                        title="Position Start -> End Normalized Position Comparison",
+                                        xaxis_title="Movement Cycle (%)",
+                                        yaxis_title="Position_Deg",
+                                        height=500,
+                                    )
+                                    st.plotly_chart(
+                                        preview_position_fig,
+                                        use_container_width=True,
+                                        key=f"biodex_test_preview_position_normalized_plot_{preview_plot_suffix}",
+                                    )
+                            if (
+                                preview_movement == "shoulder_er_ir"
+                                and preview_protocol_type == "speed"
                                 and not preview_landmark_reps_long_df.empty
                                 and not preview_landmark_mean_df.empty
                             ):
