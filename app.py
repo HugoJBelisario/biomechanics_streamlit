@@ -11197,8 +11197,9 @@ with tab6:
                     )
                     preview_position_detection_metadata = None
                     preview_processing_version = "shoulder_er_ir_landmark_v1"
-                    preview_subcycles_long_df = pd.DataFrame()
-                    preview_subcycle_mean_df = pd.DataFrame()
+                    preview_landmark_reps_long_df = pd.DataFrame()
+                    preview_landmark_mean_df = pd.DataFrame()
+                    preview_landmark_aligned_rep_metadata = []
                     if (
                         preview_movement == "shoulder_er_ir"
                         and preview_protocol_type == "speed"
@@ -11219,13 +11220,13 @@ with tab6:
                             value_col="Torque_Nm",
                             n_points=int(preview_n_points),
                         )
-                        preview_subcycles_long_df, preview_subcycle_mean_df = extract_position_window_subcycle_biodex_reps(
+                        preview_landmark_reps_long_df, preview_landmark_mean_df, preview_landmark_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
                             preview_df,
                             preview_rep_windows,
                             time_col="Elapsed Seconds",
                             value_col="Torque_Nm",
                             n_points=int(preview_n_points),
-                            n_subcycles=3,
+                            prominence_ratio=float(preview_landmark_prominence),
                         )
                         preview_processing_version = "shoulder_er_ir_speed_position_window_normalized_v1"
                     elif (
@@ -11495,51 +11496,71 @@ with tab6:
                             if (
                                 preview_movement == "shoulder_er_ir"
                                 and preview_protocol_type == "speed"
-                                and not preview_subcycles_long_df.empty
-                                and not preview_subcycle_mean_df.empty
+                                and not preview_landmark_reps_long_df.empty
+                                and not preview_landmark_mean_df.empty
                             ):
-                                preview_subcycle_fig = go.Figure()
-                                subcycle_color_map = {
-                                    1: "#7bd389",
-                                    2: "#8be9fd",
-                                    3: "#ffb86c",
-                                }
-                                for cycle_number in sorted(preview_subcycles_long_df["cycle_number"].unique()):
-                                    cycle_rep_df = preview_subcycles_long_df[
-                                        preview_subcycles_long_df["cycle_number"] == cycle_number
-                                    ]
-                                    cycle_mean_df = preview_subcycle_mean_df[
-                                        preview_subcycle_mean_df["cycle_number"] == cycle_number
-                                    ]
-                                    color = subcycle_color_map.get(int(cycle_number), "#ffffff")
-                                    for rep_number, rep_cycle_df in cycle_rep_df.groupby("rep_number"):
-                                        preview_subcycle_fig.add_trace(go.Scatter(
-                                            x=rep_cycle_df["cycle_pct"],
-                                            y=rep_cycle_df["torque_nm"],
-                                            mode="lines",
-                                            line=dict(width=1, color=color),
-                                            opacity=0.20,
-                                            legendgroup=f"cycle_{cycle_number}",
-                                            showlegend=False,
-                                            hoverinfo="skip",
-                                        ))
-                                    preview_subcycle_fig.add_trace(go.Scatter(
-                                        x=cycle_mean_df["cycle_pct"],
-                                        y=cycle_mean_df["mean_torque_nm"],
+                                preview_landmark_fig = go.Figure()
+                                for rep_number, rep_df in preview_landmark_reps_long_df.groupby("rep_number"):
+                                    preview_landmark_fig.add_trace(go.Scatter(
+                                        x=rep_df["movement_pct"],
+                                        y=rep_df["torque_nm"],
                                         mode="lines",
-                                        line=dict(width=3, color=color),
-                                        name=f"Cycle {int(cycle_number)} Mean",
+                                        line=dict(width=1),
+                                        opacity=0.35,
+                                        name=f"Rep {rep_number}",
                                     ))
-                                preview_subcycle_fig.update_layout(
-                                    title="3 Internal Sub-Cycle Torque Comparison",
-                                    xaxis_title="Sub-Cycle (%)",
+                                preview_landmark_fig.add_trace(go.Scatter(
+                                    x=preview_landmark_mean_df["movement_pct"],
+                                    y=preview_landmark_mean_df["upper_band"],
+                                    mode="lines",
+                                    line=dict(width=0),
+                                    showlegend=False,
+                                    hoverinfo="skip",
+                                ))
+                                preview_landmark_fig.add_trace(go.Scatter(
+                                    x=preview_landmark_mean_df["movement_pct"],
+                                    y=preview_landmark_mean_df["lower_band"],
+                                    mode="lines",
+                                    line=dict(width=0),
+                                    fill="tonexty",
+                                    name="±1 SD",
+                                ))
+                                preview_landmark_fig.add_trace(go.Scatter(
+                                    x=preview_landmark_mean_df["movement_pct"],
+                                    y=preview_landmark_mean_df["mean_torque_nm"],
+                                    mode="lines",
+                                    line=dict(width=4),
+                                    name="Mean Torque",
+                                ))
+                                for boundary_pct, label in zip(
+                                    preview_landmark_mean_df.attrs.get("landmark_boundary_pct", []),
+                                    preview_landmark_mean_df.attrs.get("landmark_labels", []),
+                                ):
+                                    preview_landmark_fig.add_vline(
+                                        x=float(boundary_pct),
+                                        line_width=2,
+                                        line_dash="dot",
+                                        line_color="rgba(255,255,255,0.45)",
+                                    )
+                                    preview_landmark_fig.add_annotation(
+                                        x=float(boundary_pct),
+                                        y=1.03,
+                                        xref="x",
+                                        yref="paper",
+                                        text=label,
+                                        showarrow=False,
+                                        font=dict(size=11),
+                                    )
+                                preview_landmark_fig.update_layout(
+                                    title="Landmark-Aligned Torque Comparison Across Detected Reps",
+                                    xaxis_title="Movement Cycle (%)",
                                     yaxis_title="Torque_Nm",
-                                    height=450,
+                                    height=500,
                                 )
                                 st.plotly_chart(
-                                    preview_subcycle_fig,
+                                    preview_landmark_fig,
                                     use_container_width=True,
-                                    key=f"biodex_test_preview_subcycle_plot_{preview_plot_suffix}",
+                                    key=f"biodex_test_preview_landmark_plot_{preview_plot_suffix}",
                                 )
 
                             if st.button(
