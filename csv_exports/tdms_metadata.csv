@@ -1,0 +1,1471 @@
+file_name,level,group_name,channel_name,property_name,property_value
+Caideyn Ferrell Speed D2.tdms,file,,,name,LogFile_2026-05-15-11-44-53
+Caideyn Ferrell Speed D2.tdms,file,,,Date Created,2026-05-15T18:44:53.955982
+Caideyn Ferrell Speed D2.tdms,file,,,datetime,2026-05-15T18:44:53.955982
+Caideyn Ferrell Speed D2.tdms,file,,,Description,
+Caideyn Ferrell Speed D2.tdms,file,,,RunNumber,7
+Caideyn Ferrell Speed D2.tdms,file,,,ProductName,FlexLogger
+Caideyn Ferrell Speed D2.tdms,file,,,ProductVersion,2026 Q2
+Caideyn Ferrell Speed D2.tdms,file,,,User_Name,deanr
+Caideyn Ferrell Speed D2.tdms,file,,,Test_properties~Operator,deanr
+Caideyn Ferrell Speed D2.tdms,file,,,Test_properties~DUT,
+Caideyn Ferrell Speed D2.tdms,group,Test Information,,Description,
+Caideyn Ferrell Speed D2.tdms,group,Test Information,,RunNumber,7
+Caideyn Ferrell Speed D2.tdms,group,Test Information,,ProductName,FlexLogger
+Caideyn Ferrell Speed D2.tdms,group,Test Information,,ProductVersion,2026 Q2
+Caideyn Ferrell Speed D2.tdms,group,Test Information,,User_Name,deanr
+Caideyn Ferrell Speed D2.tdms,group,Test Information,,Test_properties~Operator,deanr
+Caideyn Ferrell Speed D2.tdms,group,Test Information,,Test_properties~DUT,
+Caideyn Ferrell Speed D2.tdms,group,Log,,Test_properties~DUT,
+Caideyn Ferrell Speed D2.tdms,group,Log,,Test_properties~Operator,deanr
+Caideyn Ferrell Speed D2.tdms,group,Log,,User_Name,deanr
+Caideyn Ferrell Speed D2.tdms,group,Log,,ProductVersion,2026 Q2
+Caideyn Ferrell Speed D2.tdms,group,Log,,ProductName,FlexLogger
+Caideyn Ferrell Speed D2.tdms,group,Log,,RunNumber,7
+Caideyn Ferrell Speed D2.tdms,group,Log,,Description,
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,132
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T18:44:52.527836
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-3.8423925265669823
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,3.7309248242527246
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.05053400724055296
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Caideyn Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_xname,Time
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_samples,133
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,unit_string,V
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T18:44:52.521170
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,minimum,9.430163002107292
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,maximum,282.07474305527285
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,235.60233904310377
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,monotony,not monotone
+Caideyn Ferrell Speed D2.tdms,channel,Log,Position_Deg,novaluekey,No
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_samples,132
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,unit_string,V
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T18:44:52.524503
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,minimum,-237.68266963292842
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,maximum,180.91234078137202
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,-11.100479585674888
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Caideyn Ferrell Speed D2.tdms,channel,Log,Torque_Nm,novaluekey,No
+Caideyn Ferrell Speed Shoulder ER IR.tdms,file,,,name,LogFile_2026-05-15-11-18-14
+Caideyn Ferrell Speed Shoulder ER IR.tdms,file,,,Date Created,2026-05-15T18:18:14.564510
+Caideyn Ferrell Speed Shoulder ER IR.tdms,file,,,datetime,2026-05-15T18:18:14.564510
+Caideyn Ferrell Speed Shoulder ER IR.tdms,file,,,Description,
+Caideyn Ferrell Speed Shoulder ER IR.tdms,file,,,RunNumber,4
+Caideyn Ferrell Speed Shoulder ER IR.tdms,file,,,ProductName,FlexLogger
+Caideyn Ferrell Speed Shoulder ER IR.tdms,file,,,ProductVersion,2026 Q2
+Caideyn Ferrell Speed Shoulder ER IR.tdms,file,,,User_Name,deanr
+Caideyn Ferrell Speed Shoulder ER IR.tdms,file,,,Test_properties~Operator,deanr
+Caideyn Ferrell Speed Shoulder ER IR.tdms,file,,,Test_properties~DUT,
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,Description,
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,RunNumber,4
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,ProductName,FlexLogger
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,ProductVersion,2026 Q2
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,User_Name,deanr
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,Test_properties~Operator,deanr
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,Test_properties~DUT,
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Log,,Test_properties~DUT,
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Log,,Test_properties~Operator,deanr
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Log,,User_Name,deanr
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Log,,ProductVersion,2026 Q2
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Log,,ProductName,FlexLogger
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Log,,RunNumber,4
+Caideyn Ferrell Speed Shoulder ER IR.tdms,group,Log,,Description,
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,132
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T18:18:13.131835
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-4.033143201842904
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,3.8881652457639575
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.05736206349245402
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xname,Time
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_samples,133
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,unit_string,V
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T18:18:13.125168
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,minimum,-95.63092682976276
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,maximum,126.40028147958219
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,-48.10501675718625
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,monotony,not monotone
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,novaluekey,No
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_samples,132
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,unit_string,V
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T18:18:13.128502
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,minimum,-34.31667267051525
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,maximum,62.47047773567028
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,8.358195068387811
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Caideyn Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,novaluekey,No
+Dean Jackson Aerobic D2.tdms,file,,,name,LogFile_2026-05-15-13-57-27
+Dean Jackson Aerobic D2.tdms,file,,,Date Created,2026-05-15T20:57:27.784036
+Dean Jackson Aerobic D2.tdms,file,,,datetime,2026-05-15T20:57:27.784036
+Dean Jackson Aerobic D2.tdms,file,,,Description,
+Dean Jackson Aerobic D2.tdms,file,,,RunNumber,11
+Dean Jackson Aerobic D2.tdms,file,,,ProductName,FlexLogger
+Dean Jackson Aerobic D2.tdms,file,,,ProductVersion,2026 Q2
+Dean Jackson Aerobic D2.tdms,file,,,User_Name,deanr
+Dean Jackson Aerobic D2.tdms,file,,,Test_properties~Operator,deanr
+Dean Jackson Aerobic D2.tdms,file,,,Test_properties~DUT,
+Dean Jackson Aerobic D2.tdms,group,Test Information,,Description,
+Dean Jackson Aerobic D2.tdms,group,Test Information,,RunNumber,11
+Dean Jackson Aerobic D2.tdms,group,Test Information,,ProductName,FlexLogger
+Dean Jackson Aerobic D2.tdms,group,Test Information,,ProductVersion,2026 Q2
+Dean Jackson Aerobic D2.tdms,group,Test Information,,User_Name,deanr
+Dean Jackson Aerobic D2.tdms,group,Test Information,,Test_properties~Operator,deanr
+Dean Jackson Aerobic D2.tdms,group,Test Information,,Test_properties~DUT,
+Dean Jackson Aerobic D2.tdms,group,Log,,Test_properties~DUT,
+Dean Jackson Aerobic D2.tdms,group,Log,,Test_properties~Operator,deanr
+Dean Jackson Aerobic D2.tdms,group,Log,,User_Name,deanr
+Dean Jackson Aerobic D2.tdms,group,Log,,ProductVersion,2026 Q2
+Dean Jackson Aerobic D2.tdms,group,Log,,ProductName,FlexLogger
+Dean Jackson Aerobic D2.tdms,group,Log,,RunNumber,11
+Dean Jackson Aerobic D2.tdms,group,Log,,Description,
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,132
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T20:57:26.057953
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-3.1554323243908584
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,2.855791658628732
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.038638452898815775
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Dean Jackson Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,wf_xname,Time
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,wf_samples,133
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,unit_string,V
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T20:57:26.051286
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,minimum,-80.38376136682928
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,maximum,206.38023522449657
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,111.69200430201215
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,monotony,not monotone
+Dean Jackson Aerobic D2.tdms,channel,Log,Position_Deg,novaluekey,No
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,wf_samples,132
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,unit_string,V
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T20:57:26.054619
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,minimum,-187.21777409040368
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,maximum,187.126301799668
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,-10.788526591630777
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Dean Jackson Aerobic D2.tdms,channel,Log,Torque_Nm,novaluekey,No
+Dean Jackson Aerobic Shoulder ER IR.tdms,file,,,name,LogFile_2026-05-15-12-30-32
+Dean Jackson Aerobic Shoulder ER IR.tdms,file,,,Date Created,2026-05-15T19:30:32.005146
+Dean Jackson Aerobic Shoulder ER IR.tdms,file,,,datetime,2026-05-15T19:30:32.005146
+Dean Jackson Aerobic Shoulder ER IR.tdms,file,,,Description,
+Dean Jackson Aerobic Shoulder ER IR.tdms,file,,,RunNumber,8
+Dean Jackson Aerobic Shoulder ER IR.tdms,file,,,ProductName,FlexLogger
+Dean Jackson Aerobic Shoulder ER IR.tdms,file,,,ProductVersion,2026 Q2
+Dean Jackson Aerobic Shoulder ER IR.tdms,file,,,User_Name,deanr
+Dean Jackson Aerobic Shoulder ER IR.tdms,file,,,Test_properties~Operator,deanr
+Dean Jackson Aerobic Shoulder ER IR.tdms,file,,,Test_properties~DUT,
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Test Information,,Description,
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Test Information,,RunNumber,8
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Test Information,,ProductName,FlexLogger
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Test Information,,ProductVersion,2026 Q2
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Test Information,,User_Name,deanr
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Test Information,,Test_properties~Operator,deanr
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Test Information,,Test_properties~DUT,
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Log,,Test_properties~DUT,
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Log,,Test_properties~Operator,deanr
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Log,,User_Name,deanr
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Log,,ProductVersion,2026 Q2
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Log,,ProductName,FlexLogger
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Log,,RunNumber,8
+Dean Jackson Aerobic Shoulder ER IR.tdms,group,Log,,Description,
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,121
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T19:30:30.640991
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-3.156721180304885
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,2.9137901747599244
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.03163217418267173
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xname,Time
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_samples,122
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,unit_string,V
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T19:30:30.634324
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,minimum,94.28199210204184
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,maximum,271.7896728613414
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,210.22969138777142
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,monotony,not monotone
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,novaluekey,No
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_samples,121
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,unit_string,V
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T19:30:30.637658
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,minimum,-67.26949625238775
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,maximum,36.48482256825082
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,-7.315902332970356
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Dean Jackson Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,novaluekey,No
+Hugo Belisario Aerobic D2.tdms,file,,,name,LogFile_2026-05-15-14-10-11
+Hugo Belisario Aerobic D2.tdms,file,,,Date Created,2026-05-15T21:10:11.293546
+Hugo Belisario Aerobic D2.tdms,file,,,datetime,2026-05-15T21:10:11.293546
+Hugo Belisario Aerobic D2.tdms,file,,,Description,
+Hugo Belisario Aerobic D2.tdms,file,,,RunNumber,12
+Hugo Belisario Aerobic D2.tdms,file,,,ProductName,FlexLogger
+Hugo Belisario Aerobic D2.tdms,file,,,ProductVersion,2026 Q2
+Hugo Belisario Aerobic D2.tdms,file,,,User_Name,deanr
+Hugo Belisario Aerobic D2.tdms,file,,,Test_properties~Operator,deanr
+Hugo Belisario Aerobic D2.tdms,file,,,Test_properties~DUT,
+Hugo Belisario Aerobic D2.tdms,group,Test Information,,Description,
+Hugo Belisario Aerobic D2.tdms,group,Test Information,,RunNumber,12
+Hugo Belisario Aerobic D2.tdms,group,Test Information,,ProductName,FlexLogger
+Hugo Belisario Aerobic D2.tdms,group,Test Information,,ProductVersion,2026 Q2
+Hugo Belisario Aerobic D2.tdms,group,Test Information,,User_Name,deanr
+Hugo Belisario Aerobic D2.tdms,group,Test Information,,Test_properties~Operator,deanr
+Hugo Belisario Aerobic D2.tdms,group,Test Information,,Test_properties~DUT,
+Hugo Belisario Aerobic D2.tdms,group,Log,,Test_properties~DUT,
+Hugo Belisario Aerobic D2.tdms,group,Log,,Test_properties~Operator,deanr
+Hugo Belisario Aerobic D2.tdms,group,Log,,User_Name,deanr
+Hugo Belisario Aerobic D2.tdms,group,Log,,ProductVersion,2026 Q2
+Hugo Belisario Aerobic D2.tdms,group,Log,,ProductName,FlexLogger
+Hugo Belisario Aerobic D2.tdms,group,Log,,RunNumber,12
+Hugo Belisario Aerobic D2.tdms,group,Log,,Description,
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,132
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T21:10:09.566044
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-2.9208605480380356
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,2.770727168302983
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.10434853131534223
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Hugo Belisario Aerobic D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,wf_xname,Time
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,wf_samples,133
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,unit_string,V
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T21:10:09.559377
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,minimum,-79.4364522700198
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,maximum,199.5235217618756
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,46.48764590243669
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,monotony,not monotone
+Hugo Belisario Aerobic D2.tdms,channel,Log,Position_Deg,novaluekey,No
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,wf_samples,132
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,unit_string,V
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T21:10:09.562711
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,minimum,-91.93703847653232
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,maximum,113.1236751272343
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,-0.8258168334834108
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Hugo Belisario Aerobic D2.tdms,channel,Log,Torque_Nm,novaluekey,No
+Hugo Belisario Aerobic Shoulder ER IR.tdms,file,,,name,LogFile_2026-05-15-14-30-08
+Hugo Belisario Aerobic Shoulder ER IR.tdms,file,,,Date Created,2026-05-15T21:30:08.346906
+Hugo Belisario Aerobic Shoulder ER IR.tdms,file,,,datetime,2026-05-15T21:30:08.346906
+Hugo Belisario Aerobic Shoulder ER IR.tdms,file,,,Description,
+Hugo Belisario Aerobic Shoulder ER IR.tdms,file,,,RunNumber,13
+Hugo Belisario Aerobic Shoulder ER IR.tdms,file,,,ProductName,FlexLogger
+Hugo Belisario Aerobic Shoulder ER IR.tdms,file,,,ProductVersion,2026 Q2
+Hugo Belisario Aerobic Shoulder ER IR.tdms,file,,,User_Name,deanr
+Hugo Belisario Aerobic Shoulder ER IR.tdms,file,,,Test_properties~Operator,deanr
+Hugo Belisario Aerobic Shoulder ER IR.tdms,file,,,Test_properties~DUT,
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Test Information,,Description,
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Test Information,,RunNumber,13
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Test Information,,ProductName,FlexLogger
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Test Information,,ProductVersion,2026 Q2
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Test Information,,User_Name,deanr
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Test Information,,Test_properties~Operator,deanr
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Test Information,,Test_properties~DUT,
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Log,,Test_properties~DUT,
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Log,,Test_properties~Operator,deanr
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Log,,User_Name,deanr
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Log,,ProductVersion,2026 Q2
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Log,,ProductName,FlexLogger
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Log,,RunNumber,13
+Hugo Belisario Aerobic Shoulder ER IR.tdms,group,Log,,Description,
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,121
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T21:30:06.693051
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-2.6953107630833983
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,2.4794457317329943
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,0.01156464490272543
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xname,Time
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_samples,122
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,unit_string,V
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T21:30:06.686384
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,minimum,71.09547420870513
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,maximum,259.0235550329089
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,156.53050027132025
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,monotony,not monotone
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Position_Deg,novaluekey,No
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_samples,121
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,unit_string,V
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T21:30:06.689718
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,minimum,-40.530633688811214
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,maximum,25.939919022051615
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,-1.0740454942389903
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Hugo Belisario Aerobic Shoulder ER IR.tdms,channel,Log,Torque_Nm,novaluekey,No
+Hunter Myrick Speed D2.tdms,file,,,name,LogFile_2026-05-15-11-24-39
+Hunter Myrick Speed D2.tdms,file,,,Date Created,2026-05-15T18:24:39.726158
+Hunter Myrick Speed D2.tdms,file,,,datetime,2026-05-15T18:24:39.726158
+Hunter Myrick Speed D2.tdms,file,,,Description,
+Hunter Myrick Speed D2.tdms,file,,,RunNumber,5
+Hunter Myrick Speed D2.tdms,file,,,ProductName,FlexLogger
+Hunter Myrick Speed D2.tdms,file,,,ProductVersion,2026 Q2
+Hunter Myrick Speed D2.tdms,file,,,User_Name,deanr
+Hunter Myrick Speed D2.tdms,file,,,Test_properties~Operator,deanr
+Hunter Myrick Speed D2.tdms,file,,,Test_properties~DUT,
+Hunter Myrick Speed D2.tdms,group,Test Information,,Description,
+Hunter Myrick Speed D2.tdms,group,Test Information,,RunNumber,5
+Hunter Myrick Speed D2.tdms,group,Test Information,,ProductName,FlexLogger
+Hunter Myrick Speed D2.tdms,group,Test Information,,ProductVersion,2026 Q2
+Hunter Myrick Speed D2.tdms,group,Test Information,,User_Name,deanr
+Hunter Myrick Speed D2.tdms,group,Test Information,,Test_properties~Operator,deanr
+Hunter Myrick Speed D2.tdms,group,Test Information,,Test_properties~DUT,
+Hunter Myrick Speed D2.tdms,group,Log,,Test_properties~DUT,
+Hunter Myrick Speed D2.tdms,group,Log,,Test_properties~Operator,deanr
+Hunter Myrick Speed D2.tdms,group,Log,,User_Name,deanr
+Hunter Myrick Speed D2.tdms,group,Log,,ProductVersion,2026 Q2
+Hunter Myrick Speed D2.tdms,group,Log,,ProductName,FlexLogger
+Hunter Myrick Speed D2.tdms,group,Log,,RunNumber,5
+Hunter Myrick Speed D2.tdms,group,Log,,Description,
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,132
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T18:24:38.350872
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-4.006077227648348
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,3.8417664328590035
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.050071678285090036
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Hunter Myrick Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,wf_xname,Time
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,wf_samples,133
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,unit_string,V
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T18:24:38.344205
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,minimum,-96.62334588356316
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,maximum,178.59250171808526
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,-47.58696068498074
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,monotony,not monotone
+Hunter Myrick Speed D2.tdms,channel,Log,Position_Deg,novaluekey,No
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,wf_samples,132
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,unit_string,V
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T18:24:38.347539
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,minimum,-122.06533432281576
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,maximum,223.84516236232594
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,13.555573302835867
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Hunter Myrick Speed D2.tdms,channel,Log,Torque_Nm,novaluekey,No
+Hunter Myrick Speed Shoulder ER IR.tdms,file,,,name,LogFile_2026-05-15-10-51-41
+Hunter Myrick Speed Shoulder ER IR.tdms,file,,,Date Created,2026-05-15T17:51:41.081656
+Hunter Myrick Speed Shoulder ER IR.tdms,file,,,datetime,2026-05-15T17:51:41.081656
+Hunter Myrick Speed Shoulder ER IR.tdms,file,,,Description,
+Hunter Myrick Speed Shoulder ER IR.tdms,file,,,RunNumber,1
+Hunter Myrick Speed Shoulder ER IR.tdms,file,,,ProductName,FlexLogger
+Hunter Myrick Speed Shoulder ER IR.tdms,file,,,ProductVersion,2026 Q2
+Hunter Myrick Speed Shoulder ER IR.tdms,file,,,User_Name,deanr
+Hunter Myrick Speed Shoulder ER IR.tdms,file,,,Test_properties~Operator,deanr
+Hunter Myrick Speed Shoulder ER IR.tdms,file,,,Test_properties~DUT,
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Test Information,,Description,
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Test Information,,RunNumber,1
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Test Information,,ProductName,FlexLogger
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Test Information,,ProductVersion,2026 Q2
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Test Information,,User_Name,deanr
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Test Information,,Test_properties~Operator,deanr
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Test Information,,Test_properties~DUT,
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Log,,Test_properties~DUT,
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Log,,Test_properties~Operator,deanr
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Log,,User_Name,deanr
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Log,,ProductVersion,2026 Q2
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Log,,ProductName,FlexLogger
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Log,,RunNumber,1
+Hunter Myrick Speed Shoulder ER IR.tdms,group,Log,,Description,
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,176
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T17:51:39.895818
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-4.052476040553302
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,3.8675435511395335
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.05741181214696385
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xname,Time
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_samples,177
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,unit_string,V
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T17:51:39.889151
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,minimum,87.87637820933014
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,maximum,276.2104486464523
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,238.55186932729615
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,monotony,not monotone
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,novaluekey,No
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_samples,176
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,unit_string,V
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T17:51:39.892485
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,minimum,-64.06836481872014
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,maximum,35.54331332305446
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,-10.152274323453447
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Hunter Myrick Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,novaluekey,No
+MJ Seo D2 Speed.tdms,file,,,name,LogFile_2026-05-15-15-38-09
+MJ Seo D2 Speed.tdms,file,,,Date Created,2026-05-15T22:38:09.007720
+MJ Seo D2 Speed.tdms,file,,,datetime,2026-05-15T22:38:09.007720
+MJ Seo D2 Speed.tdms,file,,,Description,
+MJ Seo D2 Speed.tdms,file,,,RunNumber,15
+MJ Seo D2 Speed.tdms,file,,,ProductName,FlexLogger
+MJ Seo D2 Speed.tdms,file,,,ProductVersion,2026 Q2
+MJ Seo D2 Speed.tdms,file,,,User_Name,deanr
+MJ Seo D2 Speed.tdms,file,,,Test_properties~Operator,deanr
+MJ Seo D2 Speed.tdms,file,,,Test_properties~DUT,
+MJ Seo D2 Speed.tdms,group,Test Information,,Description,
+MJ Seo D2 Speed.tdms,group,Test Information,,RunNumber,15
+MJ Seo D2 Speed.tdms,group,Test Information,,ProductName,FlexLogger
+MJ Seo D2 Speed.tdms,group,Test Information,,ProductVersion,2026 Q2
+MJ Seo D2 Speed.tdms,group,Test Information,,User_Name,deanr
+MJ Seo D2 Speed.tdms,group,Test Information,,Test_properties~Operator,deanr
+MJ Seo D2 Speed.tdms,group,Test Information,,Test_properties~DUT,
+MJ Seo D2 Speed.tdms,group,Log,,Test_properties~DUT,
+MJ Seo D2 Speed.tdms,group,Log,,Test_properties~Operator,deanr
+MJ Seo D2 Speed.tdms,group,Log,,User_Name,deanr
+MJ Seo D2 Speed.tdms,group,Log,,ProductVersion,2026 Q2
+MJ Seo D2 Speed.tdms,group,Log,,ProductName,FlexLogger
+MJ Seo D2 Speed.tdms,group,Log,,RunNumber,15
+MJ Seo D2 Speed.tdms,group,Log,,Description,
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,121
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T22:38:07.132850
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-3.927457016892731
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,3.8108338909223676
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.034326702709048466
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+MJ Seo D2 Speed.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,wf_xname,Time
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,wf_samples,122
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,unit_string,V
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T22:38:07.126183
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,minimum,-78.57936308719218
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,maximum,177.8256324492395
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,130.20109245083162
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,monotony,not monotone
+MJ Seo D2 Speed.tdms,channel,Log,Position_Deg,novaluekey,No
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,wf_xname,Time
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,wf_samples,121
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,unit_string,V
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T22:38:07.129517
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,minimum,-187.0294722413644
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,maximum,174.32177606499752
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,-9.477494899087954
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,monotony,not monotone
+MJ Seo D2 Speed.tdms,channel,Log,Torque_Nm,novaluekey,No
+MJ Seo Speed Shoulder.tdms,file,,,name,LogFile_2026-05-15-15-20-32
+MJ Seo Speed Shoulder.tdms,file,,,Date Created,2026-05-15T22:20:32.549655
+MJ Seo Speed Shoulder.tdms,file,,,datetime,2026-05-15T22:20:32.549655
+MJ Seo Speed Shoulder.tdms,file,,,Description,
+MJ Seo Speed Shoulder.tdms,file,,,RunNumber,14
+MJ Seo Speed Shoulder.tdms,file,,,ProductName,FlexLogger
+MJ Seo Speed Shoulder.tdms,file,,,ProductVersion,2026 Q2
+MJ Seo Speed Shoulder.tdms,file,,,User_Name,deanr
+MJ Seo Speed Shoulder.tdms,file,,,Test_properties~Operator,deanr
+MJ Seo Speed Shoulder.tdms,file,,,Test_properties~DUT,
+MJ Seo Speed Shoulder.tdms,group,Test Information,,Description,
+MJ Seo Speed Shoulder.tdms,group,Test Information,,RunNumber,14
+MJ Seo Speed Shoulder.tdms,group,Test Information,,ProductName,FlexLogger
+MJ Seo Speed Shoulder.tdms,group,Test Information,,ProductVersion,2026 Q2
+MJ Seo Speed Shoulder.tdms,group,Test Information,,User_Name,deanr
+MJ Seo Speed Shoulder.tdms,group,Test Information,,Test_properties~Operator,deanr
+MJ Seo Speed Shoulder.tdms,group,Test Information,,Test_properties~DUT,
+MJ Seo Speed Shoulder.tdms,group,Log,,Test_properties~DUT,
+MJ Seo Speed Shoulder.tdms,group,Log,,Test_properties~Operator,deanr
+MJ Seo Speed Shoulder.tdms,group,Log,,User_Name,deanr
+MJ Seo Speed Shoulder.tdms,group,Log,,ProductVersion,2026 Q2
+MJ Seo Speed Shoulder.tdms,group,Log,,ProductName,FlexLogger
+MJ Seo Speed Shoulder.tdms,group,Log,,RunNumber,14
+MJ Seo Speed Shoulder.tdms,group,Log,,Description,
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,176
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T22:20:30.475492
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-4.024121210444719
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,3.6845260113477707
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.034269510269686713
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+MJ Seo Speed Shoulder.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,wf_xname,Time
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,wf_samples,177
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,unit_string,V
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T22:20:30.468825
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,minimum,134.56518369494006
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,maximum,276.4359984314069
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,237.15065086227688
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,monotony,not monotone
+MJ Seo Speed Shoulder.tdms,channel,Log,Position_Deg,novaluekey,No
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,wf_xname,Time
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,wf_samples,176
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,unit_string,V
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T22:20:30.472158
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,minimum,-52.58195202732458
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,maximum,37.61463366248645
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,-7.094038516585309
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,monotony,not monotone
+MJ Seo Speed Shoulder.tdms,channel,Log,Torque_Nm,novaluekey,No
+Malcolm Medina Speed D2.tdms,file,,,name,LogFile_2026-05-15-13-20-57
+Malcolm Medina Speed D2.tdms,file,,,Date Created,2026-05-15T20:20:57.176673
+Malcolm Medina Speed D2.tdms,file,,,datetime,2026-05-15T20:20:57.176673
+Malcolm Medina Speed D2.tdms,file,,,Description,
+Malcolm Medina Speed D2.tdms,file,,,RunNumber,10
+Malcolm Medina Speed D2.tdms,file,,,ProductName,FlexLogger
+Malcolm Medina Speed D2.tdms,file,,,ProductVersion,2026 Q2
+Malcolm Medina Speed D2.tdms,file,,,User_Name,deanr
+Malcolm Medina Speed D2.tdms,file,,,Test_properties~Operator,deanr
+Malcolm Medina Speed D2.tdms,file,,,Test_properties~DUT,
+Malcolm Medina Speed D2.tdms,group,Test Information,,Description,
+Malcolm Medina Speed D2.tdms,group,Test Information,,RunNumber,10
+Malcolm Medina Speed D2.tdms,group,Test Information,,ProductName,FlexLogger
+Malcolm Medina Speed D2.tdms,group,Test Information,,ProductVersion,2026 Q2
+Malcolm Medina Speed D2.tdms,group,Test Information,,User_Name,deanr
+Malcolm Medina Speed D2.tdms,group,Test Information,,Test_properties~Operator,deanr
+Malcolm Medina Speed D2.tdms,group,Test Information,,Test_properties~DUT,
+Malcolm Medina Speed D2.tdms,group,Log,,Test_properties~DUT,
+Malcolm Medina Speed D2.tdms,group,Log,,Test_properties~Operator,deanr
+Malcolm Medina Speed D2.tdms,group,Log,,User_Name,deanr
+Malcolm Medina Speed D2.tdms,group,Log,,ProductVersion,2026 Q2
+Malcolm Medina Speed D2.tdms,group,Log,,ProductName,FlexLogger
+Malcolm Medina Speed D2.tdms,group,Log,,RunNumber,10
+Malcolm Medina Speed D2.tdms,group,Log,,Description,
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,121
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T20:20:55.633429
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-3.9132796018384397
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,3.6535934694111347
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.030980313834897712
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Malcolm Medina Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,wf_xname,Time
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,wf_samples,122
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,unit_string,V
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T20:20:55.626762
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,minimum,-82.45881938841194
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,maximum,186.66718401946127
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,-36.92385553962022
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,monotony,not monotone
+Malcolm Medina Speed D2.tdms,channel,Log,Position_Deg,novaluekey,No
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,wf_samples,121
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,unit_string,V
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T20:20:55.630095
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,minimum,-122.63023986993358
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,maximum,171.3089464803692
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,21.528358984254517
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Malcolm Medina Speed D2.tdms,channel,Log,Torque_Nm,novaluekey,No
+Malcolm Medina Speed Shoulder ER IR.tdms,file,,,name,LogFile_2026-05-15-12-52-40
+Malcolm Medina Speed Shoulder ER IR.tdms,file,,,Date Created,2026-05-15T19:52:40.912250
+Malcolm Medina Speed Shoulder ER IR.tdms,file,,,datetime,2026-05-15T19:52:40.912250
+Malcolm Medina Speed Shoulder ER IR.tdms,file,,,Description,
+Malcolm Medina Speed Shoulder ER IR.tdms,file,,,RunNumber,9
+Malcolm Medina Speed Shoulder ER IR.tdms,file,,,ProductName,FlexLogger
+Malcolm Medina Speed Shoulder ER IR.tdms,file,,,ProductVersion,2026 Q2
+Malcolm Medina Speed Shoulder ER IR.tdms,file,,,User_Name,deanr
+Malcolm Medina Speed Shoulder ER IR.tdms,file,,,Test_properties~Operator,deanr
+Malcolm Medina Speed Shoulder ER IR.tdms,file,,,Test_properties~DUT,
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Test Information,,Description,
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Test Information,,RunNumber,9
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Test Information,,ProductName,FlexLogger
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Test Information,,ProductVersion,2026 Q2
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Test Information,,User_Name,deanr
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Test Information,,Test_properties~Operator,deanr
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Test Information,,Test_properties~DUT,
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Log,,Test_properties~DUT,
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Log,,Test_properties~Operator,deanr
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Log,,User_Name,deanr
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Log,,ProductVersion,2026 Q2
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Log,,ProductName,FlexLogger
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Log,,RunNumber,9
+Malcolm Medina Speed Shoulder ER IR.tdms,group,Log,,Description,
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,121
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T19:52:39.437669
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-4.195539047010243
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,3.912653508130461
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.03452794083020072
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xname,Time
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_samples,122
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,unit_string,V
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T19:52:39.431002
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,minimum,75.33581016585231
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,maximum,272.646762044169
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,232.78911683769363
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,monotony,not monotone
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,novaluekey,No
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_samples,121
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,unit_string,V
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T19:52:39.434336
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,minimum,-58.04270564946346
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,maximum,30.835767097072676
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,-6.4210597998957555
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Malcolm Medina Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,novaluekey,No
+Wrigley Ferrell Speed D2.tdms,file,,,name,LogFile_2026-05-15-11-29-42
+Wrigley Ferrell Speed D2.tdms,file,,,Date Created,2026-05-15T18:29:42.152894
+Wrigley Ferrell Speed D2.tdms,file,,,datetime,2026-05-15T18:29:42.152894
+Wrigley Ferrell Speed D2.tdms,file,,,Description,
+Wrigley Ferrell Speed D2.tdms,file,,,RunNumber,6
+Wrigley Ferrell Speed D2.tdms,file,,,ProductName,FlexLogger
+Wrigley Ferrell Speed D2.tdms,file,,,ProductVersion,2026 Q2
+Wrigley Ferrell Speed D2.tdms,file,,,User_Name,deanr
+Wrigley Ferrell Speed D2.tdms,file,,,Test_properties~Operator,deanr
+Wrigley Ferrell Speed D2.tdms,file,,,Test_properties~DUT,
+Wrigley Ferrell Speed D2.tdms,group,Test Information,,Description,
+Wrigley Ferrell Speed D2.tdms,group,Test Information,,RunNumber,6
+Wrigley Ferrell Speed D2.tdms,group,Test Information,,ProductName,FlexLogger
+Wrigley Ferrell Speed D2.tdms,group,Test Information,,ProductVersion,2026 Q2
+Wrigley Ferrell Speed D2.tdms,group,Test Information,,User_Name,deanr
+Wrigley Ferrell Speed D2.tdms,group,Test Information,,Test_properties~Operator,deanr
+Wrigley Ferrell Speed D2.tdms,group,Test Information,,Test_properties~DUT,
+Wrigley Ferrell Speed D2.tdms,group,Log,,Test_properties~DUT,
+Wrigley Ferrell Speed D2.tdms,group,Log,,Test_properties~Operator,deanr
+Wrigley Ferrell Speed D2.tdms,group,Log,,User_Name,deanr
+Wrigley Ferrell Speed D2.tdms,group,Log,,ProductVersion,2026 Q2
+Wrigley Ferrell Speed D2.tdms,group,Log,,ProductName,FlexLogger
+Wrigley Ferrell Speed D2.tdms,group,Log,,RunNumber,6
+Wrigley Ferrell Speed D2.tdms,group,Log,,Description,
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,132
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T18:29:40.740116
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-3.776660874951631
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,3.6948368586599827
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.04764715392302953
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Wrigley Ferrell Speed D2.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_xname,Time
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_samples,133
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,unit_string,V
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T18:29:40.733449
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,minimum,-94.81894760392606
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,maximum,178.05118223419413
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,-45.28075845496847
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,monotony,not monotone
+Wrigley Ferrell Speed D2.tdms,channel,Log,Position_Deg,novaluekey,No
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_samples,132
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,unit_string,V
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T18:29:40.736783
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,minimum,-155.01815790468825
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,maximum,147.20630980334244
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,10.469352107172565
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Wrigley Ferrell Speed D2.tdms,channel,Log,Torque_Nm,novaluekey,No
+Wrigley Ferrell Speed Shoulder ER IR.tdms,file,,,name,LogFile_2026-05-15-10-55-56
+Wrigley Ferrell Speed Shoulder ER IR.tdms,file,,,Date Created,2026-05-15T17:55:56.951758
+Wrigley Ferrell Speed Shoulder ER IR.tdms,file,,,datetime,2026-05-15T17:55:56.951758
+Wrigley Ferrell Speed Shoulder ER IR.tdms,file,,,Description,
+Wrigley Ferrell Speed Shoulder ER IR.tdms,file,,,RunNumber,3
+Wrigley Ferrell Speed Shoulder ER IR.tdms,file,,,ProductName,FlexLogger
+Wrigley Ferrell Speed Shoulder ER IR.tdms,file,,,ProductVersion,2026 Q2
+Wrigley Ferrell Speed Shoulder ER IR.tdms,file,,,User_Name,deanr
+Wrigley Ferrell Speed Shoulder ER IR.tdms,file,,,Test_properties~Operator,deanr
+Wrigley Ferrell Speed Shoulder ER IR.tdms,file,,,Test_properties~DUT,
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,Description,
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,RunNumber,3
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,ProductName,FlexLogger
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,ProductVersion,2026 Q2
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,User_Name,deanr
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,Test_properties~Operator,deanr
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Test Information,,Test_properties~DUT,
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Log,,Test_properties~DUT,
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Log,,Test_properties~Operator,deanr
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Log,,User_Name,deanr
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Log,,ProductVersion,2026 Q2
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Log,,ProductName,FlexLogger
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Log,,RunNumber,3
+Wrigley Ferrell Speed Shoulder ER IR.tdms,group,Log,,Description,
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xname,Time
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_xunit_string,s
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_samples,132
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,unit_string,V
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_DeviceName,Dev1
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Id,ai1
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Type,Voltage
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Sensor,Voltage
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Name,NI USB-6001
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Device~Id,024FAD6B
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Name,Dev1
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Chassis~Id,024FAD6B
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~HighRange,10.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~LowRange,-10.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~ScaleType,Linear
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~SensorSlope,1.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_SensorScale~Y-Intercept,0.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,DAC~Channel~Info,DC
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_TerminalConfiguration,Differential
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_increment,0.009999975
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_offset,0.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,wf_start_time,2026-05-15T17:55:55.645179
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,minimum,-4.035720913670957
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,maximum,3.886876389849931
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,NI_ChannelValueAverage,-0.05911038121324269
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,monotony,not monotone
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Angular_Velocity_Deg/Sec,novaluekey,No
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xname,Time
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_xunit_string,s
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_samples,133
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,unit_string,V
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_DeviceName,Dev1
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Id,ai2
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Type,Voltage
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Sensor,Voltage
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Name,NI USB-6001
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Device~Id,024FAD6B
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Name,Dev1
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Chassis~Id,024FAD6B
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~HighRange,10.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~LowRange,-10.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~ScaleType,Linear
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~SensorSlope,-35.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_SensorScale~Y-Intercept,100.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,DAC~Channel~Info,DC
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_TerminalConfiguration,Differential
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_increment,0.009999975
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_offset,0.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,wf_start_time,2026-05-15T17:55:55.638512
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,minimum,63.517001434229314
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,maximum,282.4807326681912
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,NI_ChannelValueAverage,239.81255947571623
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,monotony,not monotone
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Position_Deg,novaluekey,No
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xname,Time
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_xunit_string,s
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_samples,132
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,unit_string,V
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_DeviceName,Dev1
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Id,ai0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Type,Voltage
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Sensor,Voltage
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Name,NI USB-6001
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Device~Id,024FAD6B
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Name,Dev1
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Chassis~Id,024FAD6B
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~HighRange,10.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~LowRange,-10.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~ScaleType,Linear
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~SensorSlope,146.1
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_SensorScale~Y-Intercept,0.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,DAC~Channel~Info,DC
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_TerminalConfiguration,Differential
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_increment,0.009999975
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_offset,0.0
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,wf_start_time,2026-05-15T17:55:55.641845
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,minimum,-45.42648176383227
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,maximum,28.199541210522874
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,NI_ChannelValueAverage,-9.364962900308726
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,monotony,not monotone
+Wrigley Ferrell Speed Shoulder ER IR.tdms,channel,Log,Torque_Nm,novaluekey,No

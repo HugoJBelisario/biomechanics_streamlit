@@ -2029,36 +2029,46 @@ def detect_shoulder_er_ir_speed_reps(
     if len(smooth_position) == 0 or not np.isfinite(smooth_position).any():
         return [], None
 
-    high_cutoff = float(np.nanpercentile(smooth_position, 85))
-    high_plateau_samples = smooth_position[smooth_position >= high_cutoff]
-    high_plateau = (
-        float(np.nanmedian(high_plateau_samples))
-        if high_plateau_samples.size
-        else float(np.nanmedian(smooth_position))
-    )
+    plateau_value = float(np.nanmedian(smooth_position))
     low_reference = float(np.nanpercentile(smooth_position, 5))
-    dip_amplitude = max(1.0, high_plateau - low_reference)
-    active_threshold = high_plateau - (dip_amplitude * float(drop_fraction))
+    high_reference = float(np.nanpercentile(smooth_position, 95))
+    downward_excursion = max(0.0, plateau_value - low_reference)
+    upward_excursion = max(0.0, high_reference - plateau_value)
 
-    below_threshold_idx = np.flatnonzero(smooth_position <= active_threshold)
-    if below_threshold_idx.size == 0:
+    excursion_direction = "up" if upward_excursion >= downward_excursion else "down"
+    excursion_amplitude = max(1.0, upward_excursion if excursion_direction == "up" else downward_excursion)
+    threshold_depth = float(drop_fraction)
+
+    if excursion_direction == "up":
+        active_threshold = plateau_value + (excursion_amplitude * threshold_depth)
+        return_threshold = plateau_value + (excursion_amplitude * 0.04)
+        active_idx = np.flatnonzero(smooth_position >= active_threshold)
+    else:
+        active_threshold = plateau_value - (excursion_amplitude * threshold_depth)
+        return_threshold = plateau_value - (excursion_amplitude * 0.04)
+        active_idx = np.flatnonzero(smooth_position <= active_threshold)
+
+    if active_idx.size == 0:
         return [], {
             "smooth_position": smooth_position,
             "active_threshold": float(active_threshold),
-            "high_plateau": float(high_plateau),
+            "return_threshold": float(return_threshold),
+            "plateau_value": float(plateau_value),
+            "excursion_direction": excursion_direction,
+            "excursion_amplitude": float(excursion_amplitude),
             "fs": fs,
         }
 
-    # A second, higher threshold marks a "true return" to the plateau. We only
-    # close a rep once the filtered signal gets back near the high plateau and
-    # stays there briefly, which keeps multi-dip clusters together.
-    return_threshold = high_plateau - (dip_amplitude * 0.04)
+    # A second threshold marks a "true return" toward the dominant plateau. We
+    # only close a rep once the filtered signal gets back near that plateau and
+    # stays there briefly, which keeps multi-dip / multi-spike clusters together
+    # regardless of whether the motion is flipped upward or downward.
     if fs is not None and np.isfinite(fs) and fs > 0:
         plateau_hold_samples = max(3, int(round(float(fs) * 0.08)))
     else:
         plateau_hold_samples = max(3, int(min_samples) // 2)
 
-    raw_regions = _build_contiguous_regions(below_threshold_idx.tolist())
+    raw_regions = _build_contiguous_regions(active_idx.tolist())
     rep_windows = []
     region_cursor = 0
     n_samples = len(smooth_position)
@@ -2076,7 +2086,11 @@ def detect_shoulder_er_ir_speed_reps(
                 break
 
             plateau_window = smooth_position[search_idx:plateau_window_end]
-            if np.all(plateau_window >= return_threshold):
+            if (
+                np.all(plateau_window <= return_threshold)
+                if excursion_direction == "up"
+                else np.all(plateau_window >= return_threshold)
+            ):
                 cluster_end = int(search_idx)
                 break
 
@@ -2097,9 +2111,14 @@ def detect_shoulder_er_ir_speed_reps(
             for idx in range(int(cluster_start), 0, -1):
                 prev_val = float(smooth_position[idx - 1])
                 curr_val = float(smooth_position[idx])
-                if prev_val > active_threshold >= curr_val:
-                    start_idx = int(idx - 1)
-                    break
+                if excursion_direction == "up":
+                    if prev_val < active_threshold <= curr_val:
+                        start_idx = int(idx - 1)
+                        break
+                else:
+                    if prev_val > active_threshold >= curr_val:
+                        start_idx = int(idx - 1)
+                        break
 
             buffered_start = max(0, int(start_idx) - int(buffer_samples))
             buffered_end = min(n_samples - 1, int(end_idx) + int(buffer_samples))
@@ -2112,7 +2131,9 @@ def detect_shoulder_er_ir_speed_reps(
         "smooth_position": smooth_position,
         "active_threshold": float(active_threshold),
         "return_threshold": float(return_threshold),
-        "high_plateau": float(high_plateau),
+        "plateau_value": float(plateau_value),
+        "excursion_direction": excursion_direction,
+        "excursion_amplitude": float(excursion_amplitude),
         "fs": fs,
     }
 
