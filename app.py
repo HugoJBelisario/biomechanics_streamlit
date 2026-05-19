@@ -2366,6 +2366,134 @@ def extract_landmark_aligned_biodex_reps(
 
     return reps_long_df, mean_df, aligned_rep_metadata
 
+def extract_position_window_normalized_biodex_reps(
+    df,
+    rep_windows,
+    time_col="Elapsed Seconds",
+    value_col="Torque_Nm",
+    n_points=101,
+):
+    if df.empty or not rep_windows:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    percent_axis = np.linspace(0.0, 100.0, int(n_points))
+    rep_rows = []
+    normalized_curves = []
+    aligned_rep_metadata = []
+
+    for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
+        rep_df = df.iloc[int(start_idx):int(end_idx) + 1].copy()
+        if rep_df.empty:
+            continue
+
+        rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
+        rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
+        rep_df = rep_df.dropna(subset=[time_col, value_col]).reset_index(drop=True)
+        if len(rep_df) < 5:
+            continue
+
+        torque_values = rep_df[value_col].to_numpy(dtype=float)
+        rep_pct = np.linspace(0.0, 100.0, len(rep_df))
+        interp_torque = np.interp(percent_axis, rep_pct, torque_values)
+        normalized_curves.append(interp_torque)
+        rep_rows.append(pd.DataFrame({
+            "rep_number": rep_number,
+            "movement_pct": percent_axis,
+            "torque_nm": interp_torque,
+        }))
+        aligned_rep_metadata.append({
+            "rep_number": rep_number,
+            "start_time": float(rep_df[time_col].iloc[0]),
+            "end_time": float(rep_df[time_col].iloc[-1]),
+        })
+
+    if not normalized_curves:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    curves_arr = np.vstack(normalized_curves)
+    reps_long_df = pd.concat(rep_rows, ignore_index=True)
+    mean_df = pd.DataFrame({
+        "movement_pct": percent_axis,
+        "mean_torque_nm": np.nanmean(curves_arr, axis=0),
+        "std_torque_nm": np.nanstd(curves_arr, axis=0),
+    })
+    mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
+    mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
+    mean_df.attrs["landmark_boundary_pct"] = []
+    mean_df.attrs["landmark_labels"] = []
+    mean_df.attrs["x_axis_title"] = "Rep Window (%)"
+    mean_df.attrs["title"] = "Position Start -> End Normalized Torque Comparison"
+    return reps_long_df, mean_df, aligned_rep_metadata
+
+def extract_position_window_subcycle_biodex_reps(
+    df,
+    rep_windows,
+    time_col="Elapsed Seconds",
+    value_col="Torque_Nm",
+    n_points=101,
+    n_subcycles=3,
+):
+    if df.empty or not rep_windows or int(n_subcycles) < 1:
+        return pd.DataFrame(), pd.DataFrame()
+
+    percent_axis = np.linspace(0.0, 100.0, int(n_points))
+    subcycle_rows = []
+    mean_rows = []
+
+    for cycle_number in range(1, int(n_subcycles) + 1):
+        cycle_curves = []
+        cycle_rep_rows = []
+        cycle_start_pct = ((cycle_number - 1) / float(n_subcycles)) * 100.0
+        cycle_end_pct = (cycle_number / float(n_subcycles)) * 100.0
+
+        for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
+            rep_df = df.iloc[int(start_idx):int(end_idx) + 1].copy()
+            if rep_df.empty:
+                continue
+
+            rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
+            rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
+            rep_df = rep_df.dropna(subset=[time_col, value_col]).reset_index(drop=True)
+            if len(rep_df) < 7:
+                continue
+
+            torque_values = rep_df[value_col].to_numpy(dtype=float)
+            rep_pct = np.linspace(0.0, 100.0, len(rep_df))
+            cycle_mask = (rep_pct >= cycle_start_pct) & (rep_pct <= cycle_end_pct)
+            if np.count_nonzero(cycle_mask) < 3:
+                continue
+
+            cycle_pct = rep_pct[cycle_mask]
+            cycle_torque = torque_values[cycle_mask]
+            local_pct = np.interp(cycle_pct, [cycle_start_pct, cycle_end_pct], [0.0, 100.0])
+            interp_torque = np.interp(percent_axis, local_pct, cycle_torque)
+            cycle_curves.append(interp_torque)
+            cycle_rep_rows.append(pd.DataFrame({
+                "rep_number": rep_number,
+                "cycle_number": cycle_number,
+                "cycle_pct": percent_axis,
+                "torque_nm": interp_torque,
+            }))
+
+        if cycle_curves:
+            cycle_arr = np.vstack(cycle_curves)
+            subcycle_rows.extend(cycle_rep_rows)
+            mean_rows.append(pd.DataFrame({
+                "cycle_number": cycle_number,
+                "cycle_pct": percent_axis,
+                "mean_torque_nm": np.nanmean(cycle_arr, axis=0),
+                "std_torque_nm": np.nanstd(cycle_arr, axis=0),
+            }))
+
+    if not subcycle_rows or not mean_rows:
+        return pd.DataFrame(), pd.DataFrame()
+
+    subcycles_long_df = pd.concat(subcycle_rows, ignore_index=True)
+    subcycle_mean_df = pd.concat(mean_rows, ignore_index=True)
+    subcycle_mean_df["upper_band"] = subcycle_mean_df["mean_torque_nm"] + subcycle_mean_df["std_torque_nm"]
+    subcycle_mean_df["lower_band"] = subcycle_mean_df["mean_torque_nm"] - subcycle_mean_df["std_torque_nm"]
+    return subcycles_long_df, subcycle_mean_df
+
 def extract_shoulder_er_ir_speed_landmark_aligned_biodex_reps(
     df,
     rep_windows,
@@ -11069,6 +11197,8 @@ with tab6:
                     )
                     preview_position_detection_metadata = None
                     preview_processing_version = "shoulder_er_ir_landmark_v1"
+                    preview_subcycles_long_df = pd.DataFrame()
+                    preview_subcycle_mean_df = pd.DataFrame()
                     if (
                         preview_movement == "shoulder_er_ir"
                         and preview_protocol_type == "speed"
@@ -11082,15 +11212,22 @@ with tab6:
                             buffer_samples=int(preview_buffer_samples),
                             drop_fraction=float(preview_position_drop_fraction),
                         )
-                        preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_shoulder_er_ir_speed_landmark_aligned_biodex_reps(
+                        preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_position_window_normalized_biodex_reps(
                             preview_df,
                             preview_rep_windows,
                             time_col="Elapsed Seconds",
                             value_col="Torque_Nm",
                             n_points=int(preview_n_points),
-                            prominence_ratio=float(preview_landmark_prominence),
                         )
-                        preview_processing_version = "shoulder_er_ir_speed_position_windows_v1"
+                        preview_subcycles_long_df, preview_subcycle_mean_df = extract_position_window_subcycle_biodex_reps(
+                            preview_df,
+                            preview_rep_windows,
+                            time_col="Elapsed Seconds",
+                            value_col="Torque_Nm",
+                            n_points=int(preview_n_points),
+                            n_subcycles=3,
+                        )
+                        preview_processing_version = "shoulder_er_ir_speed_position_window_normalized_v1"
                     elif (
                         preview_movement == "d2_shoulder_pattern"
                         and preview_protocol_type != "speed"
@@ -11345,7 +11482,7 @@ with tab6:
                                     font=dict(size=11),
                                 )
                             preview_avg_fig.update_layout(
-                                title="Landmark-Aligned Average Torque Curve Across Detected Reps",
+                                title=preview_mean_df.attrs.get("title", "Landmark-Aligned Average Torque Curve Across Detected Reps"),
                                 xaxis_title="Movement Cycle (%)",
                                 yaxis_title="Torque_Nm",
                                 height=500,
@@ -11355,6 +11492,55 @@ with tab6:
                                 use_container_width=True,
                                 key=f"biodex_test_preview_avg_plot_{preview_plot_suffix}",
                             )
+                            if (
+                                preview_movement == "shoulder_er_ir"
+                                and preview_protocol_type == "speed"
+                                and not preview_subcycles_long_df.empty
+                                and not preview_subcycle_mean_df.empty
+                            ):
+                                preview_subcycle_fig = go.Figure()
+                                subcycle_color_map = {
+                                    1: "#7bd389",
+                                    2: "#8be9fd",
+                                    3: "#ffb86c",
+                                }
+                                for cycle_number in sorted(preview_subcycles_long_df["cycle_number"].unique()):
+                                    cycle_rep_df = preview_subcycles_long_df[
+                                        preview_subcycles_long_df["cycle_number"] == cycle_number
+                                    ]
+                                    cycle_mean_df = preview_subcycle_mean_df[
+                                        preview_subcycle_mean_df["cycle_number"] == cycle_number
+                                    ]
+                                    color = subcycle_color_map.get(int(cycle_number), "#ffffff")
+                                    for rep_number, rep_cycle_df in cycle_rep_df.groupby("rep_number"):
+                                        preview_subcycle_fig.add_trace(go.Scatter(
+                                            x=rep_cycle_df["cycle_pct"],
+                                            y=rep_cycle_df["torque_nm"],
+                                            mode="lines",
+                                            line=dict(width=1, color=color),
+                                            opacity=0.20,
+                                            legendgroup=f"cycle_{cycle_number}",
+                                            showlegend=False,
+                                            hoverinfo="skip",
+                                        ))
+                                    preview_subcycle_fig.add_trace(go.Scatter(
+                                        x=cycle_mean_df["cycle_pct"],
+                                        y=cycle_mean_df["mean_torque_nm"],
+                                        mode="lines",
+                                        line=dict(width=3, color=color),
+                                        name=f"Cycle {int(cycle_number)} Mean",
+                                    ))
+                                preview_subcycle_fig.update_layout(
+                                    title="3 Internal Sub-Cycle Torque Comparison",
+                                    xaxis_title="Sub-Cycle (%)",
+                                    yaxis_title="Torque_Nm",
+                                    height=450,
+                                )
+                                st.plotly_chart(
+                                    preview_subcycle_fig,
+                                    use_container_width=True,
+                                    key=f"biodex_test_preview_subcycle_plot_{preview_plot_suffix}",
+                                )
 
                             if st.button(
                                 "Save Detection Results",
