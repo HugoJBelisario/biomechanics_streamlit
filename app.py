@@ -6900,14 +6900,6 @@ COMPENSATION_ENERGY_OPTIONS = [
     "STP Rotational into Ball",
 ]
 
-try:
-    active_tab_query = st.query_params.get("active_tab")
-    if isinstance(active_tab_query, list):
-        active_tab_query = active_tab_query[0] if active_tab_query else ""
-except Exception:
-    active_tab_query = ""
-show_compensation_sidebar_controls = active_tab_query == "Compensation Analysis"
-
 group_mode_enabled = st.session_state.get("create_groups_mode", False)
 if "group_count" not in st.session_state:
     st.session_state["group_count"] = 1
@@ -6959,8 +6951,7 @@ def build_pitcher_filters_for_group(selected_group_pitchers, group_index, show_g
             throw_types_i = ["Mound"]
 
         if (
-            show_compensation_sidebar_controls
-            and not group_mode_enabled
+            not group_mode_enabled
             and group_index == 0
             and i == 0
         ):
