@@ -3,6 +3,25 @@ from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
 st.set_page_config(layout="wide")
+
+st.markdown(
+    """
+    <style>
+    @media (prefers-color-scheme: light) {
+        [data-testid="stSidebar"] img {
+            filter: invert(1) hue-rotate(180deg);
+        }
+    }
+
+    @media (prefers-color-scheme: dark) {
+        [data-testid="stSidebar"] img {
+            filter: none;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
