@@ -7,21 +7,15 @@ st.set_page_config(layout="wide")
 st.markdown(
     """
     <style>
-    @media (prefers-color-scheme: light) {
-        [data-testid="stSidebar"] img {
-            filter: invert(1) hue-rotate(180deg);
-        }
-    }
-
-    @media (prefers-color-scheme: dark) {
-        [data-testid="stSidebar"] img {
-            filter: none;
-        }
+    /* Keep the sidebar logo visible in both Streamlit light and dark themes. */
+    [data-testid="stSidebar"] img {
+        mix-blend-mode: difference;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
