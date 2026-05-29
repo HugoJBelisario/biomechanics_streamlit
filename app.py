@@ -6851,11 +6851,6 @@ st.markdown(
         text-overflow: unset !important;
         line-height: 1.25 !important;
     }
-    .compensation-sidebar-caption {
-        font-size: 0.875rem;
-        color: rgba(49, 51, 63, 0.6);
-        margin: 0.25rem 0 -0.25rem;
-    }
     </style>
     """,
     unsafe_allow_html=True
@@ -6969,10 +6964,6 @@ def build_pitcher_filters_for_group(selected_group_pitchers, group_index, show_g
             and group_index == 0
             and i == 0
         ):
-            st.sidebar.markdown(
-                '<div class="compensation-sidebar-caption">Compensation Analysis</div>',
-                unsafe_allow_html=True,
-            )
             st.sidebar.multiselect(
                 "Energy Flow Type",
                 COMPENSATION_ENERGY_OPTIONS,
@@ -8033,14 +8024,6 @@ components.html(
         .querySelectorAll(".st-key-tab1_energy_plot_options")
         .forEach((element) => {
           setElementHidden(element, hideCompensationControls);
-        });
-
-      sidebar
-        .querySelectorAll('[data-testid="stElementContainer"]')
-        .forEach((element) => {
-          if (element.textContent.trim() === "Compensation Analysis") {
-            setElementHidden(element, hideCompensationControls);
-          }
         });
     }
 
