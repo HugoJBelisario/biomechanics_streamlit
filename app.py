@@ -9316,7 +9316,8 @@ with tab_kinematic:
             }
 
             def style_segments(col):
-                seg = col[0]
+                column_name = col.name
+                seg = column_name[0] if isinstance(column_name, tuple) else column_name
                 if seg in segment_colors:
                     return [f"background-color: {segment_colors[seg]}"] * len(df_pivot)
                 return [""] * len(df_pivot)
