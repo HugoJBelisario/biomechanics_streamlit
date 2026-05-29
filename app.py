@@ -9623,39 +9623,6 @@ with tab6:
                     )
                     st.plotly_chart(position_preview_fig, use_container_width=True)
 
-                    if preview_movement == "shoulder_er_ir" and preview_protocol_type == "speed":
-                        erir_filtered_cutoff_hz = st.slider(
-                            "Shoulder ER/IR position smoothing cutoff (Hz)",
-                            min_value=1.0,
-                            max_value=10.0,
-                            value=4.0,
-                            step=0.5,
-                            key="shoulder_er_ir_speed_position_cutoff_hz",
-                        )
-                        st.caption(
-                            "Lower cutoff = smoother Butterworth-filtered Position_Deg for this ER/IR speed preview."
-                        )
-                        filtered_position_values, _filtered_fs, _clean_position = lowpass_butterworth_position_signal(
-                            preview_df["Elapsed Seconds"].to_numpy(dtype=float),
-                            preview_df["Position_Deg"].to_numpy(dtype=float),
-                            lowpass_cutoff_hz=float(erir_filtered_cutoff_hz),
-                        )
-                        filtered_position_preview_fig = go.Figure()
-                        filtered_position_preview_fig.add_trace(go.Scatter(
-                            x=preview_df["Elapsed Seconds"],
-                            y=filtered_position_values,
-                            mode="lines",
-                            line=dict(width=2.5),
-                            name="Butterworth Filtered Position_Deg",
-                        ))
-                        filtered_position_preview_fig.update_layout(
-                            title="Shoulder ER/IR Speed: Butterworth-Filtered Position Preview",
-                            xaxis_title="Elapsed Time (s)",
-                            yaxis_title="Position_Deg",
-                            height=500,
-                        )
-                        st.plotly_chart(filtered_position_preview_fig, use_container_width=True)
-
                 if (
                     preview_movement == "posterior_cuff"
                     and preview_protocol_type == "reactive_eccentric"
@@ -11104,57 +11071,23 @@ with tab6:
                     preview_controls_col, preview_plot_col = st.columns([0.35, 1.0], vertical_alignment="top")
 
                     with preview_controls_col:
-                        preview_threshold = st.number_input(
-                            "Rep detection threshold (smoothed |Torque| envelope)",
-                            min_value=1.0,
-                            max_value=500.0,
-                            value=20.0,
-                            step=1.0,
-                            key="biodex_test_preview_threshold",
-                        )
-                        preview_min_samples = st.number_input(
-                            "Minimum active samples per rep",
-                            min_value=1,
-                            max_value=500,
-                            value=15,
-                            step=1,
-                            key="biodex_test_preview_min_samples",
-                        )
-                        preview_buffer_samples = st.number_input(
-                            "Buffer samples before/after rep",
-                            min_value=0,
-                            max_value=500,
-                            value=20,
-                            step=1,
-                            key="biodex_test_preview_buffer",
-                        )
-                        preview_n_points = st.number_input(
-                            "Normalized points per rep",
-                            min_value=25,
-                            max_value=500,
-                            value=101,
-                            step=1,
-                            key="biodex_test_preview_n_points",
-                        )
-                        preview_landmark_prominence = st.slider(
-                            "Landmark prominence ratio",
-                            min_value=0.05,
-                            max_value=0.40,
-                            value=0.12,
-                            step=0.01,
-                            key="biodex_test_preview_prominence",
-                        )
-                        preview_position_cutoff_hz = 1.0
-                        preview_position_drop_fraction = 0.10
-                        if (
+                        is_shoulder_er_ir_speed_preview = (
                             preview_movement == "shoulder_er_ir"
                             and preview_protocol_type == "speed"
-                        ):
+                        )
+                        preview_threshold = 20.0
+                        preview_min_samples = 15
+                        preview_buffer_samples = 20
+                        preview_n_points = 101
+                        preview_landmark_prominence = 0.12
+                        preview_position_cutoff_hz = 0.5
+                        preview_position_drop_fraction = 0.60
+                        if is_shoulder_er_ir_speed_preview:
                             preview_position_cutoff_hz = st.slider(
                                 "Position smoothing cutoff (Hz)",
                                 min_value=0.5,
                                 max_value=4.0,
-                                value=1.0,
+                                value=0.5,
                                 step=0.1,
                                 key="biodex_test_preview_position_cutoff_hz",
                             )
@@ -11162,14 +11095,54 @@ with tab6:
                                 "Rep threshold depth into dip",
                                 min_value=0.05,
                                 max_value=0.60,
-                                value=0.10,
+                                value=0.60,
                                 step=0.01,
                                 key="biodex_test_preview_position_drop_fraction",
                             )
                             st.caption(
-                                "Shoulder ER/IR speed preview uses Butterworth-filtered `Position_Deg` to find each dip-cluster rep window. "
-                                "Minimum active samples, buffer, cutoff, and threshold depth matter most here. "
-                                "Higher threshold depth moves the rep-threshold line farther down into the dip."
+                                "Shoulder ER/IR speed reps are detected from Butterworth-filtered `Position_Deg`. "
+                                "Higher depth moves the threshold farther into each position dip."
+                            )
+                        else:
+                            preview_threshold = st.number_input(
+                                "Rep detection threshold (smoothed |Torque| envelope)",
+                                min_value=1.0,
+                                max_value=500.0,
+                                value=20.0,
+                                step=1.0,
+                                key="biodex_test_preview_threshold",
+                            )
+                            preview_min_samples = st.number_input(
+                                "Minimum active samples per rep",
+                                min_value=1,
+                                max_value=500,
+                                value=15,
+                                step=1,
+                                key="biodex_test_preview_min_samples",
+                            )
+                            preview_buffer_samples = st.number_input(
+                                "Buffer samples before/after rep",
+                                min_value=0,
+                                max_value=500,
+                                value=20,
+                                step=1,
+                                key="biodex_test_preview_buffer",
+                            )
+                            preview_n_points = st.number_input(
+                                "Normalized points per rep",
+                                min_value=25,
+                                max_value=500,
+                                value=101,
+                                step=1,
+                                key="biodex_test_preview_n_points",
+                            )
+                            preview_landmark_prominence = st.slider(
+                                "Landmark prominence ratio",
+                                min_value=0.05,
+                                max_value=0.40,
+                                value=0.12,
+                                step=0.01,
+                                key="biodex_test_preview_prominence",
                             )
                         if (
                             preview_movement == "d2_shoulder_pattern"
@@ -11177,7 +11150,7 @@ with tab6:
                         ):
                             st.caption(
                                 "D2 preview uses `Position_Deg` cycles for rep windows. "
-                                "Buffer and normalized points apply; torque threshold/min samples/landmark prominence are ER/IR controls."
+                                "Buffer and normalized points apply before D2 landmark alignment."
                             )
                         elif (
                             preview_movement == "d2_shoulder_pattern"
@@ -11188,22 +11161,13 @@ with tab6:
                                 "Threshold, minimum active samples, buffer, and landmark prominence all apply here."
                             )
 
-                    preview_rep_windows = detect_biodex_reps(
-                        preview_df,
-                        value_col="Torque_Nm",
-                        threshold=float(preview_threshold),
-                        min_samples=int(preview_min_samples),
-                        buffer_samples=int(preview_buffer_samples),
-                    )
+                    preview_rep_windows = []
                     preview_position_detection_metadata = None
                     preview_processing_version = "shoulder_er_ir_landmark_v1"
                     preview_landmark_reps_long_df = pd.DataFrame()
                     preview_landmark_mean_df = pd.DataFrame()
                     preview_landmark_aligned_rep_metadata = []
-                    if (
-                        preview_movement == "shoulder_er_ir"
-                        and preview_protocol_type == "speed"
-                    ):
+                    if is_shoulder_er_ir_speed_preview:
                         preview_rep_windows, preview_position_detection_metadata = detect_shoulder_er_ir_speed_reps(
                             preview_df,
                             position_col="Position_Deg",
@@ -11219,14 +11183,6 @@ with tab6:
                             time_col="Elapsed Seconds",
                             value_col="Torque_Nm",
                             n_points=int(preview_n_points),
-                        )
-                        preview_landmark_reps_long_df, preview_landmark_mean_df, preview_landmark_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
-                            preview_df,
-                            preview_rep_windows,
-                            time_col="Elapsed Seconds",
-                            value_col="Torque_Nm",
-                            n_points=int(preview_n_points),
-                            prominence_ratio=float(preview_landmark_prominence),
                         )
                         preview_processing_version = "shoulder_er_ir_speed_position_window_normalized_v1"
                     elif (
@@ -11268,6 +11224,13 @@ with tab6:
                         )
                         preview_processing_version = "d2_shoulder_pattern_speed_landmark_v1"
                     else:
+                        preview_rep_windows = detect_biodex_reps(
+                            preview_df,
+                            value_col="Torque_Nm",
+                            threshold=float(preview_threshold),
+                            min_samples=int(preview_min_samples),
+                            buffer_samples=int(preview_buffer_samples),
+                        )
                         preview_reps_long_df, preview_mean_df, preview_aligned_rep_metadata = extract_landmark_aligned_biodex_reps(
                             preview_df,
                             preview_rep_windows,
@@ -11292,8 +11255,7 @@ with tab6:
                         )
                         preview_raw_fig = go.Figure()
                         if (
-                            preview_movement == "shoulder_er_ir"
-                            and preview_protocol_type == "speed"
+                            is_shoulder_er_ir_speed_preview
                             and preview_position_detection_metadata is not None
                         ):
                             preview_smooth_position = np.asarray(
@@ -11374,8 +11336,7 @@ with tab6:
                             )
 
                         if (
-                            preview_movement == "shoulder_er_ir"
-                            and preview_protocol_type == "speed"
+                            is_shoulder_er_ir_speed_preview
                             and preview_position_detection_metadata is not None
                         ):
                             preview_raw_fig.add_hline(
@@ -11399,13 +11360,13 @@ with tab6:
                         preview_raw_fig.update_layout(
                             title=(
                                 "Detected Position Reps"
-                                if preview_movement == "shoulder_er_ir" and preview_protocol_type == "speed"
+                                if is_shoulder_er_ir_speed_preview
                                 else "Detected Torque Reps"
                             ),
                             xaxis_title="Elapsed Time (s)",
                             yaxis_title=(
                                 "Position_Deg"
-                                if preview_movement == "shoulder_er_ir" and preview_protocol_type == "speed"
+                                if is_shoulder_er_ir_speed_preview
                                 else "Torque_Nm"
                             ),
                             shapes=preview_shapes,
@@ -11424,9 +11385,14 @@ with tab6:
 
                         if preview_reps_long_df.empty or preview_mean_df.empty:
                             if preview_rep_windows:
-                                st.warning(
-                                    "Rep windows were detected, but landmark alignment could not be completed with the current settings."
-                                )
+                                if is_shoulder_er_ir_speed_preview:
+                                    st.warning(
+                                        "Rep windows were detected, but torque normalization could not be completed with the current settings."
+                                    )
+                                else:
+                                    st.warning(
+                                        "Rep windows were detected, but landmark alignment could not be completed with the current settings."
+                                    )
                             else:
                                 st.warning("No visible reps were detected with the current settings.")
                         else:
@@ -11494,8 +11460,7 @@ with tab6:
                                 key=f"biodex_test_preview_avg_plot_{preview_plot_suffix}",
                             )
                             if (
-                                preview_movement == "shoulder_er_ir"
-                                and preview_protocol_type == "speed"
+                                is_shoulder_er_ir_speed_preview
                                 and "Position_Deg" in preview_df.columns
                             ):
                                 preview_position_rows = []
@@ -11586,7 +11551,8 @@ with tab6:
                                         key=f"biodex_test_preview_position_normalized_plot_{preview_plot_suffix}",
                                     )
                             if (
-                                preview_movement == "shoulder_er_ir"
+                                not is_shoulder_er_ir_speed_preview
+                                and preview_movement == "shoulder_er_ir"
                                 and preview_protocol_type == "speed"
                                 and not preview_landmark_reps_long_df.empty
                                 and not preview_landmark_mean_df.empty
