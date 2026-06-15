@@ -10996,6 +10996,15 @@ with tab_joint:
         if joint_window_mode == "Foot Plant to Ball Release View":
             measurement_columns.remove("Peak Knee Height")
 
+        formatted_display_columns = [
+            col for col in ["Average Velocity", *measurement_columns, "Standard Deviation"]
+            if col in df_summary.columns
+        ]
+        if formatted_display_columns:
+            df_summary[formatted_display_columns] = df_summary[
+                formatted_display_columns
+            ].astype(object)
+
         for idx, row in df_summary.iterrows():
             kinematic_name = normalize_kinematic_name(row["Kinematic"])
             kinematic_unit = get_kinematic_unit(kinematic_name)
