@@ -7308,6 +7308,116 @@ else:
             "selected_take_ids": [],
         }]
 
+# --- 0-10 Report: Metric Group and Metric in sidebar ---
+st.sidebar.markdown("---")
+st.sidebar.markdown("**0-10 Report Metric**")
+
+_metric_group_options_010 = [
+    "All Metrics",
+    "Throwing Arm ROM",
+    "Throwing Arm Angular Velocities",
+    "Pelvis and Torso Angular Velocities",
+    "COG Velocities",
+    "Torso and Pelvis ROM",
+]
+selected_metric_group_010 = st.sidebar.selectbox(
+    "Metric Group",
+    _metric_group_options_010,
+    key="010_metric_group",
+)
+
+_metric_options_010 = [
+    "Max Shoulder Internal Rotation Velocity",
+    "Max Shoulder External Rotation Velocity",
+    "Max Elbow Extension Velocity",
+    "Peak Rotational Torque into Layback",
+    "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction",
+    "Max Shoulder Horizontal Abduction/Adduction Velocity",
+    "Max Shoulder Horizontal Abduction",
+    "Max Shoulder External Rotation",
+    "Shoulder External Rotation at Max Shoulder Horizontal Abduction",
+    "Max Torso Angular Velocity",
+    "Max Torso–Pelvis Angular Velocity",
+    "Max Pelvis Angular Velocity",
+    "Max Pelvis Angle (Z)",
+    "Max COM Velocity",
+    "Max Hip Extension Velocity",
+    "Max Knee Extension Velocity",
+    "Max Lead Knee Extension Velocity",
+    "Max Ankle Extension Velocity",
+    "Max Torso–Pelvis Angle (Z)",
+    "Max Torso–Pelvis Angle (X-Extended)",
+    "Max Torso–Pelvis Angle (X-Flexed)",
+    "Max Torso–Pelvis Angle (Y-Glove Side)",
+    "Max Torso–Pelvis Angle (Y-Arm Side)",
+    "Pelvis Posterior Tilt at Peak Knee Height",
+    "Pelvis Arm Side Tilt at Peak Knee Height",
+    "Pelvis Counter Rotation at Peak Knee Height",
+    "Pelvis Anterior Tilt at Ball Release",
+    "Max Hand Speed",
+]
+_group_to_metrics_010 = {
+    "All Metrics": _metric_options_010,
+    "Throwing Arm ROM": [
+        "Max Shoulder Horizontal Abduction",
+        "Max Shoulder External Rotation",
+        "Shoulder External Rotation at Max Shoulder Horizontal Abduction",
+    ],
+    "Throwing Arm Angular Velocities": [
+        "Max Shoulder Internal Rotation Velocity",
+        "Max Shoulder External Rotation Velocity",
+        "Max Elbow Extension Velocity",
+        "Peak Rotational Torque into Layback",
+        "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction",
+        "Max Shoulder Horizontal Abduction/Adduction Velocity",
+        "Max Hand Speed",
+    ],
+    "Pelvis and Torso Angular Velocities": [
+        "Max Torso Angular Velocity",
+        "Max Torso–Pelvis Angular Velocity",
+        "Max Pelvis Angular Velocity",
+    ],
+    "COG Velocities": [
+        "Max COM Velocity",
+        "Max Hip Extension Velocity",
+        "Max Knee Extension Velocity",
+        "Max Ankle Extension Velocity",
+    ],
+    "Torso and Pelvis ROM": [
+        "Max Torso–Pelvis Angle (Z)",
+        "Max Torso–Pelvis Angle (X-Extended)",
+        "Max Torso–Pelvis Angle (X-Flexed)",
+        "Max Torso–Pelvis Angle (Y-Glove Side)",
+        "Max Torso–Pelvis Angle (Y-Arm Side)",
+        "Pelvis Posterior Tilt at Peak Knee Height",
+        "Pelvis Arm Side Tilt at Peak Knee Height",
+        "Pelvis Counter Rotation at Peak Knee Height",
+        "Pelvis Anterior Tilt at Ball Release",
+    ],
+}
+_current_metric_options_010 = _group_to_metrics_010.get(selected_metric_group_010, _metric_options_010)
+selected_metric_010 = st.sidebar.selectbox(
+    "Select Metric",
+    _current_metric_options_010,
+    key="010_metric",
+)
+
+torso_axis = None
+if selected_metric_010 == "Max Torso Angular Velocity":
+    torso_axis = st.sidebar.selectbox("Select Torso Axis", ["X (Extension)", "X (Flexion)", "Y", "Z"], key="torso_axis")
+
+torso_pelvis_axis = None
+if selected_metric_010 == "Max Torso–Pelvis Angular Velocity":
+    torso_pelvis_axis = st.sidebar.selectbox("Select Torso–Pelvis Axis", ["X (Extension)", "X (Flexion)", "Y", "Z"], key="torso_pelvis_axis")
+
+pelvis_axis = None
+if selected_metric_010 == "Max Pelvis Angular Velocity":
+    pelvis_axis = st.sidebar.selectbox("Select Pelvis Axis", ["X", "Z"], key="pelvis_axis")
+
+com_axis = None
+if selected_metric_010 == "Max COM Velocity":
+    com_axis = st.sidebar.selectbox("Select COM Axis", ["X", "Y", "Z"], key="com_axis")
+
 selected_take_ids_union = set()
 if group_mode_enabled:
     for group_cfg in group_configs:
@@ -13564,123 +13674,6 @@ with tab3:
             default=["All Dates"],
             key=f"010_dates_{pitcher}"
         )
-
-    # --- Metric selection ---
-    metric_group_options_010 = [
-        "All Metrics",
-        "Throwing Arm ROM",
-        "Throwing Arm Angular Velocities",
-        "Pelvis and Torso Angular Velocities",
-        "COG Velocities",
-        "Torso and Pelvis ROM",
-    ]
-    selected_metric_group_010 = st.selectbox(
-        "Metric Group",
-        metric_group_options_010,
-        key="010_metric_group",
-    )
-
-    metric_options_010 = [
-        "Max Shoulder Internal Rotation Velocity",
-        "Max Shoulder External Rotation Velocity",
-        "Max Elbow Extension Velocity",
-        "Peak Rotational Torque into Layback",
-        "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction",
-        "Max Shoulder Horizontal Abduction/Adduction Velocity",
-        "Max Shoulder Horizontal Abduction",
-        "Max Shoulder External Rotation",
-        "Shoulder External Rotation at Max Shoulder Horizontal Abduction",
-        "Max Torso Angular Velocity",
-        "Max Torso–Pelvis Angular Velocity",
-        "Max Pelvis Angular Velocity",
-        "Max Pelvis Angle (Z)",
-        "Max COM Velocity",
-        "Max Hip Extension Velocity",
-        "Max Knee Extension Velocity",
-        "Max Lead Knee Extension Velocity",
-        "Max Ankle Extension Velocity",
-        "Max Torso–Pelvis Angle (Z)",
-        "Max Torso–Pelvis Angle (X-Extended)",
-        "Max Torso–Pelvis Angle (X-Flexed)",
-        "Max Torso–Pelvis Angle (Y-Glove Side)",
-        "Max Torso–Pelvis Angle (Y-Arm Side)",
-        "Pelvis Posterior Tilt at Peak Knee Height",
-        "Pelvis Arm Side Tilt at Peak Knee Height",
-        "Pelvis Counter Rotation at Peak Knee Height",
-        "Pelvis Anterior Tilt at Ball Release",
-        "Max Hand Speed",
-    ]
-
-    group_to_metrics_010 = {
-        "All Metrics": metric_options_010,
-
-        "Throwing Arm ROM": [
-            "Max Shoulder Horizontal Abduction",
-            "Max Shoulder External Rotation",
-            "Shoulder External Rotation at Max Shoulder Horizontal Abduction",
-        ],
-
-        "Throwing Arm Angular Velocities": [
-            "Max Shoulder Internal Rotation Velocity",
-            "Max Shoulder External Rotation Velocity",
-            "Max Elbow Extension Velocity",
-            "Peak Rotational Torque into Layback",
-            "Max Shoulder Horizontal Abduction Velocity into Max Scap Retraction",
-            "Max Shoulder Horizontal Abduction/Adduction Velocity",
-            "Max Hand Speed",
-        ],
-
-        "Pelvis and Torso Angular Velocities": [
-            "Max Torso Angular Velocity",
-            "Max Torso–Pelvis Angular Velocity",
-            "Max Pelvis Angular Velocity",
-        ],
-
-        "COG Velocities": [
-            "Max COM Velocity",
-            "Max Hip Extension Velocity",
-            "Max Knee Extension Velocity",
-            "Max Ankle Extension Velocity"
-        ],
-        "Torso and Pelvis ROM": [
-            "Max Torso–Pelvis Angle (Z)",
-            "Max Torso–Pelvis Angle (X-Extended)",
-            "Max Torso–Pelvis Angle (X-Flexed)",
-            "Max Torso–Pelvis Angle (Y-Glove Side)",
-            "Max Torso–Pelvis Angle (Y-Arm Side)",
-            "Pelvis Posterior Tilt at Peak Knee Height",
-            "Pelvis Arm Side Tilt at Peak Knee Height",
-            "Pelvis Counter Rotation at Peak Knee Height",
-            "Pelvis Anterior Tilt at Ball Release",
-        ],
-    }
-
-    current_metric_options_010 = group_to_metrics_010.get(
-        selected_metric_group_010,
-        metric_options_010,
-    )
-
-    selected_metric_010 = st.selectbox(
-        "Select Metric",
-        current_metric_options_010,
-        key="010_metric",
-    )
-
-    torso_axis = None
-    if selected_metric_010 == "Max Torso Angular Velocity":
-        torso_axis = st.selectbox("Select Torso Axis", ["X (Extension)", "X (Flexion)", "Y", "Z"], key="torso_axis")
-
-    torso_pelvis_axis = None
-    if selected_metric_010 == "Max Torso–Pelvis Angular Velocity":
-        torso_pelvis_axis = st.selectbox("Select Torso–Pelvis Axis", ["X (Extension)", "X (Flexion)", "Y", "Z"], key="torso_pelvis_axis")
-
-    pelvis_axis = None
-    if selected_metric_010 == "Max Pelvis Angular Velocity":
-        pelvis_axis = st.selectbox("Select Pelvis Axis", ["X", "Z"], key="pelvis_axis")
-
-    com_axis = None
-    if selected_metric_010 == "Max COM Velocity":
-        com_axis = st.selectbox("Select COM Axis", ["X", "Y", "Z"], key="com_axis")
 
     # --- Query takes for selected pitchers and their selected dates ---
     take_rows_010 = []
