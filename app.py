@@ -29,6 +29,7 @@ import plotly.express as px
 from datetime import datetime
 
 interp_points = np.linspace(0, 100, 100)
+np_trapezoid = getattr(np, "trapezoid", np.trapz)
 
 
 def render_plotly_line_reveal(
@@ -241,7 +242,7 @@ def compute_positive_lobe_auc(df, min_frame=None, start_after_frame=None):
                         values[start_idx:end_idx + 1],
                         [0.0]
                     ))
-                    return float(np.trapezoid(seg_values, seg_frames)), float(end_frame)
+                    return float(np_trapezoid(seg_values, seg_frames)), float(end_frame)
 
     return np.nan, np.nan
 
@@ -287,7 +288,7 @@ def compute_negative_lobe_auc(df, threshold=-500, min_frame=None, start_after_fr
                         values[start_idx:end_idx + 1],
                         [0.0]
                     ))
-                    return float(np.trapezoid(seg_values, seg_frames)), float(end_frame)
+                    return float(np_trapezoid(seg_values, seg_frames)), float(end_frame)
             continue
 
     return np.nan, np.nan
@@ -12166,7 +12167,7 @@ with tab1:
                     (df_power["frame"] <= torso_end_frame)
                 ]
                 if not df_segment.empty:
-                    auc_total = float(np.trapezoid(df_segment["x_data"], df_segment["frame"]))
+                    auc_total = float(np_trapezoid(df_segment["x_data"], df_segment["frame"]))
 
         # Peak Arm Energy (MER-windowed max: +/-30 frames around MER)
         cur.execute("""
@@ -12204,7 +12205,7 @@ with tab1:
                             (df_power["frame"] <= arm_peak_frame)
                         ]
                         if not df_to_peak.empty:
-                            auc_to_peak = float(np.trapezoid(df_to_peak["x_data"], df_to_peak["frame"]))
+                            auc_to_peak = float(np_trapezoid(df_to_peak["x_data"], df_to_peak["frame"]))
                             if auc_total != 0:
                                 auc_pct = float(auc_to_peak / auc_total * 100.0)
 
@@ -12227,14 +12228,14 @@ with tab1:
                 (df_stp["frame"] <= torso_end_frame)
             ]
             if not df_stp_seg.empty:
-                auc_stp_total = float(np.trapezoid(df_stp_seg["x_data"], df_stp_seg["frame"]))
+                auc_stp_total = float(np_trapezoid(df_stp_seg["x_data"], df_stp_seg["frame"]))
             if not np.isnan(arm_peak_frame):
                 df_stp_to_peak = df_stp[
                     (df_stp["frame"] >= max_knee_frame) &
                     (df_stp["frame"] <= arm_peak_frame)
                 ]
                 if not df_stp_to_peak.empty:
-                    auc_stp_to_peak = float(np.trapezoid(df_stp_to_peak["x_data"], df_stp_to_peak["frame"]))
+                    auc_stp_to_peak = float(np_trapezoid(df_stp_to_peak["x_data"], df_stp_to_peak["frame"]))
 
         # ---------------- Shoulder STP HorizAbd/Add AUC ----------------
         cur.execute("""
@@ -12255,14 +12256,14 @@ with tab1:
                 (df_stp_habd["frame"] <= torso_end_frame)
             ]
             if not df_habd_seg.empty:
-                auc_stp_habd_total = float(np.trapezoid(df_habd_seg["x_data"], df_habd_seg["frame"]))
+                auc_stp_habd_total = float(np_trapezoid(df_habd_seg["x_data"], df_habd_seg["frame"]))
             if not np.isnan(arm_peak_frame):
                 df_habd_to_peak = df_stp_habd[
                     (df_stp_habd["frame"] >= max_knee_frame) &
                     (df_stp_habd["frame"] <= arm_peak_frame)
                 ]
                 if not df_habd_to_peak.empty:
-                    auc_stp_habd_to_peak = float(np.trapezoid(df_habd_to_peak["x_data"], df_habd_to_peak["frame"]))
+                    auc_stp_habd_to_peak = float(np_trapezoid(df_habd_to_peak["x_data"], df_habd_to_peak["frame"]))
 
         # ---------------- Shoulder STP Rotational AUC ----------------
         cur.execute("""
@@ -12283,14 +12284,14 @@ with tab1:
                 (df_stp_rot["frame"] <= torso_end_frame)
             ]
             if not df_rot_seg.empty:
-                auc_stp_rot_total = float(np.trapezoid(df_rot_seg["x_data"], df_rot_seg["frame"]))
+                auc_stp_rot_total = float(np_trapezoid(df_rot_seg["x_data"], df_rot_seg["frame"]))
             if not np.isnan(arm_peak_frame):
                 df_rot_to_peak = df_stp_rot[
                     (df_stp_rot["frame"] >= max_knee_frame) &
                     (df_stp_rot["frame"] <= arm_peak_frame)
                 ]
                 if not df_rot_to_peak.empty:
-                    auc_stp_rot_to_peak = float(np.trapezoid(df_rot_to_peak["x_data"], df_rot_to_peak["frame"]))
+                    auc_stp_rot_to_peak = float(np_trapezoid(df_rot_to_peak["x_data"], df_rot_to_peak["frame"]))
 
             auc_stp_rot_layback, layback_end_frame = compute_negative_lobe_auc(
                 df_stp_rot,
@@ -13620,68 +13621,26 @@ with tab2:
 
 
 with tab3:
-    # --- Pitcher selection ---
-    cur.execute("""
-        SELECT DISTINCT a.athlete_name
-        FROM athletes a
-        JOIN takes t ON a.athlete_id = t.athlete_id
-        ORDER BY a.athlete_name
-    """)
-    pitchers_010 = [row[0] for row in cur.fetchall()]
-    # Allow selecting multiple pitchers
-    selected_pitchers_010 = st.multiselect("Select Pitcher(s)", pitchers_010, key="010_pitcher")
+    # --- Use the shared dashboard filters without rendering 0-10 tab controls ---
+    selected_pitchers_010 = selected_pitchers
 
     if not selected_pitchers_010:
-        st.warning("Select one or more pitchers to view data.")
+        st.warning("No pitchers found.")
 
-    # --- Throw type selection (default = Mound) ---
-    cur.execute("""
-        SELECT DISTINCT COALESCE(t.throw_type, 'Mound') AS throw_type
-        FROM takes t
-        ORDER BY throw_type
-    """)
-    throw_type_options_010 = [row[0] for row in cur.fetchall()] or ["Mound", "Pulldown"]
-
-    default_throw_types_010 = ["Mound"] if "Mound" in throw_type_options_010 else [throw_type_options_010[0]]
-
-    selected_throw_types_010 = st.multiselect(
-        "Throw Type(s)",
-        options=throw_type_options_010,
-        default=default_throw_types_010,
-        key="throw_types_010"
-    )
-
-    if not selected_throw_types_010:
-        selected_throw_types_010 = default_throw_types_010
-
-    # --- Per‑pitcher date selection ---
-    pitcher_dates_010 = {}
-
-    for pitcher in selected_pitchers_010:
-        cur.execute("""
-            SELECT DISTINCT t.take_date
-            FROM takes t
-            JOIN athletes a ON a.athlete_id = t.athlete_id
-            WHERE a.athlete_name = %s
-            ORDER BY t.take_date
-        """, (pitcher,))
-        dates = [row[0].strftime("%Y-%m-%d") for row in cur.fetchall()]
-        dates.insert(0, "All Dates")
-
-        pitcher_dates_010[pitcher] = st.multiselect(
-            f"{pitcher} — Session Dates",
-            options=dates,
-            default=["All Dates"],
-            key=f"010_dates_{pitcher}"
-        )
-
-    # --- Query takes for selected pitchers and their selected dates ---
+    # --- Query takes for the current sidebar-filtered population ---
     take_rows_010 = []
 
-    for pitcher, selected_dates in pitcher_dates_010.items():
+    for pitcher in selected_pitchers_010:
+        cfg_010 = pitcher_filters.get(pitcher, {})
+        selected_dates_010 = cfg_010.get("selected_dates", [])
+        selected_throw_types_010 = cfg_010.get("throw_types", ["Mound"])
+        velocity_min_010 = cfg_010.get("velocity_min")
+        velocity_max_010 = cfg_010.get("velocity_max")
 
-        # Handle All Dates
-        if "All Dates" in selected_dates or not selected_dates:
+        if velocity_min_010 is None or velocity_max_010 is None:
+            continue
+
+        if "All Dates" in selected_dates_010 or not selected_dates_010:
             placeholders_tt = ",".join(["%s"] * len(selected_throw_types_010))
             cur.execute(f"""
                 SELECT t.take_id, t.pitch_velo, a.handedness, COALESCE(t.throw_type, 'Mound') AS throw_type
@@ -13689,12 +13648,13 @@ with tab3:
                 JOIN athletes a ON t.athlete_id = a.athlete_id
                 WHERE a.athlete_name = %s
                   AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+                  AND t.pitch_velo BETWEEN %s AND %s
                 ORDER BY t.file_name
-            """, (pitcher, *selected_throw_types_010))
+            """, (pitcher, *selected_throw_types_010, velocity_min_010, velocity_max_010))
             take_rows_010.extend(cur.fetchall())
 
         else:
-            placeholders_dates = ",".join(["%s"] * len(selected_dates))
+            placeholders_dates = ",".join(["%s"] * len(selected_dates_010))
             placeholders_tt = ",".join(["%s"] * len(selected_throw_types_010))
             cur.execute(f"""
                 SELECT t.take_id, t.pitch_velo, a.handedness, COALESCE(t.throw_type, 'Mound') AS throw_type
@@ -13703,8 +13663,15 @@ with tab3:
                 WHERE a.athlete_name = %s
                   AND t.take_date IN ({placeholders_dates})
                   AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+                  AND t.pitch_velo BETWEEN %s AND %s
                 ORDER BY t.file_name
-            """, (pitcher, *selected_dates, *selected_throw_types_010))
+            """, (
+                pitcher,
+                *selected_dates_010,
+                *selected_throw_types_010,
+                velocity_min_010,
+                velocity_max_010,
+            ))
             take_rows_010.extend(cur.fetchall())
 
     rows_010 = []
@@ -15120,7 +15087,7 @@ with tab3:
         df_010["Date"]    = df_010["take_id"].map(lambda x: take_lookup[x][1])
         df_010["Throw Type"] = df_010["take_id"].map(lambda x: take_lookup[x][2])
 
-        # Build rich, human-readable exclude labels
+        # Build rich, human-readable exclude labels for the sidebar.
         def make_exclude_label(row):
             return (
                 f"{row['Pitcher']} | "
@@ -15132,31 +15099,24 @@ with tab3:
 
         df_010["label"] = df_010.apply(make_exclude_label, axis=1)
 
-        # Build a stable take_id → label map so we can restore selections
-        # even when the metric (and therefore label text) changes.
         id_to_label = dict(zip(df_010["take_id"], df_010["label"]))
-
-        # Default: labels for any take IDs that were previously excluded and
-        # are still present in the current option set.
         default_labels = [
             id_to_label[tid]
             for tid in st.session_state["excluded_take_ids_010"]
             if tid in id_to_label
         ]
 
-        exclude_labels = st.multiselect(
-            "Exclude Takes",
+        exclude_labels = st.sidebar.multiselect(
+            "0-10 Report Exclude Takes",
             options=df_010["label"].tolist(),
             default=default_labels,
             key="exclude_takes_010"
         )
 
-        # Map labels back to take_ids and persist to session state
         exclude_take_ids = df_010[df_010["label"].isin(exclude_labels)]["take_id"].tolist()
         st.session_state["excluded_take_ids_010"] = exclude_take_ids
-
-        # Filter out excluded takes
         df_010 = df_010[~df_010["take_id"].isin(exclude_take_ids)]
+
         # Remove any rows with missing values
         df_010 = df_010.dropna(subset=["Velocity", selected_metric_010])
         if len(df_010) == 0:
@@ -15258,16 +15218,17 @@ with tab3:
             )
 
             st.plotly_chart(fig_010, use_container_width=True)
-            # Show table
+
             def estimate_table_height(df, row_px=35, header_px=35, buffer_px=2):
                 return len(df) * row_px + header_px + buffer_px
+
             height_010 = estimate_table_height(df_010)
             st.dataframe(
                 df_010.drop(columns=["take_id", "label"]),
                 height=height_010
             )
     else:
-        st.warning("No data found for the selected pitchers and date.")
+        st.warning("No data found for the 0-10 report.")
 
 
 with tab5:
@@ -15857,7 +15818,7 @@ with tab5:
                                 "Duration (s)": float(rep_df["Elapsed Seconds"].iloc[-1] - rep_df["Elapsed Seconds"].iloc[0]),
                                 "Peak Positive Torque": float(rep_df["Torque_Nm"].max()),
                                 "Peak Negative Torque": float(rep_df["Torque_Nm"].min()),
-                                "Torque Impulse": float(np.trapezoid(rep_df["Torque_Nm"], rep_df["Elapsed Seconds"])),
+                                "Torque Impulse": float(np_trapezoid(rep_df["Torque_Nm"], rep_df["Elapsed Seconds"])),
                             })
 
                             rep_meta = next(
