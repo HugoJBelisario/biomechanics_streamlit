@@ -6862,6 +6862,8 @@ st.markdown(
 # -------------------------------
 if "excluded_take_ids" not in st.session_state:
     st.session_state["excluded_take_ids"] = []
+if "excluded_take_ids_010" not in st.session_state:
+    st.session_state["excluded_take_ids_010"] = []
 if "create_groups_mode" not in st.session_state:
     st.session_state["create_groups_mode"] = False
 if "show_control_group_velocity" not in st.session_state:
@@ -15137,15 +15139,28 @@ with tab3:
 
         df_010["label"] = df_010.apply(make_exclude_label, axis=1)
 
-        # Multiselect now using readable labels but still returns take_id
+        # Build a stable take_id → label map so we can restore selections
+        # even when the metric (and therefore label text) changes.
+        id_to_label = dict(zip(df_010["take_id"], df_010["label"]))
+
+        # Default: labels for any take IDs that were previously excluded and
+        # are still present in the current option set.
+        default_labels = [
+            id_to_label[tid]
+            for tid in st.session_state["excluded_take_ids_010"]
+            if tid in id_to_label
+        ]
+
         exclude_labels = st.multiselect(
             "Exclude Takes",
             options=df_010["label"].tolist(),
+            default=default_labels,
             key="exclude_takes_010"
         )
 
-        # Map labels back to take_ids for filtering
+        # Map labels back to take_ids and persist to session state
         exclude_take_ids = df_010[df_010["label"].isin(exclude_labels)]["take_id"].tolist()
+        st.session_state["excluded_take_ids_010"] = exclude_take_ids
 
         # Filter out excluded takes
         df_010 = df_010[~df_010["take_id"].isin(exclude_take_ids)]
