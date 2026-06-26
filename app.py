@@ -7602,6 +7602,7 @@ def build_shared_dashboard_state():
     shared_take_velocity = {}
     shared_take_date_map = {}
     shared_take_pitcher_name_map = {}
+    exclude_takes_010_sidebar_slot = None
 
     def merge_control_group_takes_into_shared_state():
         nonlocal shared_take_ids
@@ -7692,6 +7693,9 @@ def build_shared_dashboard_state():
                 shared_take_pitcher_name_map[tid] = pitcher
 
         if not group_mode_enabled:
+            exclude_takes_sidebar_slot = st.sidebar.empty()
+            exclude_takes_010_sidebar_slot = st.sidebar.empty()
+
             take_options = [
                 (
                     f"{shared_take_pitcher_name_map[tid]} | {shared_take_date_map[tid]} - "
@@ -7708,7 +7712,7 @@ def build_shared_dashboard_state():
                 for tid in shared_take_ids
             }
 
-            excluded_labels = st.sidebar.multiselect(
+            excluded_labels = exclude_takes_sidebar_slot.multiselect(
                 "Exclude Takes",
                 options=take_options,
                 default=[
@@ -8047,6 +8051,7 @@ def build_shared_dashboard_state():
         "knee_event_frames": shared_knee_event_frames,
         "mer_event_frames": shared_mer_event_frames,
         "window_start": shared_window_start,
+        "exclude_takes_010_sidebar_slot": exclude_takes_010_sidebar_slot,
     }
 
 
@@ -8082,7 +8087,7 @@ components.html(
     """
     <script>
     const TAB_PARAM = "active_tab";
-    const TAB_SYNC_VERSION = "4";
+    const TAB_SYNC_VERSION = "5";
     let restoringTab = false;
     let hasInitialRestore = false;
 
@@ -8132,6 +8137,46 @@ components.html(
         .forEach((element) => {
           setElementHidden(element, hideCompensationControls);
         });
+    }
+
+    function hideSidebarTextBlock(sidebar, text, hidden) {
+      sidebar
+        .querySelectorAll('[data-testid="stMarkdownContainer"]')
+        .forEach((element) => {
+          if (element.textContent.trim() !== text) return;
+          const container = element.closest('[data-testid="stElementContainer"]');
+          setElementHidden(container || element, hidden);
+        });
+    }
+
+    function toggle010SidebarControls() {
+      const sidebar = parent.document.querySelector('[data-testid="stSidebar"]');
+      if (!sidebar) return;
+
+      const show010Controls = getSelectedTabLabel() === "0-10 Report";
+      const hide010Controls = !show010Controls;
+
+      [
+        ".st-key-010_metric_group",
+        ".st-key-010_metric",
+        ".st-key-torso_axis",
+        ".st-key-torso_pelvis_axis",
+        ".st-key-pelvis_axis",
+        ".st-key-com_axis",
+      ].forEach((selector) => {
+        sidebar.querySelectorAll(selector).forEach((element) => {
+          setElementHidden(element, hide010Controls);
+        });
+      });
+
+      hideSidebarTextBlock(sidebar, "0-10 Report Metric", hide010Controls);
+
+      sidebar.querySelectorAll(".st-key-exclude_takes").forEach((element) => {
+        setElementHidden(element, show010Controls);
+      });
+      sidebar.querySelectorAll(".st-key-exclude_takes_010").forEach((element) => {
+        setElementHidden(element, hide010Controls);
+      });
     }
 
     function handleUserTabActivation(button) {
@@ -8208,6 +8253,7 @@ components.html(
       bindTabClicks();
       restoreActiveTab();
       toggleCompensationSidebarControls();
+      toggle010SidebarControls();
     }
 
     syncTabs();
@@ -8238,6 +8284,7 @@ fp_event_frames = shared_state["fp_event_frames"]
 knee_event_frames = shared_state["knee_event_frames"]
 mer_event_frames = shared_state["mer_event_frames"]
 window_start = shared_state["window_start"]
+exclude_takes_010_sidebar_slot = shared_state["exclude_takes_010_sidebar_slot"]
 comparison_grouping_enabled = group_mode_enabled or bool(control_take_ids)
 
 if control_take_ids:
@@ -15109,8 +15156,9 @@ with tab3:
             if tid in id_to_label
         ]
 
-        exclude_labels = st.sidebar.multiselect(
-            "0-10 Report Exclude Takes",
+        exclude_takes_010_container = exclude_takes_010_sidebar_slot or st.sidebar
+        exclude_labels = exclude_takes_010_container.multiselect(
+            "Exclude Takes",
             options=df_010["label"].tolist(),
             default=default_labels,
             key="exclude_takes_010"
