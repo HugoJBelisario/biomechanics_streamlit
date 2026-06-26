@@ -29,7 +29,10 @@ import plotly.express as px
 from datetime import datetime
 
 interp_points = np.linspace(0, 100, 100)
-np_trapezoid = getattr(np, "trapezoid", np.trapz)
+if hasattr(np, "trapezoid"):
+    np_trapezoid = np.trapezoid
+else:
+    np_trapezoid = np.trapz
 
 
 def render_plotly_line_reveal(
