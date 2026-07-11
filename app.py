@@ -6134,6 +6134,59 @@ NEW_TRUNK_PELVIS_ENERGY_COLOR_MAP = {
     "RTA_PROX_STP_Z": "#7C3AED",
 }
 
+ENERGY_SEGMENT_POWER_METRICS = {
+    "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)",
+    "Arm Energy Flow (LAR_PROX | RAR_PROX)",
+    "Glove Side Trunk-Shoulder Energy Flow",
+    "Glove Arm Energy Flow",
+}
+
+ENERGY_TORQUE_METRICS = {
+    "Throwing Shoulder Rotational Torque (Relative to Trunk)",
+}
+
+ENERGY_FLOW_POWER_METRICS = {
+    "Trunk-Shoulder Rotational Energy Flow",
+    "Trunk-Shoulder Elevation/Depression Energy Flow",
+    "Trunk-Shoulder Horizontal Abd/Add Energy Flow",
+    "Arm Rotational Energy Flow",
+    "Arm Elevation/Depression Energy Flow",
+    "Arm Horizontal Abd/Add Energy Flow",
+    *NEW_TRUNK_PELVIS_ENERGY_METRICS,
+}
+
+
+def get_energy_yaxis_title(selected_metrics):
+    selected_metrics = [metric for metric in selected_metrics if metric]
+    if not selected_metrics:
+        return "Energy Flow / Segment Power (W)"
+
+    units = set()
+    metric_types = set()
+    for metric in selected_metrics:
+        if metric in ENERGY_TORQUE_METRICS:
+            units.add("Nm")
+            metric_types.add("Torque")
+        elif metric in ENERGY_SEGMENT_POWER_METRICS:
+            units.add("W")
+            metric_types.add("Segment Power")
+        elif metric in ENERGY_FLOW_POWER_METRICS:
+            units.add("W")
+            metric_types.add("Energy Flow")
+        else:
+            units.add("W")
+            metric_types.add("Energy Flow")
+
+    if units == {"Nm"}:
+        return "Torque (Nm)"
+    if units == {"W"}:
+        if metric_types == {"Energy Flow"}:
+            return "Energy Flow (W)"
+        if metric_types == {"Segment Power"}:
+            return "Segment Power (W)"
+        return "Energy Flow / Segment Power (W)"
+    return "Energy Flow / Segment Power / Torque (W / Nm)"
+
 @st.cache_data(ttl=300)
 def get_energy_flow_from_category_segment(take_ids, category_name, segment_name, component="x"):
     """
@@ -6987,7 +7040,7 @@ def build_pitcher_filters_for_group(selected_group_pitchers, group_index, show_g
                     min_value=vel_min_float,
                     max_value=vel_max_float,
                     value=(vel_min_float, vel_max_float),
-                    step=0.5,
+                    step=0.1,
                     key=f"group{group_index}_velocity_range_{i}"
                 )
                 velocity_min_i, velocity_max_i = velocity_range_i
@@ -7790,7 +7843,7 @@ def build_shared_dashboard_state():
                         min_value=50.0,
                         max_value=100.0,
                         value=st.session_state.get("control_group_velocity_range", (50.0, 100.0)),
-                        step=0.5,
+                        step=0.1,
                         key="control_group_velocity_range"
                     )
                     render_control_group_arm_slot_category_checkboxes()
@@ -7857,7 +7910,7 @@ def build_shared_dashboard_state():
                     min_value=50.0,
                     max_value=100.0,
                     value=st.session_state.get("control_group_velocity_range", (50.0, 100.0)),
-                    step=0.5,
+                    step=0.1,
                     key="control_group_velocity_range"
                 )
                 render_control_group_arm_slot_category_checkboxes()
@@ -11071,7 +11124,7 @@ with tab_joint:
 
                     energy_fig.update_layout(
                         xaxis_title="Time Relative to Ball Release (ms)",
-                        yaxis_title="Energy Flow / Segment Power",
+                        yaxis_title=get_energy_yaxis_title(compare_energy_data_by_metric.keys()),
                         xaxis_range=[energy_window_start_ms, energy_window_end_ms],
                         height=600,
                         legend=dict(
@@ -11894,7 +11947,7 @@ with tab_energy:
 
     fig.update_layout(
         xaxis_title="Time Relative to Ball Release (ms)",
-        yaxis_title="Energy Flow / Segment Power",
+        yaxis_title=get_energy_yaxis_title(energy_data_by_metric.keys()),
         xaxis_range=[energy_window_start_ms, energy_window_end_ms],
         height=600,
         legend=dict(
