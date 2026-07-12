@@ -6156,19 +6156,22 @@ ENERGY_FLOW_POWER_METRICS = {
     *NEW_TRUNK_PELVIS_ENERGY_METRICS,
 }
 
-ENERGY_METRIC_SEGMENTS = {
-    "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)": "RTA_DIST_L / RTA_DIST_R",
-    "Arm Energy Flow (LAR_PROX | RAR_PROX)": "LAR_PROX / RAR_PROX",
-    "Glove Side Trunk-Shoulder Energy Flow": "RTA_DIST_L / RTA_DIST_R",
-    "Glove Arm Energy Flow": "LAR_PROX / RAR_PROX",
-    "Trunk-Shoulder Rotational Energy Flow": "RTA_LAR / RTA_RAR",
-    "Trunk-Shoulder Elevation/Depression Energy Flow": "RTA_LAR / RTA_RAR",
-    "Trunk-Shoulder Horizontal Abd/Add Energy Flow": "RTA_LAR / RTA_RAR",
-    "Arm Rotational Energy Flow": "LAR / RAR",
-    "Arm Elevation/Depression Energy Flow": "LAR / RAR",
-    "Arm Horizontal Abd/Add Energy Flow": "LAR / RAR",
-    "Throwing Shoulder Rotational Torque (Relative to Trunk)": "LT_SHOULDER_RTA_MMT / RT_SHOULDER_RTA_MMT",
-    "Throwing Shoulder External/Internal Rotation": "LT_SHOULDER_LAR_MMT / RT_SHOULDER_RAR_MMT",
+ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS = {
+    "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)": {"L": "RTA_DIST_L", "R": "RTA_DIST_R"},
+    "Arm Energy Flow (LAR_PROX | RAR_PROX)": {"L": "LAR_PROX", "R": "RAR_PROX"},
+    "Glove Side Trunk-Shoulder Energy Flow": {"L": "RTA_DIST_R", "R": "RTA_DIST_L"},
+    "Glove Arm Energy Flow": {"L": "RAR_PROX", "R": "LAR_PROX"},
+    "Trunk-Shoulder Rotational Energy Flow": {"L": "RTA_LAR", "R": "RTA_RAR"},
+    "Trunk-Shoulder Elevation/Depression Energy Flow": {"L": "RTA_LAR", "R": "RTA_RAR"},
+    "Trunk-Shoulder Horizontal Abd/Add Energy Flow": {"L": "RTA_LAR", "R": "RTA_RAR"},
+    "Arm Rotational Energy Flow": {"L": "LAR", "R": "RAR"},
+    "Arm Elevation/Depression Energy Flow": {"L": "LAR", "R": "RAR"},
+    "Arm Horizontal Abd/Add Energy Flow": {"L": "LAR", "R": "RAR"},
+    "Throwing Shoulder Rotational Torque (Relative to Trunk)": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
+    "Throwing Shoulder External/Internal Rotation": {"L": "LT_SHOULDER_LAR_MMT", "R": "RT_SHOULDER_RAR_MMT"},
+}
+
+ENERGY_METRIC_FIXED_SEGMENTS = {
     **{
         metric: segment_name
         for metric, (segment_name, _category_name) in NEW_TRUNK_PELVIS_ENERGY_METRIC_MAP.items()
@@ -6176,8 +6179,21 @@ ENERGY_METRIC_SEGMENTS = {
 }
 
 
-def get_energy_metric_segment_label(metric):
-    return ENERGY_METRIC_SEGMENTS.get(metric, metric)
+def get_energy_metric_segment_label(metric, handedness=None):
+    handed_segments = ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS.get(metric)
+    if handed_segments:
+        if handedness in handed_segments:
+            return handed_segments[handedness]
+        return " / ".join(dict.fromkeys(handed_segments.values()))
+    return ENERGY_METRIC_FIXED_SEGMENTS.get(metric, metric)
+
+
+def get_group_energy_metric_segment_label(metric, take_ids_in_group, handedness_by_take):
+    segment_labels = {
+        get_energy_metric_segment_label(metric, handedness_by_take.get(take_id))
+        for take_id in take_ids_in_group
+    }
+    return " / ".join(sorted(segment_labels))
 
 
 def get_energy_yaxis_title(selected_metrics):
@@ -9808,12 +9824,6 @@ with tab_joint:
                 "throughout the pitching motion."
             ),
         },
-        "Throwing Shoulder External/Internal Rotation": {
-            "definition": (
-                "The throwing shoulder external/internal rotation moment over time, using the "
-                "throwing-side shoulder moment segment selected from pitcher handedness."
-            ),
-        },
     }
 
     def get_kinematic_unit(kinematic_name):
@@ -10923,7 +10933,7 @@ with tab_joint:
                                         hovertemplate=(
                                             ("%{customdata[4]} | %{customdata[1]}" if multi_pitcher_mode else "%{customdata[1]}")
                                             + "<br>%{customdata[0]}: %{y:.1f}"
-                                            + f"<br>Segment: {get_energy_metric_segment_label(metric)}"
+                                            + f"<br>Segment: {get_energy_metric_segment_label(metric, take_handedness.get(take_id))}"
                                             + "<br>Pitch %{customdata[2]} (%{customdata[3]:.1f} mph)"
                                             + "<br>Time: %{x:.0f} ms rel BR"
                                             + "<extra></extra>"
@@ -10984,7 +10994,7 @@ with tab_joint:
                                         hovertemplate=(
                                             "Control Group"
                                             + "<br>%{fullData.name}: %{y:.1f}"
-                                            + f"<br>Segment: {get_energy_metric_segment_label(metric)}"
+                                            + f"<br>Segment: {get_group_energy_metric_segment_label(metric, control_curves.keys(), take_handedness)}"
                                             + "<br>Time: %{x:.0f} ms rel BR"
                                             + "<extra></extra>"
                                         ),
@@ -11072,7 +11082,7 @@ with tab_joint:
                                             ("Control Group" if control_group_curves else "%{customdata[2]} | %{customdata[1]}" if multi_pitcher_mode else "%{customdata[1]}")
                                             + (f"<br>Avg Velocity: {avg_velocity:.1f} mph" if avg_velocity is not None else "")
                                             + "<br>%{customdata[0]}: %{y:.1f}"
-                                            + f"<br>Segment: {get_energy_metric_segment_label(metric)}"
+                                            + f"<br>Segment: {get_group_energy_metric_segment_label(metric, curves.keys(), take_handedness)}"
                                             + "<br>Time: %{x:.0f} ms rel BR"
                                             + "<extra></extra>"
                                         ),
@@ -11774,7 +11784,7 @@ with tab_energy:
                         hovertemplate=(
                             ("%{customdata[4]} | %{customdata[1]}" if show_group_pitcher_breakout else "%{customdata[1]}")
                             + "<br>%{customdata[0]}: %{y:.1f}"
-                            + f"<br>Segment: {get_energy_metric_segment_label(metric)}"
+                            + f"<br>Segment: {get_energy_metric_segment_label(metric, take_handedness.get(take_id))}"
                             + "<br>Pitch %{customdata[2]} (%{customdata[3]:.1f} mph)"
                             + "<br>Time: %{x:.0f} ms rel BR"
                             + "<extra></extra>"
@@ -11875,7 +11885,7 @@ with tab_energy:
                             + (" | %{customdata[3]}" if show_group_pitcher_breakout and comparison_grouping_enabled else "")
                             + (f"<br>Avg Velocity: {avg_velocity:.1f} mph" if avg_velocity is not None else "")
                             + "<br>%{customdata[0]}: %{y:.1f}"
-                            + f"<br>Segment: {get_energy_metric_segment_label(metric)}"
+                            + f"<br>Segment: {get_group_energy_metric_segment_label(metric, curves.keys(), take_handedness)}"
                             + "<br>Time: %{x:.0f} ms rel BR"
                             + "<extra></extra>"
                         ),
