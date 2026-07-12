@@ -12882,192 +12882,192 @@ if rows:
 
         st.dataframe(df_tab1[display_cols], height=height)
 
-    @st.cache_data
-    def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, comp_col, use_abs, throw_types=None):
-        if mode == "Selected Pitcher":
-            if throw_types:
-                placeholders_tt = ",".join(["%s"] * len(throw_types))
-                cur.execute(f"""
-                    SELECT t.take_id, t.pitch_velo, t.athlete_id, a.athlete_name
-                    FROM takes t
-                    JOIN athletes a ON t.athlete_id = a.athlete_id
-                    WHERE a.athlete_name = %s
-                      AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
-                      AND t.pitch_velo BETWEEN %s AND %s
-                    ORDER BY t.file_name
-                """, (pitcher_name, *throw_types, velo_min, velo_max))
-            else:
-                cur.execute("""
-                    SELECT t.take_id, t.pitch_velo, t.athlete_id, a.athlete_name
-                    FROM takes t
-                    JOIN athletes a ON t.athlete_id = a.athlete_id
-                    WHERE a.athlete_name = %s
-                      AND t.pitch_velo BETWEEN %s AND %s
-                    ORDER BY t.file_name
-                """, (pitcher_name, velo_min, velo_max))
+@st.cache_data
+def load_reference_curves_player_mean(mode, pitcher_name, velo_min, velo_max, comp_col, use_abs, throw_types=None):
+    if mode == "Selected Pitcher":
+        if throw_types:
+            placeholders_tt = ",".join(["%s"] * len(throw_types))
+            cur.execute(f"""
+                SELECT t.take_id, t.pitch_velo, t.athlete_id, a.athlete_name
+                FROM takes t
+                JOIN athletes a ON t.athlete_id = a.athlete_id
+                WHERE a.athlete_name = %s
+                  AND COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+                  AND t.pitch_velo BETWEEN %s AND %s
+                ORDER BY t.file_name
+            """, (pitcher_name, *throw_types, velo_min, velo_max))
         else:
-            if throw_types:
-                placeholders_tt = ",".join(["%s"] * len(throw_types))
-                cur.execute(f"""
-                    SELECT t.take_id, t.pitch_velo, t.athlete_id, a.handedness, a.athlete_name
-                    FROM takes t
-                    JOIN athletes a ON t.athlete_id = a.athlete_id
-                    WHERE COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
-                      AND t.pitch_velo BETWEEN %s AND %s
-                    ORDER BY t.file_name
-                """, (*throw_types, velo_min, velo_max))
-            else:
-                cur.execute("""
-                    SELECT t.take_id, t.pitch_velo, t.athlete_id, a.handedness, a.athlete_name
-                    FROM takes t
-                    JOIN athletes a ON t.athlete_id = a.athlete_id
-                    WHERE t.pitch_velo BETWEEN %s AND %s
-                    ORDER BY t.file_name
-                """, (velo_min, velo_max))
-        rows = cur.fetchall()
-        if not rows:
-            return None, None, []
-        from collections import defaultdict
-        per_athlete_shoulders = defaultdict(list)
-        per_athlete_torsos    = defaultdict(list)
-        pitcher_names = set()
-        for row in rows:
-            if mode == "Selected Pitcher":
-                take_id, _velo, athlete_id, athlete_name = row
-                pitcher_names.add(athlete_name)
-                cur.execute("SELECT handedness FROM athletes WHERE athlete_id = %s", (athlete_id,))
-                handedness_row = cur.fetchone()
-                handedness = handedness_row[0] if handedness_row else "R"
-            else:
-                take_id, _velo, athlete_id, handedness, athlete_name = row
-                pitcher_names.add(athlete_name)
-            rear_knee = "RT_KNEE" if handedness == "R" else "LT_KNEE"
-            torso_segment = "RTA_DIST_R" if handedness == "R" else "RTA_DIST_L"
-            shoulder_segment = "RT_SHOULDER" if handedness == "R" else "LT_SHOULDER"
-            arm_segment = "RAR" if handedness == "R" else "LAR"
             cur.execute("""
-                SELECT frame, x_data FROM time_series_data ts
-                JOIN segments s ON ts.segment_id = s.segment_id
-                JOIN categories c ON ts.category_id = c.category_id
-                WHERE ts.take_id = %s AND c.category_name = 'SEGMENT_POWERS' AND s.segment_name = %s
-                ORDER BY frame
-            """, (take_id, torso_segment))
-            df_power = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
-            if df_power.empty:
-                continue
-            df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
-            # Determine take throw_type (needed for pulldown alignment)
-            cur.execute("SELECT COALESCE(throw_type, 'Mound') FROM takes WHERE take_id = %s", (int(take_id),))
-            _tt_row = cur.fetchone()
-            take_throw_type = _tt_row[0] if _tt_row else "Mound"
+                SELECT t.take_id, t.pitch_velo, t.athlete_id, a.athlete_name
+                FROM takes t
+                JOIN athletes a ON t.athlete_id = a.athlete_id
+                WHERE a.athlete_name = %s
+                  AND t.pitch_velo BETWEEN %s AND %s
+                ORDER BY t.file_name
+            """, (pitcher_name, velo_min, velo_max))
+    else:
+        if throw_types:
+            placeholders_tt = ",".join(["%s"] * len(throw_types))
+            cur.execute(f"""
+                SELECT t.take_id, t.pitch_velo, t.athlete_id, a.handedness, a.athlete_name
+                FROM takes t
+                JOIN athletes a ON t.athlete_id = a.athlete_id
+                WHERE COALESCE(t.throw_type, 'Mound') IN ({placeholders_tt})
+                  AND t.pitch_velo BETWEEN %s AND %s
+                ORDER BY t.file_name
+            """, (*throw_types, velo_min, velo_max))
+        else:
+            cur.execute("""
+                SELECT t.take_id, t.pitch_velo, t.athlete_id, a.handedness, a.athlete_name
+                FROM takes t
+                JOIN athletes a ON t.athlete_id = a.athlete_id
+                WHERE t.pitch_velo BETWEEN %s AND %s
+                ORDER BY t.file_name
+            """, (velo_min, velo_max))
+    rows = cur.fetchall()
+    if not rows:
+        return None, None, []
+    from collections import defaultdict
+    per_athlete_shoulders = defaultdict(list)
+    per_athlete_torsos    = defaultdict(list)
+    pitcher_names = set()
+    for row in rows:
+        if mode == "Selected Pitcher":
+            take_id, _velo, athlete_id, athlete_name = row
+            pitcher_names.add(athlete_name)
+            cur.execute("SELECT handedness FROM athletes WHERE athlete_id = %s", (athlete_id,))
+            handedness_row = cur.fetchone()
+            handedness = handedness_row[0] if handedness_row else "R"
+        else:
+            take_id, _velo, athlete_id, handedness, athlete_name = row
+            pitcher_names.add(athlete_name)
+        rear_knee = "RT_KNEE" if handedness == "R" else "LT_KNEE"
+        torso_segment = "RTA_DIST_R" if handedness == "R" else "RTA_DIST_L"
+        shoulder_segment = "RT_SHOULDER" if handedness == "R" else "LT_SHOULDER"
+        arm_segment = "RAR" if handedness == "R" else "LAR"
+        cur.execute("""
+            SELECT frame, x_data FROM time_series_data ts
+            JOIN segments s ON ts.segment_id = s.segment_id
+            JOIN categories c ON ts.category_id = c.category_id
+            WHERE ts.take_id = %s AND c.category_name = 'SEGMENT_POWERS' AND s.segment_name = %s
+            ORDER BY frame
+        """, (take_id, torso_segment))
+        df_power = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
+        if df_power.empty:
+            continue
+        df_power["x_data"] = pd.to_numeric(df_power["x_data"], errors="coerce").fillna(0)
+        # Determine take throw_type (needed for pulldown alignment)
+        cur.execute("SELECT COALESCE(throw_type, 'Mound') FROM takes WHERE take_id = %s", (int(take_id),))
+        _tt_row = cur.fetchone()
+        take_throw_type = _tt_row[0] if _tt_row else "Mound"
 
-            # Drive start anchor
-            # - Mound: torso power threshold (< -3000)
-            # - Pulldown: pulldown window start (FP - 80)
-            if take_throw_type == "Pulldown":
-                pd_start, pd_end, pd_fp = get_pulldown_window(take_id, handedness, cur)
-                if pd_start is None or pd_end is None or pd_fp is None:
-                    continue
-                drive_start_frame = int(pd_start)
-            else:
-                drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
-                if pd.isna(drive_start_frame):
-                    continue
-            cur.execute("""
-                SELECT frame, x_data FROM time_series_data ts
-                JOIN segments s ON ts.segment_id = s.segment_id
-                JOIN categories c ON ts.category_id = c.category_id
-                WHERE ts.take_id = %s AND c.category_name = 'JOINT_ANGLES' AND s.segment_name = %s
-                ORDER BY frame
-            """, (take_id, rear_knee))
-            df_knee = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
-            if df_knee.empty:
+        # Drive start anchor
+        # - Mound: torso power threshold (< -3000)
+        # - Pulldown: pulldown window start (FP - 80)
+        if take_throw_type == "Pulldown":
+            pd_start, pd_end, pd_fp = get_pulldown_window(take_id, handedness, cur)
+            if pd_start is None or pd_end is None or pd_fp is None:
                 continue
-            # Rear knee anchor
-            # - Mound: knee min before drive_start_frame
-            # - Pulldown: heel-gated rear knee flexion (Tab 1 helper)
-            if take_throw_type == "Pulldown":
-                rk_frame, _rk_val = get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur)
-                if rk_frame is None:
-                    continue
-                max_knee_frame = int(rk_frame)
-            else:
-                df_knee_pre = df_knee[df_knee["frame"] < drive_start_frame]
-                if df_knee_pre.empty:
-                    continue
-                max_knee_frame = int(df_knee_pre.loc[df_knee_pre["x_data"].idxmin(), "frame"])
-            cur.execute("""
-                SELECT frame, x_data, y_data, z_data FROM time_series_data ts
-                JOIN segments s ON ts.segment_id = s.segment_id
-                JOIN categories c ON ts.category_id = c.category_id
-                WHERE ts.take_id = %s AND c.category_name = 'JOINT_ANGLES' AND s.segment_name = %s
-                ORDER BY frame
-            """, (take_id, shoulder_segment))
-            df_sh = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data", "y_data", "z_data"])
-            if df_sh.empty:
+            drive_start_frame = int(pd_start)
+        else:
+            drive_start_frame = df_power[df_power["x_data"] < -3000]["frame"].min()
+            if pd.isna(drive_start_frame):
                 continue
-            df_sh["z_data"] = pd.to_numeric(df_sh["z_data"], errors="coerce")
+        cur.execute("""
+            SELECT frame, x_data FROM time_series_data ts
+            JOIN segments s ON ts.segment_id = s.segment_id
+            JOIN categories c ON ts.category_id = c.category_id
+            WHERE ts.take_id = %s AND c.category_name = 'JOINT_ANGLES' AND s.segment_name = %s
+            ORDER BY frame
+        """, (take_id, rear_knee))
+        df_knee = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
+        if df_knee.empty:
+            continue
+        # Rear knee anchor
+        # - Mound: knee min before drive_start_frame
+        # - Pulldown: heel-gated rear knee flexion (Tab 1 helper)
+        if take_throw_type == "Pulldown":
+            rk_frame, _rk_val = get_max_rear_knee_flexion_frame_with_heel(take_id, handedness, cur)
+            if rk_frame is None:
+                continue
+            max_knee_frame = int(rk_frame)
+        else:
+            df_knee_pre = df_knee[df_knee["frame"] < drive_start_frame]
+            if df_knee_pre.empty:
+                continue
+            max_knee_frame = int(df_knee_pre.loc[df_knee_pre["x_data"].idxmin(), "frame"])
+        cur.execute("""
+            SELECT frame, x_data, y_data, z_data FROM time_series_data ts
+            JOIN segments s ON ts.segment_id = s.segment_id
+            JOIN categories c ON ts.category_id = c.category_id
+            WHERE ts.take_id = %s AND c.category_name = 'JOINT_ANGLES' AND s.segment_name = %s
+            ORDER BY frame
+        """, (take_id, shoulder_segment))
+        df_sh = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data", "y_data", "z_data"])
+        if df_sh.empty:
+            continue
+        df_sh["z_data"] = pd.to_numeric(df_sh["z_data"], errors="coerce")
 
-            # MER frame
-            # - Mound: legacy (max abs z)
-            # - Pulldown: FP-windowed MER helper
-            if take_throw_type == "Pulldown":
-                peak_shoulder_frame = get_shoulder_er_max_frame(take_id, handedness, cur, throw_type="Pulldown")
-                if peak_shoulder_frame is None:
-                    continue
-                peak_shoulder_frame = int(peak_shoulder_frame)
-            else:
-                peak_shoulder_frame = int(df_sh.loc[df_sh["z_data"].abs().idxmax(), "frame"])
-            cur.execute("""
-                SELECT frame, x_data FROM time_series_data ts
-                JOIN segments s ON ts.segment_id = s.segment_id
-                JOIN categories c ON ts.category_id = c.category_id
-                WHERE ts.take_id = %s AND c.category_name = 'SEGMENT_ENERGIES' AND s.segment_name = %s
-                ORDER BY frame
-            """, (take_id, arm_segment))
-            df_arm = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
-            if df_arm.empty:
+        # MER frame
+        # - Mound: legacy (max abs z)
+        # - Pulldown: FP-windowed MER helper
+        if take_throw_type == "Pulldown":
+            peak_shoulder_frame = get_shoulder_er_max_frame(take_id, handedness, cur, throw_type="Pulldown")
+            if peak_shoulder_frame is None:
                 continue
-            df_arm["x_data"] = pd.to_numeric(df_arm["x_data"], errors="coerce")
-            if take_throw_type == "Pulldown":
-                # End at BR for pulldowns (Tab 1 window)
-                pd_start, pd_end, pd_fp = get_pulldown_window(take_id, handedness, cur)
-                if pd_start is None or pd_end is None:
-                    continue
-                end_frame = int(pd_end)
-            else:
-                end_frame = int(df_arm.loc[df_arm["x_data"].idxmax(), "frame"]) + 50
-            df_sh_seg = df_sh[(df_sh["frame"] >= max_knee_frame) & (df_sh["frame"] <= end_frame)].copy()
-            df_sh_seg["time_pct"] = np.where(
-                df_sh_seg["frame"] <= peak_shoulder_frame,
-                (df_sh_seg["frame"] - max_knee_frame) / (peak_shoulder_frame - max_knee_frame) * 50.0,
-                50.0 + (df_sh_seg["frame"] - peak_shoulder_frame) / (end_frame - peak_shoulder_frame) * 50.0
-            )
-            _src = pd.to_numeric(df_sh_seg[comp_col], errors="coerce")
-            if use_abs:
-                _src = _src.abs()
-            shoulder_curve = np.interp(interp_points, df_sh_seg["time_pct"], _src)
-            df_pw_seg = df_power[(df_power["frame"] >= max_knee_frame) & (df_power["frame"] <= end_frame)].copy()
-            df_pw_seg["time_pct"] = np.where(
-                df_pw_seg["frame"] <= peak_shoulder_frame,
-                (df_pw_seg["frame"] - max_knee_frame) / (peak_shoulder_frame - max_knee_frame) * 50.0,
-                50.0 + (df_pw_seg["frame"] - peak_shoulder_frame) / (end_frame - peak_shoulder_frame) * 50.0
-            )
-            torso_curve = np.interp(interp_points, df_pw_seg["time_pct"], df_pw_seg["x_data"])
-            per_athlete_shoulders[athlete_id].append(shoulder_curve)
-            per_athlete_torsos[athlete_id].append(torso_curve)
-        if not per_athlete_shoulders:
-            return None, None, list(pitcher_names)
-        per_player_sh = []
-        per_player_to = []
-        for aid in per_athlete_shoulders.keys():
-            sh_arr = np.vstack(per_athlete_shoulders[aid])
-            to_arr = np.vstack(per_athlete_torsos[aid])
-            per_player_sh.append(np.nanmean(sh_arr, axis=0))
-            per_player_to.append(np.nanmean(to_arr, axis=0))
-        ref_shoulder = np.nanmean(np.vstack(per_player_sh), axis=0)
-        ref_torso    = np.nanmean(np.vstack(per_player_to), axis=0)
-        return ref_shoulder, ref_torso, sorted(pitcher_names)
+            peak_shoulder_frame = int(peak_shoulder_frame)
+        else:
+            peak_shoulder_frame = int(df_sh.loc[df_sh["z_data"].abs().idxmax(), "frame"])
+        cur.execute("""
+            SELECT frame, x_data FROM time_series_data ts
+            JOIN segments s ON ts.segment_id = s.segment_id
+            JOIN categories c ON ts.category_id = c.category_id
+            WHERE ts.take_id = %s AND c.category_name = 'SEGMENT_ENERGIES' AND s.segment_name = %s
+            ORDER BY frame
+        """, (take_id, arm_segment))
+        df_arm = pd.DataFrame(cur.fetchall(), columns=["frame", "x_data"])
+        if df_arm.empty:
+            continue
+        df_arm["x_data"] = pd.to_numeric(df_arm["x_data"], errors="coerce")
+        if take_throw_type == "Pulldown":
+            # End at BR for pulldowns (Tab 1 window)
+            pd_start, pd_end, pd_fp = get_pulldown_window(take_id, handedness, cur)
+            if pd_start is None or pd_end is None:
+                continue
+            end_frame = int(pd_end)
+        else:
+            end_frame = int(df_arm.loc[df_arm["x_data"].idxmax(), "frame"]) + 50
+        df_sh_seg = df_sh[(df_sh["frame"] >= max_knee_frame) & (df_sh["frame"] <= end_frame)].copy()
+        df_sh_seg["time_pct"] = np.where(
+            df_sh_seg["frame"] <= peak_shoulder_frame,
+            (df_sh_seg["frame"] - max_knee_frame) / (peak_shoulder_frame - max_knee_frame) * 50.0,
+            50.0 + (df_sh_seg["frame"] - peak_shoulder_frame) / (end_frame - peak_shoulder_frame) * 50.0
+        )
+        _src = pd.to_numeric(df_sh_seg[comp_col], errors="coerce")
+        if use_abs:
+            _src = _src.abs()
+        shoulder_curve = np.interp(interp_points, df_sh_seg["time_pct"], _src)
+        df_pw_seg = df_power[(df_power["frame"] >= max_knee_frame) & (df_power["frame"] <= end_frame)].copy()
+        df_pw_seg["time_pct"] = np.where(
+            df_pw_seg["frame"] <= peak_shoulder_frame,
+            (df_pw_seg["frame"] - max_knee_frame) / (peak_shoulder_frame - max_knee_frame) * 50.0,
+            50.0 + (df_pw_seg["frame"] - peak_shoulder_frame) / (end_frame - peak_shoulder_frame) * 50.0
+        )
+        torso_curve = np.interp(interp_points, df_pw_seg["time_pct"], df_pw_seg["x_data"])
+        per_athlete_shoulders[athlete_id].append(shoulder_curve)
+        per_athlete_torsos[athlete_id].append(torso_curve)
+    if not per_athlete_shoulders:
+        return None, None, list(pitcher_names)
+    per_player_sh = []
+    per_player_to = []
+    for aid in per_athlete_shoulders.keys():
+        sh_arr = np.vstack(per_athlete_shoulders[aid])
+        to_arr = np.vstack(per_athlete_torsos[aid])
+        per_player_sh.append(np.nanmean(sh_arr, axis=0))
+        per_player_to.append(np.nanmean(to_arr, axis=0))
+    ref_shoulder = np.nanmean(np.vstack(per_player_sh), axis=0)
+    ref_torso    = np.nanmean(np.vstack(per_player_to), axis=0)
+    return ref_shoulder, ref_torso, sorted(pitcher_names)
 
 with tab2:
     # TAB 2 — SESSION COMPARISON ONLY (NO VELOCITY PLOTS)
