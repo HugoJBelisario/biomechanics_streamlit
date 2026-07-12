@@ -6142,8 +6142,9 @@ ENERGY_SEGMENT_POWER_METRICS = {
 }
 
 ENERGY_TORQUE_METRICS = {
-    "Throwing Shoulder Rotational Torque (Relative to Trunk)",
-    "Throwing Shoulder External/Internal Rotation",
+    "Shoulder Flexion/Extension Torque",
+    "Shoulder Horizontal Abduction/Adduction Torque",
+    "Shoulder Internal/External Rotation Torque",
 }
 
 ENERGY_FLOW_POWER_METRICS = {
@@ -6167,8 +6168,9 @@ ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS = {
     "Arm Rotational Energy Flow": {"L": "LAR", "R": "RAR"},
     "Arm Elevation/Depression Energy Flow": {"L": "LAR", "R": "RAR"},
     "Arm Horizontal Abd/Add Energy Flow": {"L": "LAR", "R": "RAR"},
-    "Throwing Shoulder Rotational Torque (Relative to Trunk)": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
-    "Throwing Shoulder External/Internal Rotation": {"L": "LT_SHOULDER_LAR_MMT", "R": "RT_SHOULDER_RAR_MMT"},
+    "Shoulder Flexion/Extension Torque": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
+    "Shoulder Horizontal Abduction/Adduction Torque": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
+    "Shoulder Internal/External Rotation Torque": {"L": "LT_SHOULDER_LAR_MMT", "R": "RT_SHOULDER_RAR_MMT"},
 }
 
 ENERGY_METRIC_FIXED_SEGMENTS = {
@@ -9822,11 +9824,9 @@ with tab_joint:
                 "shoulder internal/external rotation."
             ),
         },
-        "Throwing Shoulder Rotational Torque (Relative to Trunk)": {
+        "Shoulder Horizontal Abduction/Adduction Torque": {
             "definition": (
-                "The rotational torque at the throwing shoulder over time, measured relative "
-                "to the trunk, representing the rotational load acting at the shoulder joint "
-                "throughout the pitching motion."
+                "The horizontal abduction/adduction torque at the throwing shoulder over time."
             ),
         },
     }
@@ -9939,8 +9939,9 @@ with tab_joint:
                     "Arm Rotational Energy Flow",
                     "Arm Elevation/Depression Energy Flow",
                     "Arm Horizontal Abd/Add Energy Flow",
-                    "Throwing Shoulder Rotational Torque (Relative to Trunk)",
-                    "Throwing Shoulder External/Internal Rotation",
+                    "Shoulder Flexion/Extension Torque",
+                    "Shoulder Horizontal Abduction/Adduction Torque",
+                    "Shoulder Internal/External Rotation Torque",
                     *NEW_TRUNK_PELVIS_ENERGY_METRICS,
                 ],
                 default=[],
@@ -10749,8 +10750,9 @@ with tab_joint:
                     "Arm Rotational Energy Flow": "#F59E0B",
                     "Arm Elevation/Depression Energy Flow": "#06B6D4",
                     "Arm Horizontal Abd/Add Energy Flow": "#9333EA",
-                    "Throwing Shoulder Rotational Torque (Relative to Trunk)": "#FB8C00",
-                    "Throwing Shoulder External/Internal Rotation": "#0EA5E9",
+                    "Shoulder Flexion/Extension Torque": "#F97316",
+                    "Shoulder Horizontal Abduction/Adduction Torque": "#FB8C00",
+                    "Shoulder Internal/External Rotation Torque": "#0EA5E9",
                     **NEW_TRUNK_PELVIS_ENERGY_COLOR_MAP,
                 }
 
@@ -10784,26 +10786,22 @@ with tab_joint:
                         compare_energy_data_by_metric[metric] = load_compare_energy_by_handedness(get_arm_elev_energy_flow)
                     elif metric == "Arm Horizontal Abd/Add Energy Flow":
                         compare_energy_data_by_metric[metric] = load_compare_energy_by_handedness(get_arm_horizabd_energy_flow)
-                    elif metric == "Throwing Shoulder Rotational Torque (Relative to Trunk)":
+                    elif metric in {
+                        "Shoulder Flexion/Extension Torque",
+                        "Shoulder Horizontal Abduction/Adduction Torque",
+                    }:
+                        component = "x" if metric == "Shoulder Flexion/Extension Torque" else "z"
                         mmt_data = {}
                         if take_ids_by_handedness.get("R"):
-                            mmt_data.update(
-                                get_energy_flow_from_segment(
-                                    take_ids_by_handedness["R"],
-                                    "RT_SHOULDER_RTA_MMT",
-                                    component="z"
-                                )
-                            )
+                            mmt_data.update(get_energy_flow_from_category_segment(
+                                take_ids_by_handedness["R"], "ORIGINAL", "RT_SHOULDER_RTA_MMT", component=component
+                            ))
                         if take_ids_by_handedness.get("L"):
-                            mmt_data.update(
-                                get_energy_flow_from_segment(
-                                    take_ids_by_handedness["L"],
-                                    "LT_SHOULDER_RTA_MMT",
-                                    component="z"
-                                )
-                            )
+                            mmt_data.update(get_energy_flow_from_category_segment(
+                                take_ids_by_handedness["L"], "ORIGINAL", "LT_SHOULDER_RTA_MMT", component=component
+                            ))
                         compare_energy_data_by_metric[metric] = mmt_data
-                    elif metric == "Throwing Shoulder External/Internal Rotation":
+                    elif metric == "Shoulder Internal/External Rotation Torque":
                         mmt_data = {}
                         if take_ids_by_handedness.get("R"):
                             mmt_data.update(get_energy_flow_from_category_segment(
@@ -11569,8 +11567,9 @@ with tab_energy:
                 "Arm Rotational Energy Flow",
                 "Arm Elevation/Depression Energy Flow",
                 "Arm Horizontal Abd/Add Energy Flow",
-                "Throwing Shoulder Rotational Torque (Relative to Trunk)",
-                "Throwing Shoulder External/Internal Rotation",
+                "Shoulder Flexion/Extension Torque",
+                "Shoulder Horizontal Abduction/Adduction Torque",
+                "Shoulder Internal/External Rotation Torque",
                 *NEW_TRUNK_PELVIS_ENERGY_METRICS,
             ],
             default=[]
@@ -11600,8 +11599,9 @@ with tab_energy:
         "Arm Rotational Energy Flow": "#F59E0B",        # amber
         "Arm Elevation/Depression Energy Flow": "#06B6D4",  # cyan
         "Arm Horizontal Abd/Add Energy Flow": "#9333EA",     # violet
-        "Throwing Shoulder Rotational Torque (Relative to Trunk)": "#FB8C00",
-        "Throwing Shoulder External/Internal Rotation": "#0EA5E9",
+        "Shoulder Flexion/Extension Torque": "#F97316",
+        "Shoulder Horizontal Abduction/Adduction Torque": "#FB8C00",
+        "Shoulder Internal/External Rotation Torque": "#0EA5E9",
         **NEW_TRUNK_PELVIS_ENERGY_COLOR_MAP,
     }
 
@@ -11636,26 +11636,22 @@ with tab_energy:
             energy_data_by_metric[metric] = load_energy_by_handedness(get_arm_elev_energy_flow)
         elif metric == "Arm Horizontal Abd/Add Energy Flow":
             energy_data_by_metric[metric] = load_energy_by_handedness(get_arm_horizabd_energy_flow)
-        elif metric == "Throwing Shoulder Rotational Torque (Relative to Trunk)":
+        elif metric in {
+            "Shoulder Flexion/Extension Torque",
+            "Shoulder Horizontal Abduction/Adduction Torque",
+        }:
+            component = "x" if metric == "Shoulder Flexion/Extension Torque" else "z"
             mmt_data = {}
             if take_ids_by_handedness.get("R"):
-                mmt_data.update(
-                    get_energy_flow_from_segment(
-                        take_ids_by_handedness["R"],
-                        "RT_SHOULDER_RTA_MMT",
-                        component="z"
-                    )
-                )
+                mmt_data.update(get_energy_flow_from_category_segment(
+                    take_ids_by_handedness["R"], "ORIGINAL", "RT_SHOULDER_RTA_MMT", component=component
+                ))
             if take_ids_by_handedness.get("L"):
-                mmt_data.update(
-                    get_energy_flow_from_segment(
-                        take_ids_by_handedness["L"],
-                        "LT_SHOULDER_RTA_MMT",
-                        component="z"
-                    )
-                )
+                mmt_data.update(get_energy_flow_from_category_segment(
+                    take_ids_by_handedness["L"], "ORIGINAL", "LT_SHOULDER_RTA_MMT", component=component
+                ))
             energy_data_by_metric[metric] = mmt_data
-        elif metric == "Throwing Shoulder External/Internal Rotation":
+        elif metric == "Shoulder Internal/External Rotation Torque":
             mmt_data = {}
             if take_ids_by_handedness.get("R"):
                 mmt_data.update(get_energy_flow_from_category_segment(
