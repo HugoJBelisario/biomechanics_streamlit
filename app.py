@@ -6939,13 +6939,18 @@ st.markdown(
     /* Make selected multiselect tags readable in the main page as well */
     div[data-testid="stMultiSelect"] div[data-baseweb="tag"] {
         max-width: 100% !important;
+        width: fit-content !important;
         height: auto !important;
         white-space: normal !important;
     }
-    div[data-testid="stMultiSelect"] div[data-baseweb="tag"] > span {
+    div[data-testid="stMultiSelect"] div[data-baseweb="tag"] span,
+    div[data-testid="stMultiSelect"] div[data-baseweb="tag"] span[title] {
+        max-width: none !important;
+        width: auto !important;
         white-space: normal !important;
         overflow: visible !important;
         text-overflow: unset !important;
+        overflow-wrap: anywhere !important;
         line-height: 1.25 !important;
     }
     </style>
