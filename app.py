@@ -11658,24 +11658,25 @@ with tab_energy:
         *NEW_TRUNK_PELVIS_JCS_METRICS,
     ]
 
+    comparison_energy_metric_groups = []
     if energy_view_mode == "Comparison":
         energy_left_select_col, energy_right_select_col = st.columns(2)
         with energy_left_select_col:
-            left_energy_metric = st.selectbox(
-                "Left Plot Metric",
+            left_energy_metrics = st.multiselect(
+                "Select Left Plot Kinetics / Energy Flow",
                 energy_metric_options,
-                key="energy_comparison_left_metric",
+                default=[],
+                key="energy_comparison_left_metrics",
             )
-        right_energy_metric_options = [
-            metric for metric in energy_metric_options if metric != left_energy_metric
-        ]
         with energy_right_select_col:
-            right_energy_metric = st.selectbox(
-                "Right Plot Metric",
-                right_energy_metric_options,
-                key="energy_comparison_right_metric",
+            right_energy_metrics = st.multiselect(
+                "Select Right Plot Kinetics / Energy Flow",
+                energy_metric_options,
+                default=[],
+                key="energy_comparison_right_metrics",
             )
-        energy_metrics = [left_energy_metric, right_energy_metric]
+        comparison_energy_metric_groups = [left_energy_metrics, right_energy_metrics]
+        energy_metrics = list(dict.fromkeys(left_energy_metrics + right_energy_metrics))
     else:
         energy_select_col, energy_select_spacer = st.columns([3, 3])
         with energy_select_col:
@@ -12167,24 +12168,20 @@ with tab_energy:
     )
 
     energy_plot_figure = fig
-    if energy_view_mode == "Comparison" and len(energy_metrics) == 2:
+    if energy_view_mode == "Comparison":
         comparison_fig = make_subplots(
             rows=1,
             cols=2,
-            subplot_titles=energy_metrics,
             horizontal_spacing=0.10,
         )
 
         for trace in fig.data:
             trace_metric = getattr(trace, "meta", None)
-            if trace_metric in energy_metrics:
-                comparison_fig.add_trace(
-                    trace,
-                    row=1,
-                    col=energy_metrics.index(trace_metric) + 1,
-                )
+            for col_index, metrics_for_plot in enumerate(comparison_energy_metric_groups, start=1):
+                if trace_metric in metrics_for_plot:
+                    comparison_fig.add_trace(trace, row=1, col=col_index)
 
-        for col_index, metric in enumerate(energy_metrics, start=1):
+        for col_index, metrics_for_plot in enumerate(comparison_energy_metric_groups, start=1):
             xref = "x" if col_index == 1 else f"x{col_index}"
             yref = "y domain" if col_index == 1 else f"y{col_index} domain"
 
@@ -12207,7 +12204,7 @@ with tab_energy:
                 col=col_index,
             )
             comparison_fig.update_yaxes(
-                title_text=get_energy_yaxis_title([metric]),
+                title_text=(get_energy_yaxis_title(metrics_for_plot) if metrics_for_plot else ""),
                 row=1,
                 col=col_index,
             )
