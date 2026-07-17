@@ -26,6 +26,7 @@ from scipy.signal import find_peaks
 from scipy.signal import butter, filtfilt
 import plotly.graph_objects as go
 import plotly.express as px
+from plotly.subplots import make_subplots
 from datetime import datetime
 
 interp_points = np.linspace(0, 100, 100)
@@ -6122,6 +6123,22 @@ NEW_TRUNK_PELVIS_ENERGY_METRIC_MAP = {
 
 NEW_TRUNK_PELVIS_ENERGY_METRICS = list(NEW_TRUNK_PELVIS_ENERGY_METRIC_MAP.keys())
 
+NEW_TRUNK_PELVIS_KINETICS_METRIC_MAP = {
+    metric_name.replace("_STP_", f"_{kind}_"): (
+        segment_name,
+        category_name.replace("JCS_STP_", f"JCS_{kind}_"),
+    )
+    for metric_name, (segment_name, category_name) in NEW_TRUNK_PELVIS_ENERGY_METRIC_MAP.items()
+    for kind in ("ANGVEL", "ANGACCEL", "TORQUE")
+}
+
+NEW_TRUNK_PELVIS_KINETICS_METRICS = list(NEW_TRUNK_PELVIS_KINETICS_METRIC_MAP.keys())
+NEW_TRUNK_PELVIS_JCS_METRIC_MAP = {
+    **NEW_TRUNK_PELVIS_ENERGY_METRIC_MAP,
+    **NEW_TRUNK_PELVIS_KINETICS_METRIC_MAP,
+}
+NEW_TRUNK_PELVIS_JCS_METRICS = list(NEW_TRUNK_PELVIS_JCS_METRIC_MAP.keys())
+
 NEW_TRUNK_PELVIS_ENERGY_COLOR_MAP = {
     "RPV_DIST_STP_FLEX": "#0F766E",
     "RPV_DIST_STP_SIDE": "#1D4ED8",
@@ -6132,6 +6149,19 @@ NEW_TRUNK_PELVIS_ENERGY_COLOR_MAP = {
     "RTA_PROX_STP_X": "#BE123C",
     "RTA_PROX_STP_Y": "#6D28D9",
     "RTA_PROX_STP_Z": "#7C3AED",
+}
+
+_JCS_KINETICS_COLORS = [
+    "#0891B2", "#DB2777", "#65A30D", "#7C3AED", "#EA580C", "#0284C7",
+    "#C026D3", "#4D7C0F", "#B45309", "#0369A1", "#BE185D", "#15803D",
+]
+NEW_TRUNK_PELVIS_KINETICS_COLOR_MAP = {
+    metric: _JCS_KINETICS_COLORS[index % len(_JCS_KINETICS_COLORS)]
+    for index, metric in enumerate(NEW_TRUNK_PELVIS_KINETICS_METRICS)
+}
+NEW_TRUNK_PELVIS_JCS_COLOR_MAP = {
+    **NEW_TRUNK_PELVIS_ENERGY_COLOR_MAP,
+    **NEW_TRUNK_PELVIS_KINETICS_COLOR_MAP,
 }
 
 ENERGY_SEGMENT_POWER_METRICS = {
@@ -6145,6 +6175,20 @@ ENERGY_TORQUE_METRICS = {
     "Shoulder Flexion/Extension Torque",
     "Shoulder Horizontal Abduction/Adduction Torque",
     "Shoulder Internal/External Rotation Torque",
+    "Elbow Torque (Z)",
+    *{metric for metric in NEW_TRUNK_PELVIS_KINETICS_METRICS if "_TORQUE_" in metric},
+}
+
+ENERGY_FORCE_METRICS = {
+    "Elbow Force (Z)",
+}
+
+ENERGY_ANGULAR_VELOCITY_METRICS = {
+    metric for metric in NEW_TRUNK_PELVIS_KINETICS_METRICS if "_ANGVEL_" in metric
+}
+
+ENERGY_ANGULAR_ACCELERATION_METRICS = {
+    metric for metric in NEW_TRUNK_PELVIS_KINETICS_METRICS if "_ANGACCEL_" in metric
 }
 
 ENERGY_FLOW_POWER_METRICS = {
@@ -6171,12 +6215,14 @@ ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS = {
     "Shoulder Flexion/Extension Torque": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
     "Shoulder Horizontal Abduction/Adduction Torque": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
     "Shoulder Internal/External Rotation Torque": {"L": "LT_SHOULDER_LAR_MMT", "R": "RT_SHOULDER_RAR_MMT"},
+    "Elbow Force (Z)": {"L": "LT_ELBOW_FORCE", "R": "RT_ELBOW_FORCE"},
+    "Elbow Torque (Z)": {"L": "LT_ELBOW_MMT", "R": "RT_ELBOW_MMT"},
 }
 
 ENERGY_METRIC_FIXED_SEGMENTS = {
     **{
         metric: segment_name
-        for metric, (segment_name, _category_name) in NEW_TRUNK_PELVIS_ENERGY_METRIC_MAP.items()
+        for metric, (segment_name, _category_name) in NEW_TRUNK_PELVIS_JCS_METRIC_MAP.items()
     },
 }
 
@@ -6209,6 +6255,15 @@ def get_energy_yaxis_title(selected_metrics):
         if metric in ENERGY_TORQUE_METRICS:
             units.add("Nm")
             metric_types.add("Torque")
+        elif metric in ENERGY_FORCE_METRICS:
+            units.add("N")
+            metric_types.add("Force")
+        elif metric in ENERGY_ANGULAR_VELOCITY_METRICS:
+            units.add("deg/s")
+            metric_types.add("Angular Velocity")
+        elif metric in ENERGY_ANGULAR_ACCELERATION_METRICS:
+            units.add("deg/s²")
+            metric_types.add("Angular Acceleration")
         elif metric in ENERGY_SEGMENT_POWER_METRICS:
             units.add("W")
             metric_types.add("Segment Power")
@@ -6221,13 +6276,20 @@ def get_energy_yaxis_title(selected_metrics):
 
     if units == {"Nm"}:
         return "Torque (Nm)"
+    if units == {"N"}:
+        return "Force (N)"
+    if units == {"deg/s"}:
+        return "Angular Velocity (deg/s)"
+    if units == {"deg/s²"}:
+        return "Angular Acceleration (deg/s²)"
     if units == {"W"}:
         if metric_types == {"Energy Flow"}:
             return "Energy Flow (W)"
         if metric_types == {"Segment Power"}:
             return "Segment Power (W)"
         return "Energy Flow / Segment Power (W)"
-    return "Energy Flow / Segment Power / Torque (W / Nm)"
+    unit_order = [unit for unit in ("W", "N", "Nm", "deg/s", "deg/s²") if unit in units]
+    return f"Energy Flow / Segment Power / Kinetics ({' / '.join(unit_order)})"
 
 @st.cache_data(ttl=300)
 def get_energy_flow_from_category_segment(take_ids, category_name, segment_name, component="x"):
@@ -9942,7 +10004,9 @@ with tab_joint:
                     "Shoulder Flexion/Extension Torque",
                     "Shoulder Horizontal Abduction/Adduction Torque",
                     "Shoulder Internal/External Rotation Torque",
-                    *NEW_TRUNK_PELVIS_ENERGY_METRICS,
+                    "Elbow Force (Z)",
+                    "Elbow Torque (Z)",
+                    *NEW_TRUNK_PELVIS_JCS_METRICS,
                 ],
                 default=[],
                 key="joint_energy_metrics_compare"
@@ -10753,7 +10817,9 @@ with tab_joint:
                     "Shoulder Flexion/Extension Torque": "#F97316",
                     "Shoulder Horizontal Abduction/Adduction Torque": "#FB8C00",
                     "Shoulder Internal/External Rotation Torque": "#0EA5E9",
-                    **NEW_TRUNK_PELVIS_ENERGY_COLOR_MAP,
+                    "Elbow Force (Z)": "#22C55E",
+                    "Elbow Torque (Z)": "#A855F7",
+                    **NEW_TRUNK_PELVIS_JCS_COLOR_MAP,
                 }
 
                 compare_energy_data_by_metric = {}
@@ -10812,8 +10878,20 @@ with tab_joint:
                                 take_ids_by_handedness["L"], "ORIGINAL", "LT_SHOULDER_LAR_MMT", component="z"
                             ))
                         compare_energy_data_by_metric[metric] = mmt_data
-                    elif metric in NEW_TRUNK_PELVIS_ENERGY_METRICS:
-                        segment_name, category_name = NEW_TRUNK_PELVIS_ENERGY_METRIC_MAP[metric]
+                    elif metric in {"Elbow Force (Z)", "Elbow Torque (Z)"}:
+                        segment_suffix = "FORCE" if metric == "Elbow Force (Z)" else "MMT"
+                        elbow_data = {}
+                        if take_ids_by_handedness.get("R"):
+                            elbow_data.update(get_energy_flow_from_category_segment(
+                                take_ids_by_handedness["R"], "ORIGINAL", f"RT_ELBOW_{segment_suffix}", component="z"
+                            ))
+                        if take_ids_by_handedness.get("L"):
+                            elbow_data.update(get_energy_flow_from_category_segment(
+                                take_ids_by_handedness["L"], "ORIGINAL", f"LT_ELBOW_{segment_suffix}", component="z"
+                            ))
+                        compare_energy_data_by_metric[metric] = elbow_data
+                    elif metric in NEW_TRUNK_PELVIS_JCS_METRICS:
+                        segment_name, category_name = NEW_TRUNK_PELVIS_JCS_METRIC_MAP[metric]
                         compare_energy_data_by_metric[metric] = get_energy_flow_from_category_segment(
                             take_ids,
                             category_name,
@@ -11509,7 +11587,16 @@ with tab_energy:
         unsafe_allow_html=True,
     )
 
-    energy_display_col, energy_options_col, energy_spacer_col = st.columns([1.45, 1.75, 2.2])
+    energy_view_col, energy_display_col, energy_options_col, energy_spacer_col = st.columns([1.3, 1.45, 1.75, 0.9])
+    with energy_view_col:
+        st.markdown('<div class="energy-controls-label">View Mode</div>', unsafe_allow_html=True)
+        energy_view_mode = st.segmented_control(
+            "Energy Flow View Mode",
+            ["Single", "Comparison"],
+            default="Single",
+            key="energy_view_mode",
+            label_visibility="collapsed",
+        )
     with energy_display_col:
         st.markdown('<div class="energy-controls-label">Display Mode</div>', unsafe_allow_html=True)
         display_mode = st.segmented_control(
@@ -11570,9 +11657,13 @@ with tab_energy:
                 "Shoulder Flexion/Extension Torque",
                 "Shoulder Horizontal Abduction/Adduction Torque",
                 "Shoulder Internal/External Rotation Torque",
-                *NEW_TRUNK_PELVIS_ENERGY_METRICS,
+                "Elbow Force (Z)",
+                "Elbow Torque (Z)",
+                *NEW_TRUNK_PELVIS_JCS_METRICS,
             ],
-            default=[]
+            default=[],
+            max_selections=2 if energy_view_mode == "Comparison" else None,
+            key=f"energy_metrics_main_tab_{energy_view_mode.lower()}",
         )
     with energy_select_spacer:
         st.markdown("")
@@ -11583,6 +11674,8 @@ with tab_energy:
             st.info("Select at least one energy flow metric.")
         with energy_empty_spacer:
             st.markdown("")
+    elif energy_view_mode == "Comparison" and len(energy_metrics) < 2:
+        st.info("Select two metrics to render the side-by-side comparison view.")
 
     if not take_ids:
         st.info("No takes available for Energy Flow.")
@@ -11602,7 +11695,9 @@ with tab_energy:
         "Shoulder Flexion/Extension Torque": "#F97316",
         "Shoulder Horizontal Abduction/Adduction Torque": "#FB8C00",
         "Shoulder Internal/External Rotation Torque": "#0EA5E9",
-        **NEW_TRUNK_PELVIS_ENERGY_COLOR_MAP,
+        "Elbow Force (Z)": "#22C55E",
+        "Elbow Torque (Z)": "#A855F7",
+        **NEW_TRUNK_PELVIS_JCS_COLOR_MAP,
     }
 
     # --- Load all selected metrics ---
@@ -11662,8 +11757,20 @@ with tab_energy:
                     take_ids_by_handedness["L"], "ORIGINAL", "LT_SHOULDER_LAR_MMT", component="z"
                 ))
             energy_data_by_metric[metric] = mmt_data
-        elif metric in NEW_TRUNK_PELVIS_ENERGY_METRICS:
-            segment_name, category_name = NEW_TRUNK_PELVIS_ENERGY_METRIC_MAP[metric]
+        elif metric in {"Elbow Force (Z)", "Elbow Torque (Z)"}:
+            segment_suffix = "FORCE" if metric == "Elbow Force (Z)" else "MMT"
+            elbow_data = {}
+            if take_ids_by_handedness.get("R"):
+                elbow_data.update(get_energy_flow_from_category_segment(
+                    take_ids_by_handedness["R"], "ORIGINAL", f"RT_ELBOW_{segment_suffix}", component="z"
+                ))
+            if take_ids_by_handedness.get("L"):
+                elbow_data.update(get_energy_flow_from_category_segment(
+                    take_ids_by_handedness["L"], "ORIGINAL", f"LT_ELBOW_{segment_suffix}", component="z"
+                ))
+            energy_data_by_metric[metric] = elbow_data
+        elif metric in NEW_TRUNK_PELVIS_JCS_METRICS:
+            segment_name, category_name = NEW_TRUNK_PELVIS_JCS_METRIC_MAP[metric]
             energy_data_by_metric[metric] = get_energy_flow_from_category_segment(
                 take_ids,
                 category_name,
@@ -11798,6 +11905,7 @@ with tab_energy:
                             f"{group_label} | {metric} – {date} | Pitch {take_order[take_id]} ({take_velocity[take_id]:.1f} mph)"
                             if comparison_grouping_enabled else None
                         ),
+                        meta=metric,
                         showlegend=False,
                         legendgroup=legendgroup
                     )
@@ -11825,6 +11933,7 @@ with tab_energy:
                             if show_group_pitcher_breakout else
                             f"{metric} | {date}"
                         ),
+                            meta=metric,
                             showlegend=True,
                             legendgroup=legendgroup
                         )
@@ -11890,6 +11999,7 @@ with tab_energy:
                             + "<br>Time: %{x:.0f} ms rel BR"
                             + "<extra></extra>"
                         ),
+                        meta=metric,
                         showlegend=False,
                         legendgroup=legendgroup
                     )
@@ -11908,6 +12018,7 @@ with tab_energy:
                                 alpha=0.35
                             ),
                             line=dict(width=0),
+                            meta=metric,
                             showlegend=False,
                             hoverinfo="skip",
                             legendgroup=legendgroup
@@ -11937,6 +12048,7 @@ with tab_energy:
                             if show_group_pitcher_breakout else
                             f"{metric} | {date}"
                         ),
+                        meta=metric,
                         showlegend=True,
                         legendgroup=legendgroup
                     )
@@ -12036,7 +12148,67 @@ with tab_energy:
         )
     )
 
-    st.plotly_chart(fig, use_container_width=True, key="energy_plot_main_tab")
+    energy_plot_figure = fig
+    if energy_view_mode == "Comparison" and len(energy_metrics) == 2:
+        comparison_fig = make_subplots(
+            rows=1,
+            cols=2,
+            subplot_titles=energy_metrics,
+            horizontal_spacing=0.10,
+        )
+
+        for trace in fig.data:
+            trace_metric = getattr(trace, "meta", None)
+            if trace_metric in energy_metrics:
+                comparison_fig.add_trace(
+                    trace,
+                    row=1,
+                    col=energy_metrics.index(trace_metric) + 1,
+                )
+
+        for col_index, metric in enumerate(energy_metrics, start=1):
+            xref = "x" if col_index == 1 else f"x{col_index}"
+            yref = "y domain" if col_index == 1 else f"y{col_index} domain"
+
+            for shape in fig.layout.shapes or []:
+                shape_config = shape.to_plotly_json()
+                shape_config["xref"] = xref
+                shape_config["yref"] = yref
+                comparison_fig.add_shape(shape_config)
+
+            for annotation in fig.layout.annotations or []:
+                annotation_config = annotation.to_plotly_json()
+                annotation_config["xref"] = xref
+                annotation_config["yref"] = "paper"
+                comparison_fig.add_annotation(annotation_config)
+
+            comparison_fig.update_xaxes(
+                title_text="Time Relative to Ball Release (ms)",
+                range=[energy_window_start_ms, energy_window_end_ms],
+                row=1,
+                col=col_index,
+            )
+            comparison_fig.update_yaxes(
+                title_text=get_energy_yaxis_title([metric]),
+                row=1,
+                col=col_index,
+            )
+
+        comparison_fig.update_layout(
+            height=600,
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.30,
+                xanchor="center",
+                x=0.5,
+                groupclick="togglegroup",
+            ),
+            hoverlabel=dict(namelength=-1, font_size=13),
+        )
+        energy_plot_figure = comparison_fig
+
+    st.plotly_chart(energy_plot_figure, use_container_width=True, key="energy_plot_main_tab")
 
     defined_energy_metrics = [
         metric for metric in energy_metrics if metric in energy_definitions
