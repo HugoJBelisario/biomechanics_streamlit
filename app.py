@@ -11639,34 +11639,54 @@ with tab_energy:
     with energy_window_spacer:
         st.markdown("")
 
-    energy_select_col, energy_select_spacer = st.columns([3, 3])
-    with energy_select_col:
-        energy_metrics = st.multiselect(
-            "Select Energy Flow Metrics",
-            [
-                "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)",
-                "Arm Energy Flow (LAR_PROX | RAR_PROX)",
-                "Glove Side Trunk-Shoulder Energy Flow",
-                "Glove Arm Energy Flow",
-                "Trunk-Shoulder Rotational Energy Flow",
-                "Trunk-Shoulder Elevation/Depression Energy Flow",
-                "Trunk-Shoulder Horizontal Abd/Add Energy Flow",
-                "Arm Rotational Energy Flow",
-                "Arm Elevation/Depression Energy Flow",
-                "Arm Horizontal Abd/Add Energy Flow",
-                "Shoulder Flexion/Extension Torque",
-                "Shoulder Horizontal Abduction/Adduction Torque",
-                "Shoulder Internal/External Rotation Torque",
-                "Elbow Force (Z)",
-                "Elbow Torque (Z)",
-                *NEW_TRUNK_PELVIS_JCS_METRICS,
-            ],
-            default=[],
-            max_selections=2 if energy_view_mode == "Comparison" else None,
-            key=f"energy_metrics_main_tab_{energy_view_mode.lower()}",
-        )
-    with energy_select_spacer:
-        st.markdown("")
+    energy_metric_options = [
+        "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)",
+        "Arm Energy Flow (LAR_PROX | RAR_PROX)",
+        "Glove Side Trunk-Shoulder Energy Flow",
+        "Glove Arm Energy Flow",
+        "Trunk-Shoulder Rotational Energy Flow",
+        "Trunk-Shoulder Elevation/Depression Energy Flow",
+        "Trunk-Shoulder Horizontal Abd/Add Energy Flow",
+        "Arm Rotational Energy Flow",
+        "Arm Elevation/Depression Energy Flow",
+        "Arm Horizontal Abd/Add Energy Flow",
+        "Shoulder Flexion/Extension Torque",
+        "Shoulder Horizontal Abduction/Adduction Torque",
+        "Shoulder Internal/External Rotation Torque",
+        "Elbow Force (Z)",
+        "Elbow Torque (Z)",
+        *NEW_TRUNK_PELVIS_JCS_METRICS,
+    ]
+
+    if energy_view_mode == "Comparison":
+        energy_left_select_col, energy_right_select_col = st.columns(2)
+        with energy_left_select_col:
+            left_energy_metric = st.selectbox(
+                "Left Plot Metric",
+                energy_metric_options,
+                key="energy_comparison_left_metric",
+            )
+        right_energy_metric_options = [
+            metric for metric in energy_metric_options if metric != left_energy_metric
+        ]
+        with energy_right_select_col:
+            right_energy_metric = st.selectbox(
+                "Right Plot Metric",
+                right_energy_metric_options,
+                key="energy_comparison_right_metric",
+            )
+        energy_metrics = [left_energy_metric, right_energy_metric]
+    else:
+        energy_select_col, energy_select_spacer = st.columns([3, 3])
+        with energy_select_col:
+            energy_metrics = st.multiselect(
+                "Select Energy Flow Metrics",
+                energy_metric_options,
+                default=[],
+                key="energy_metrics_main_tab_single",
+            )
+        with energy_select_spacer:
+            st.markdown("")
 
     if not energy_metrics:
         energy_empty_col, energy_empty_spacer = st.columns([3, 3])
@@ -11674,8 +11694,6 @@ with tab_energy:
             st.info("Select at least one energy flow metric.")
         with energy_empty_spacer:
             st.markdown("")
-    elif energy_view_mode == "Comparison" and len(energy_metrics) < 2:
-        st.info("Select two metrics to render the side-by-side comparison view.")
 
     if not take_ids:
         st.info("No takes available for Energy Flow.")
