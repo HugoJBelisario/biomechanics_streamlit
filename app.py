@@ -6202,15 +6202,22 @@ ENERGY_COMPONENT_METRIC_MAP = {
 }
 
 ENERGY_FLOW_COMPONENT_OPTIONS_BY_PRIMARY = {
-    primary_metric: [
-        f"Arm {display_component} Torque",
-        f"Arm {display_component} Angular Velocity",
-        f"Arm {display_component} Angular Acceleration",
-    ]
-    for primary_metric, (display_component, _category_component) in ({
-        **ARM_ENERGY_FLOW_COMPONENT_CONFIG,
-        **TRUNK_SHOULDER_ENERGY_FLOW_COMPONENT_CONFIG,
-    }).items()
+    **{
+        primary_metric: [
+            f"Arm {display_component} Torque",
+            f"Arm {display_component} Angular Velocity",
+            f"Arm {display_component} Angular Acceleration",
+        ]
+        for primary_metric, (display_component, _category_component) in ARM_ENERGY_FLOW_COMPONENT_CONFIG.items()
+    },
+    **{
+        primary_metric: [
+            f"Trunk-Shoulder {display_component} Torque",
+            f"Trunk-Shoulder {display_component} Angular Velocity",
+            f"Trunk-Shoulder {display_component} Angular Acceleration",
+        ]
+        for primary_metric, (display_component, _category_component) in TRUNK_SHOULDER_ENERGY_FLOW_COMPONENT_CONFIG.items()
+    },
 }
 
 ARM_ENERGY_COMPONENT_COLOR_MAP = {
