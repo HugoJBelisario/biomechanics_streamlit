@@ -6180,13 +6180,37 @@ ARM_ENERGY_COMPONENT_METRIC_MAP = {
     )
 }
 
+TRUNK_SHOULDER_ENERGY_FLOW_COMPONENT_CONFIG = {
+    "Trunk-Shoulder Elevation/Depression Energy Flow": ("Elevation/Depression", "ELEV"),
+    "Trunk-Shoulder Rotational Energy Flow": ("Rotational", "ROT"),
+    "Trunk-Shoulder Horizontal Abd/Add Energy Flow": ("Horizontal Abduction/Adduction", "HORIZABD"),
+}
+
+TRUNK_SHOULDER_ENERGY_COMPONENT_METRIC_MAP = {
+    f"Trunk-Shoulder {display_component} {display_kind}": f"JCS_{category_kind}_{category_component}"
+    for display_component, category_component in TRUNK_SHOULDER_ENERGY_FLOW_COMPONENT_CONFIG.values()
+    for display_kind, category_kind in (
+        ("Torque", "TORQUE"),
+        ("Angular Velocity", "ANGVEL"),
+        ("Angular Acceleration", "ANGACCEL"),
+    )
+}
+
+ENERGY_COMPONENT_METRIC_MAP = {
+    **ARM_ENERGY_COMPONENT_METRIC_MAP,
+    **TRUNK_SHOULDER_ENERGY_COMPONENT_METRIC_MAP,
+}
+
 ENERGY_FLOW_COMPONENT_OPTIONS_BY_PRIMARY = {
     primary_metric: [
         f"Arm {display_component} Torque",
         f"Arm {display_component} Angular Velocity",
         f"Arm {display_component} Angular Acceleration",
     ]
-    for primary_metric, (display_component, _category_component) in ARM_ENERGY_FLOW_COMPONENT_CONFIG.items()
+    for primary_metric, (display_component, _category_component) in ({
+        **ARM_ENERGY_FLOW_COMPONENT_CONFIG,
+        **TRUNK_SHOULDER_ENERGY_FLOW_COMPONENT_CONFIG,
+    }).items()
 }
 
 ARM_ENERGY_COMPONENT_COLOR_MAP = {
@@ -6201,6 +6225,23 @@ ARM_ENERGY_COMPONENT_COLOR_MAP = {
     "Arm Horizontal Abduction/Adduction Angular Acceleration": "#DB2777",
 }
 
+TRUNK_SHOULDER_ENERGY_COMPONENT_COLOR_MAP = {
+    "Trunk-Shoulder Elevation/Depression Torque": "#C2410C",
+    "Trunk-Shoulder Elevation/Depression Angular Velocity": "#1D4ED8",
+    "Trunk-Shoulder Elevation/Depression Angular Acceleration": "#7E22CE",
+    "Trunk-Shoulder Rotational Torque": "#B91C1C",
+    "Trunk-Shoulder Rotational Angular Velocity": "#0E7490",
+    "Trunk-Shoulder Rotational Angular Acceleration": "#6D28D9",
+    "Trunk-Shoulder Horizontal Abduction/Adduction Torque": "#15803D",
+    "Trunk-Shoulder Horizontal Abduction/Adduction Angular Velocity": "#B45309",
+    "Trunk-Shoulder Horizontal Abduction/Adduction Angular Acceleration": "#BE185D",
+}
+
+ENERGY_COMPONENT_COLOR_MAP = {
+    **ARM_ENERGY_COMPONENT_COLOR_MAP,
+    **TRUNK_SHOULDER_ENERGY_COMPONENT_COLOR_MAP,
+}
+
 ENERGY_SEGMENT_POWER_METRICS = {
     "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)",
     "Arm Energy Flow (LAR_PROX | RAR_PROX)",
@@ -6213,7 +6254,7 @@ ENERGY_TORQUE_METRICS = {
     "Shoulder Horizontal Abduction/Adduction Torque",
     "Shoulder Internal/External Rotation Torque",
     "Elbow Torque (Z)",
-    *{metric for metric in ARM_ENERGY_COMPONENT_METRIC_MAP if metric.endswith(" Torque")},
+    *{metric for metric in ENERGY_COMPONENT_METRIC_MAP if metric.endswith(" Torque")},
     *{metric for metric in NEW_TRUNK_PELVIS_KINETICS_METRICS if "_TORQUE_" in metric},
 }
 
@@ -6222,12 +6263,12 @@ ENERGY_FORCE_METRICS = {
 }
 
 ENERGY_ANGULAR_VELOCITY_METRICS = {
-    *{metric for metric in ARM_ENERGY_COMPONENT_METRIC_MAP if metric.endswith(" Angular Velocity")},
+    *{metric for metric in ENERGY_COMPONENT_METRIC_MAP if metric.endswith(" Angular Velocity")},
     *{metric for metric in NEW_TRUNK_PELVIS_KINETICS_METRICS if "_ANGVEL_" in metric},
 }
 
 ENERGY_ANGULAR_ACCELERATION_METRICS = {
-    *{metric for metric in ARM_ENERGY_COMPONENT_METRIC_MAP if metric.endswith(" Angular Acceleration")},
+    *{metric for metric in ENERGY_COMPONENT_METRIC_MAP if metric.endswith(" Angular Acceleration")},
     *{metric for metric in NEW_TRUNK_PELVIS_KINETICS_METRICS if "_ANGACCEL_" in metric},
 }
 
@@ -6252,6 +6293,10 @@ ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS = {
     "Arm Rotational Energy Flow": {"L": "LAR", "R": "RAR"},
     "Arm Elevation/Depression Energy Flow": {"L": "LAR", "R": "RAR"},
     **{metric: {"L": "LAR", "R": "RAR"} for metric in ARM_ENERGY_COMPONENT_METRIC_MAP},
+    **{
+        metric: {"L": "RTA_LAR", "R": "RTA_RAR"}
+        for metric in TRUNK_SHOULDER_ENERGY_COMPONENT_METRIC_MAP
+    },
     "Arm Horizontal Abd/Add Energy Flow": {"L": "LAR", "R": "RAR"},
     "Shoulder Flexion/Extension Torque": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
     "Shoulder Horizontal Abduction/Adduction Torque": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
@@ -10854,7 +10899,7 @@ with tab_joint:
                     "Trunk-Shoulder Horizontal Abd/Add Energy Flow": "#16A34A",
                     "Arm Rotational Energy Flow": "#F59E0B",
                     "Arm Elevation/Depression Energy Flow": "#06B6D4",
-                    **ARM_ENERGY_COMPONENT_COLOR_MAP,
+                    **ENERGY_COMPONENT_COLOR_MAP,
                     "Arm Horizontal Abd/Add Energy Flow": "#9333EA",
                     "Shoulder Flexion/Extension Torque": "#F97316",
                     "Shoulder Horizontal Abduction/Adduction Torque": "#FB8C00",
@@ -10894,16 +10939,17 @@ with tab_joint:
                         compare_energy_data_by_metric[metric] = load_compare_energy_by_handedness(get_arm_elev_energy_flow)
                     elif metric == "Arm Horizontal Abd/Add Energy Flow":
                         compare_energy_data_by_metric[metric] = load_compare_energy_by_handedness(get_arm_horizabd_energy_flow)
-                    elif metric in ARM_ENERGY_COMPONENT_METRIC_MAP:
-                        category_name = ARM_ENERGY_COMPONENT_METRIC_MAP[metric]
+                    elif metric in ENERGY_COMPONENT_METRIC_MAP:
+                        category_name = ENERGY_COMPONENT_METRIC_MAP[metric]
+                        component_segments = ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS[metric]
                         component_data = {}
                         if take_ids_by_handedness.get("R"):
                             component_data.update(get_energy_flow_from_category_segment(
-                                take_ids_by_handedness["R"], category_name, "RAR", component="x"
+                                take_ids_by_handedness["R"], category_name, component_segments["R"], component="x"
                             ))
                         if take_ids_by_handedness.get("L"):
                             component_data.update(get_energy_flow_from_category_segment(
-                                take_ids_by_handedness["L"], category_name, "LAR", component="x"
+                                take_ids_by_handedness["L"], category_name, component_segments["L"], component="x"
                             ))
                         compare_energy_data_by_metric[metric] = component_data
                     elif metric in {
@@ -11736,12 +11782,12 @@ with tab_energy:
                     key="energy_comparison_right_components_v1",
                     help=(
                         "Choose torque, angular velocity, or angular acceleration for the selected "
-                        "arm energy-flow metric."
+                        "arm or trunk-shoulder energy-flow metric."
                     ),
                 )
             else:
                 right_energy_metrics = []
-                st.caption("Select an arm component energy-flow metric to choose related components.")
+                st.caption("Select an arm or trunk-shoulder component energy-flow metric to choose related components.")
         comparison_energy_metric_groups = [left_energy_metrics, right_energy_metrics]
         energy_metrics = list(dict.fromkeys(left_energy_metrics + right_energy_metrics))
     else:
@@ -11777,7 +11823,7 @@ with tab_energy:
         "Trunk-Shoulder Horizontal Abd/Add Energy Flow": "#16A34A",     # strong green
         "Arm Rotational Energy Flow": "#F59E0B",        # amber
         "Arm Elevation/Depression Energy Flow": "#06B6D4",  # cyan
-        **ARM_ENERGY_COMPONENT_COLOR_MAP,
+        **ENERGY_COMPONENT_COLOR_MAP,
         "Arm Horizontal Abd/Add Energy Flow": "#9333EA",     # violet
         "Shoulder Flexion/Extension Torque": "#F97316",
         "Shoulder Horizontal Abduction/Adduction Torque": "#FB8C00",
@@ -11818,16 +11864,17 @@ with tab_energy:
             energy_data_by_metric[metric] = load_energy_by_handedness(get_arm_elev_energy_flow)
         elif metric == "Arm Horizontal Abd/Add Energy Flow":
             energy_data_by_metric[metric] = load_energy_by_handedness(get_arm_horizabd_energy_flow)
-        elif metric in ARM_ENERGY_COMPONENT_METRIC_MAP:
-            category_name = ARM_ENERGY_COMPONENT_METRIC_MAP[metric]
+        elif metric in ENERGY_COMPONENT_METRIC_MAP:
+            category_name = ENERGY_COMPONENT_METRIC_MAP[metric]
+            component_segments = ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS[metric]
             component_data = {}
             if take_ids_by_handedness.get("R"):
                 component_data.update(get_energy_flow_from_category_segment(
-                    take_ids_by_handedness["R"], category_name, "RAR", component="x"
+                    take_ids_by_handedness["R"], category_name, component_segments["R"], component="x"
                 ))
             if take_ids_by_handedness.get("L"):
                 component_data.update(get_energy_flow_from_category_segment(
-                    take_ids_by_handedness["L"], category_name, "LAR", component="x"
+                    take_ids_by_handedness["L"], category_name, component_segments["L"], component="x"
                 ))
             energy_data_by_metric[metric] = component_data
         elif metric in {
