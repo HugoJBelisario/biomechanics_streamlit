@@ -11796,6 +11796,13 @@ with tab_kinetics:
     }
     kinetics_data_by_metric = {metric: data for metric, data in kinetics_data_by_metric.items() if data}
 
+    kinetics_unique_dates = sorted(set(take_date_map.values()))
+    kinetics_dash_styles = ["solid", "dash", "dot", "dashdot"]
+    kinetics_date_dash_map = {
+        date: kinetics_dash_styles[index % len(kinetics_dash_styles)]
+        for index, date in enumerate(kinetics_unique_dates)
+    }
+
     if kinetics_window_mode == "Foot Plant to Ball Release View":
         kinetics_median_fp_frame = int(np.median(fp_event_frames)) if fp_event_frames else None
         kinetics_window_start = kinetics_median_fp_frame - 25 if kinetics_median_fp_frame is not None else window_start
@@ -11808,6 +11815,7 @@ with tab_kinetics:
 
     def build_kinetics_figure(metrics):
         kinetics_fig = go.Figure()
+        kinetics_legend_keys = set()
         for metric in metrics:
             metric_data = kinetics_data_by_metric.get(metric, {})
             grouped_curves = {}
@@ -11836,11 +11844,15 @@ with tab_kinetics:
                 }
 
                 if kinetics_display_mode == "Individual Throws":
+                    trace_dash = kinetics_date_dash_map.get(date, "solid")
                     kinetics_fig.add_trace(go.Scatter(
                         x=normalized_frames,
                         y=normalized_values,
                         mode="lines",
-                        line=dict(color=SHOULDER_KINETICS_COLOR_MAP[metric]),
+                        line=dict(
+                            color=SHOULDER_KINETICS_COLOR_MAP[metric],
+                            dash=trace_dash,
+                        ),
                         name=f"{metric} | {date} | Pitch {take_order[take_id]}",
                         customdata=[[metric, date, take_order[take_id], take_velocity[take_id]]] * len(normalized_frames),
                         hovertemplate=(
@@ -11851,11 +11863,29 @@ with tab_kinetics:
                         ),
                         showlegend=False,
                     ))
+                    legend_key = (metric, date)
+                    if legend_key not in kinetics_legend_keys:
+                        kinetics_fig.add_trace(go.Scatter(
+                            x=[None],
+                            y=[None],
+                            mode="lines",
+                            line=dict(
+                                color=SHOULDER_KINETICS_COLOR_MAP[metric],
+                                dash=trace_dash,
+                                width=4,
+                            ),
+                            name=f"{metric} | {date}",
+                            hoverinfo="skip",
+                            showlegend=True,
+                        ))
+                        kinetics_legend_keys.add(legend_key)
 
             if kinetics_display_mode == "Grouped":
                 for group_key, curves in grouped_curves.items():
                     x_values, y_values, q1_values, q3_values = aggregate_curves(curves, "Mean")
                     group_name = " | ".join(str(value) for value in group_key) if isinstance(group_key, tuple) else str(group_key)
+                    group_date = group_key[-1] if isinstance(group_key, tuple) else group_key
+                    group_dash = kinetics_date_dash_map.get(group_date, "solid")
                     if show_kinetics_signal_bands:
                         kinetics_fig.add_trace(go.Scatter(
                             x=x_values + x_values[::-1],
@@ -11870,7 +11900,11 @@ with tab_kinetics:
                         x=x_values,
                         y=y_values,
                         mode="lines",
-                        line=dict(color=SHOULDER_KINETICS_COLOR_MAP[metric], width=4),
+                        line=dict(
+                            color=SHOULDER_KINETICS_COLOR_MAP[metric],
+                            dash=group_dash,
+                            width=4,
+                        ),
                         name=f"{metric} | {group_name}",
                         hovertemplate=(
                             f"{group_name}<br>{metric}: %{{y:.1f}}"
@@ -11879,8 +11913,16 @@ with tab_kinetics:
                         ),
                     ))
 
+        kinetics_median_pkh_frame = (
+            int(np.median(knee_event_frames))
+            if mound_only_sidebar and knee_event_frames else None
+        )
         event_specs = [
-            (knee_event_frames, "Knee", "gold"),
+            (
+                knee_event_frames,
+                "PKH" if kinetics_median_pkh_frame is not None else "Knee",
+                "gold",
+            ),
             (fp_event_frames, "FP", "green"),
             (mer_event_frames, "MER", "red"),
             ([0], "BR", "blue"),
@@ -11893,7 +11935,23 @@ with tab_kinetics:
                 event_time = rel_frame_to_ms(int(np.median(event_frames)))
             else:
                 event_time = 0
-            kinetics_fig.add_vline(x=event_time, line_width=3, line_dash="dash", line_color=event_color)
+            kinetics_fig.add_vline(
+                x=event_time,
+                line_width=3,
+                line_dash="dash",
+                line_color=event_color,
+                opacity=0.9,
+            )
+            kinetics_fig.add_annotation(
+                x=event_time,
+                y=1.055,
+                xref="x",
+                yref="paper",
+                text=event_label,
+                showarrow=False,
+                font=dict(color=event_color, size=14),
+                align="center",
+            )
 
         kinetics_fig.update_layout(
             xaxis_title="Time Relative to Ball Release (ms)",
