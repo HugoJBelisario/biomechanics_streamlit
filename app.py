@@ -6307,7 +6307,7 @@ ENERGY_FLOW_METRIC_OPTIONS = [
     *TRUNK_SHOULDER_ENERGY_FLOW_COMPONENT_CONFIG,
     *[
         metric for metric, (body_region, *_rest) in PELVIS_TORSO_POWER_COMPONENT_CONFIG.items()
-        if body_region == "Torso"
+        if body_region == "Torso" and metric != "Torso Z Energy Flow"
     ],
     *[
         metric for metric, (body_region, *_rest) in PELVIS_TORSO_POWER_COMPONENT_CONFIG.items()
@@ -6340,8 +6340,8 @@ SHOULDER_KINETICS_COLOR_MAP = {
 }
 
 ELBOW_KINETICS_METRICS = [
-    "Rotational Force",
-    "Rotational Torque",
+    "Elbow Rotational Force",
+    "Elbow Rotational Torque",
 ]
 
 ARM_TRUNK_COMPONENT_TORQUE_METRICS = [
@@ -6351,7 +6351,11 @@ ARM_TRUNK_COMPONENT_TORQUE_METRICS = [
 
 PELVIS_TORSO_TORQUE_METRICS = [
     metric for metric in PELVIS_TORSO_COMPONENT_METRIC_MAP
-    if metric.startswith("Torso ") and metric.endswith(" Torque")
+    if (
+        metric.startswith("Torso ")
+        and metric.endswith(" Torque")
+        and metric != "Torso Z Torque"
+    )
 ] + [
     metric for metric in PELVIS_TORSO_COMPONENT_METRIC_MAP
     if metric.startswith("Pelvis ") and metric.endswith(" Torque")
@@ -6364,10 +6368,15 @@ KINETICS_METRICS = [
     *PELVIS_TORSO_TORQUE_METRICS,
 ]
 
+KINETICS_METRIC_RENAMES = {
+    "Rotational Force": "Elbow Rotational Force",
+    "Rotational Torque": "Elbow Rotational Torque",
+}
+
 KINETICS_COLOR_MAP = {
     **SHOULDER_KINETICS_COLOR_MAP,
-    "Rotational Force": "#22C55E",
-    "Rotational Torque": "#A855F7",
+    "Elbow Rotational Force": "#22C55E",
+    "Elbow Rotational Torque": "#A855F7",
     **{
         metric: ENERGY_COMPONENT_COLOR_MAP[metric]
         for metric in ARM_TRUNK_COMPONENT_TORQUE_METRICS
@@ -6382,14 +6391,14 @@ ENERGY_TORQUE_METRICS = {
     "Shoulder Flexion/Extension Torque",
     "Shoulder Horizontal Abduction/Adduction Torque",
     "Shoulder Internal/External Rotation Torque",
-    "Rotational Torque",
+    "Elbow Rotational Torque",
     *{metric for metric in ENERGY_COMPONENT_METRIC_MAP if metric.endswith(" Torque")},
     *{metric for metric in PELVIS_TORSO_COMPONENT_METRIC_MAP if metric.endswith(" Torque")},
     *{metric for metric in NEW_TRUNK_PELVIS_KINETICS_METRICS if "_TORQUE_" in metric},
 }
 
 ENERGY_FORCE_METRICS = {
-    "Rotational Force",
+    "Elbow Rotational Force",
 }
 
 ENERGY_ANGULAR_VELOCITY_METRICS = {
@@ -6432,8 +6441,8 @@ ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS = {
     "Shoulder Flexion/Extension Torque": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
     "Shoulder Horizontal Abduction/Adduction Torque": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
     "Shoulder Internal/External Rotation Torque": {"L": "LT_SHOULDER_LAR_MMT", "R": "RT_SHOULDER_RAR_MMT"},
-    "Rotational Force": {"L": "LT_ELBOW_FORCE", "R": "RT_ELBOW_FORCE"},
-    "Rotational Torque": {"L": "LT_ELBOW_MMT", "R": "RT_ELBOW_MMT"},
+    "Elbow Rotational Force": {"L": "LT_ELBOW_FORCE", "R": "RT_ELBOW_FORCE"},
+    "Elbow Rotational Torque": {"L": "LT_ELBOW_MMT", "R": "RT_ELBOW_MMT"},
 }
 
 ENERGY_METRIC_FIXED_SEGMENTS = {
@@ -11764,6 +11773,18 @@ with tab_kinetics:
     with kinetics_second_spacer:
         st.markdown("")
 
+    for selection_key in (
+        "kinetics_metrics_single",
+        "kinetics_left_metrics",
+        "kinetics_right_metrics",
+    ):
+        if selection_key in st.session_state:
+            st.session_state[selection_key] = list(dict.fromkeys(
+                KINETICS_METRIC_RENAMES.get(metric, metric)
+                for metric in st.session_state[selection_key]
+                if KINETICS_METRIC_RENAMES.get(metric, metric) in KINETICS_METRICS
+            ))
+
     kinetics_metric_groups = []
     if kinetics_view_mode == "Comparison":
         kinetics_left_col, kinetics_right_col = st.columns(2)
@@ -11832,10 +11853,10 @@ with tab_kinetics:
             elif metric == "Shoulder Internal/External Rotation Torque":
                 segment_name = "RT_SHOULDER_RAR_MMT" if hand == "R" else "LT_SHOULDER_LAR_MMT"
                 component = "z"
-            elif metric == "Rotational Force":
+            elif metric == "Elbow Rotational Force":
                 segment_name = "RT_ELBOW_FORCE" if hand == "R" else "LT_ELBOW_FORCE"
                 component = "z"
-            elif metric == "Rotational Torque":
+            elif metric == "Elbow Rotational Torque":
                 segment_name = "RT_ELBOW_MMT" if hand == "R" else "LT_ELBOW_MMT"
                 component = "z"
             else:
