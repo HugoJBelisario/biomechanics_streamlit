@@ -6165,15 +6165,33 @@ NEW_TRUNK_PELVIS_JCS_COLOR_MAP = {
 }
 
 PELVIS_TORSO_POWER_COMPONENT_CONFIG = {
-    "Pelvis Flexion/Extension Energy Flow": ("Pelvis", "Flexion/Extension", "RPV_DIST", "FLEX"),
-    "Pelvis Side Bending Energy Flow": ("Pelvis", "Side Bending", "RPV_DIST", "SIDE"),
-    "Pelvis Rotational Energy Flow": ("Pelvis", "Rotational", "RPV_DIST", "ROT"),
-    "Torso Flexion/Extension Energy Flow": ("Torso", "Flexion/Extension", "RTA_PROX", "FLEX"),
-    "Torso Side Bending Energy Flow": ("Torso", "Side Bending", "RTA_PROX", "SIDE"),
+    "Pelvis Flexion Power": ("Pelvis", "Flexion", "RPV_DIST", "FLEX"),
+    "Pelvis Lateral Flexion Power": ("Pelvis", "Lateral Flexion", "RPV_DIST", "SIDE"),
+    "Pelvis Rotation Power": ("Pelvis", "Rotation", "RPV_DIST", "ROT"),
+    "Torso-Pelvis Flexion/Extension Energy Flow": ("Torso-Pelvis", "Flexion/Extension", "RTA_PROX", "FLEX"),
+    "Torso-Pelvis Lateral Flexion Energy Flow": ("Torso-Pelvis", "Lateral Flexion", "RTA_PROX", "SIDE"),
     "Torso Rotational Energy Flow": ("Torso", "Rotational", "RTA_PROX", "ROT"),
     "Torso X Energy Flow": ("Torso", "X", "RTA_PROX", "X"),
     "Torso Y Energy Flow": ("Torso", "Y", "RTA_PROX", "Y"),
     "Torso Z Energy Flow": ("Torso", "Z", "RTA_PROX", "Z"),
+}
+
+PELVIS_COMPONENT_LABELS_BY_AXIS = {
+    "FLEX": (
+        "Pelvis Reaction Torque — Flexion",
+        "Pelvis Flexion Velocity",
+        "Pelvis Flexion Acceleration",
+    ),
+    "SIDE": (
+        "Pelvis Reaction Torque — Lateral Flexion",
+        "Pelvis Lateral Flexion Velocity",
+        "Pelvis Lateral Flexion Acceleration",
+    ),
+    "ROT": (
+        "Pelvis Reaction Torque — Rotation",
+        "Pelvis Rotation Velocity",
+        "Pelvis Rotation Acceleration",
+    ),
 }
 
 PELVIS_TORSO_POWER_METRIC_MAP = {
@@ -6189,10 +6207,18 @@ PELVIS_TORSO_COMPONENT_METRIC_MAP = {
     )
     for body_region, display_component, segment_name, category_component
     in PELVIS_TORSO_POWER_COMPONENT_CONFIG.values()
+    if body_region != "Pelvis"
     for display_kind, category_kind in (
         ("Torque", "TORQUE"),
         ("Angular Velocity", "ANGVEL"),
         ("Angular Acceleration", "ANGACCEL"),
+    )
+} | {
+    display_label: ("RPV_DIST", f"JCS_{category_kind}_{category_component}")
+    for category_component, display_labels in PELVIS_COMPONENT_LABELS_BY_AXIS.items()
+    for display_label, category_kind in zip(
+        display_labels,
+        ("TORQUE", "ANGVEL", "ANGACCEL"),
     )
 }
 
@@ -6251,11 +6277,15 @@ ENERGY_FLOW_COMPONENT_OPTIONS_BY_PRIMARY = {
         for primary_metric, (display_component, _category_component) in TRUNK_SHOULDER_ENERGY_FLOW_COMPONENT_CONFIG.items()
     },
     **{
-        primary_metric: [
-            f"{body_region} {display_component} Torque",
-            f"{body_region} {display_component} Angular Velocity",
-            f"{body_region} {display_component} Angular Acceleration",
-        ]
+        primary_metric: (
+            list(PELVIS_COMPONENT_LABELS_BY_AXIS[_category_component])
+            if body_region == "Pelvis" else
+            [
+                f"{body_region} {display_component} Torque",
+                f"{body_region} {display_component} Angular Velocity",
+                f"{body_region} {display_component} Angular Acceleration",
+            ]
+        )
         for primary_metric, (body_region, display_component, _segment_name, _category_component)
         in PELVIS_TORSO_POWER_COMPONENT_CONFIG.items()
     },
@@ -6311,6 +6341,10 @@ ENERGY_FLOW_METRIC_OPTIONS = [
     ],
     *[
         metric for metric, (body_region, *_rest) in PELVIS_TORSO_POWER_COMPONENT_CONFIG.items()
+        if body_region == "Torso-Pelvis"
+    ],
+    *[
+        metric for metric, (body_region, *_rest) in PELVIS_TORSO_POWER_COMPONENT_CONFIG.items()
         if body_region == "Pelvis"
     ],
     "Trunk-Shoulder Energy Flow",
@@ -6320,6 +6354,26 @@ ENERGY_FLOW_METRIC_OPTIONS = [
 ENERGY_METRIC_RENAMES = {
     "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)": "Trunk-Shoulder Energy Flow",
     "Arm Energy Flow (LAR_PROX | RAR_PROX)": "Arm Energy Flow",
+    "Torso Flexion/Extension Energy Flow": "Torso-Pelvis Flexion/Extension Energy Flow",
+    "Torso Side Bending Energy Flow": "Torso-Pelvis Lateral Flexion Energy Flow",
+    "Torso Flexion/Extension Torque": "Torso-Pelvis Flexion/Extension Torque",
+    "Torso Flexion/Extension Angular Velocity": "Torso-Pelvis Flexion/Extension Angular Velocity",
+    "Torso Flexion/Extension Angular Acceleration": "Torso-Pelvis Flexion/Extension Angular Acceleration",
+    "Torso Side Bending Torque": "Torso-Pelvis Lateral Flexion Torque",
+    "Torso Side Bending Angular Velocity": "Torso-Pelvis Lateral Flexion Angular Velocity",
+    "Torso Side Bending Angular Acceleration": "Torso-Pelvis Lateral Flexion Angular Acceleration",
+    "Pelvis Flexion/Extension Energy Flow": "Pelvis Flexion Power",
+    "Pelvis Side Bending Energy Flow": "Pelvis Lateral Flexion Power",
+    "Pelvis Rotational Energy Flow": "Pelvis Rotation Power",
+    "Pelvis Flexion/Extension Torque": "Pelvis Reaction Torque — Flexion",
+    "Pelvis Flexion/Extension Angular Velocity": "Pelvis Flexion Velocity",
+    "Pelvis Flexion/Extension Angular Acceleration": "Pelvis Flexion Acceleration",
+    "Pelvis Side Bending Torque": "Pelvis Reaction Torque — Lateral Flexion",
+    "Pelvis Side Bending Angular Velocity": "Pelvis Lateral Flexion Velocity",
+    "Pelvis Side Bending Angular Acceleration": "Pelvis Lateral Flexion Acceleration",
+    "Pelvis Rotational Torque": "Pelvis Reaction Torque — Rotation",
+    "Pelvis Rotational Angular Velocity": "Pelvis Rotation Velocity",
+    "Pelvis Rotational Angular Acceleration": "Pelvis Rotation Acceleration",
 }
 
 ENERGY_SEGMENT_POWER_METRICS = {
@@ -6358,7 +6412,11 @@ PELVIS_TORSO_TORQUE_METRICS = [
     )
 ] + [
     metric for metric in PELVIS_TORSO_COMPONENT_METRIC_MAP
-    if metric.startswith("Pelvis ") and metric.endswith(" Torque")
+    if metric.startswith("Torso-Pelvis ") and metric.endswith(" Torque")
+] + [
+    metric
+    for metric, (_segment_name, category_name) in PELVIS_TORSO_COMPONENT_METRIC_MAP.items()
+    if category_name.startswith("JCS_TORQUE_") and metric.startswith("Pelvis ")
 ]
 
 KINETICS_METRICS = [
@@ -6371,6 +6429,11 @@ KINETICS_METRICS = [
 KINETICS_METRIC_RENAMES = {
     "Rotational Force": "Elbow Rotational Force",
     "Rotational Torque": "Elbow Rotational Torque",
+    "Torso Flexion/Extension Torque": "Torso-Pelvis Flexion/Extension Torque",
+    "Torso Side Bending Torque": "Torso-Pelvis Lateral Flexion Torque",
+    "Pelvis Flexion/Extension Torque": "Pelvis Reaction Torque — Flexion",
+    "Pelvis Side Bending Torque": "Pelvis Reaction Torque — Lateral Flexion",
+    "Pelvis Rotational Torque": "Pelvis Reaction Torque — Rotation",
 }
 
 KINETICS_COLOR_MAP = {
@@ -6393,7 +6456,11 @@ ENERGY_TORQUE_METRICS = {
     "Shoulder Internal/External Rotation Torque",
     "Elbow Rotational Torque",
     *{metric for metric in ENERGY_COMPONENT_METRIC_MAP if metric.endswith(" Torque")},
-    *{metric for metric in PELVIS_TORSO_COMPONENT_METRIC_MAP if metric.endswith(" Torque")},
+    *{
+        metric
+        for metric, (_segment_name, category_name) in PELVIS_TORSO_COMPONENT_METRIC_MAP.items()
+        if category_name.startswith("JCS_TORQUE_")
+    },
     *{metric for metric in NEW_TRUNK_PELVIS_KINETICS_METRICS if "_TORQUE_" in metric},
 }
 
@@ -6403,13 +6470,21 @@ ENERGY_FORCE_METRICS = {
 
 ENERGY_ANGULAR_VELOCITY_METRICS = {
     *{metric for metric in ENERGY_COMPONENT_METRIC_MAP if metric.endswith(" Angular Velocity")},
-    *{metric for metric in PELVIS_TORSO_COMPONENT_METRIC_MAP if metric.endswith(" Angular Velocity")},
+    *{
+        metric
+        for metric, (_segment_name, category_name) in PELVIS_TORSO_COMPONENT_METRIC_MAP.items()
+        if category_name.startswith("JCS_ANGVEL_")
+    },
     *{metric for metric in NEW_TRUNK_PELVIS_KINETICS_METRICS if "_ANGVEL_" in metric},
 }
 
 ENERGY_ANGULAR_ACCELERATION_METRICS = {
     *{metric for metric in ENERGY_COMPONENT_METRIC_MAP if metric.endswith(" Angular Acceleration")},
-    *{metric for metric in PELVIS_TORSO_COMPONENT_METRIC_MAP if metric.endswith(" Angular Acceleration")},
+    *{
+        metric
+        for metric, (_segment_name, category_name) in PELVIS_TORSO_COMPONENT_METRIC_MAP.items()
+        if category_name.startswith("JCS_ANGACCEL_")
+    },
     *{metric for metric in NEW_TRUNK_PELVIS_KINETICS_METRICS if "_ANGACCEL_" in metric},
 }
 
@@ -6422,6 +6497,13 @@ ENERGY_FLOW_POWER_METRICS = {
     "Arm Horizontal Abd/Add Energy Flow",
     *NEW_TRUNK_PELVIS_ENERGY_METRICS,
     *PELVIS_TORSO_POWER_METRIC_MAP,
+}
+
+PELVIS_POWER_METRICS = {
+    metric
+    for metric, (body_region, _display_component, _segment_name, _category_component)
+    in PELVIS_TORSO_POWER_COMPONENT_CONFIG.items()
+    if body_region == "Pelvis"
 }
 
 ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS = {
@@ -6498,6 +6580,9 @@ def get_energy_yaxis_title(selected_metrics):
         elif metric in ENERGY_ANGULAR_ACCELERATION_METRICS:
             units.add("deg/s²")
             metric_types.add("Angular Acceleration")
+        elif metric in PELVIS_POWER_METRICS:
+            units.add("W")
+            metric_types.add("Power")
         elif metric in ENERGY_SEGMENT_POWER_METRICS:
             units.add("W")
             metric_types.add("Energy Flow")
@@ -6517,9 +6602,11 @@ def get_energy_yaxis_title(selected_metrics):
     if units == {"deg/s²"}:
         return "Angular Acceleration (deg/s²)"
     if units == {"W"}:
+        if metric_types == {"Power"}:
+            return "Power (W)"
         if metric_types == {"Energy Flow"}:
             return "Energy Flow (W)"
-        return "Energy Flow (W)"
+        return "Energy Flow / Power (W)"
     unit_order = [unit for unit in ("W", "N", "Nm", "deg/s", "deg/s²") if unit in units]
     return f"Energy Flow / Kinetics ({' / '.join(unit_order)})"
 
@@ -12256,10 +12343,11 @@ with tab_energy:
         ))
         right_component_key = "energy_comparison_right_components_v1"
         if right_component_key in st.session_state:
-            st.session_state[right_component_key] = [
-                metric for metric in st.session_state[right_component_key]
-                if metric in right_energy_metric_options
-            ]
+            st.session_state[right_component_key] = list(dict.fromkeys(
+                ENERGY_METRIC_RENAMES.get(metric, metric)
+                for metric in st.session_state[right_component_key]
+                if ENERGY_METRIC_RENAMES.get(metric, metric) in right_energy_metric_options
+            ))
         with energy_right_select_col:
             if right_energy_metric_options:
                 right_energy_metrics = st.multiselect(
