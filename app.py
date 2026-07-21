@@ -6165,15 +6165,15 @@ NEW_TRUNK_PELVIS_JCS_COLOR_MAP = {
 }
 
 PELVIS_TORSO_POWER_COMPONENT_CONFIG = {
-    "Pelvis Flexion/Extension Segment Power": ("Pelvis", "Flexion/Extension", "RPV_DIST", "FLEX"),
-    "Pelvis Side Bending Segment Power": ("Pelvis", "Side Bending", "RPV_DIST", "SIDE"),
-    "Pelvis Rotational Segment Power": ("Pelvis", "Rotational", "RPV_DIST", "ROT"),
-    "Torso Flexion/Extension Segment Power": ("Torso", "Flexion/Extension", "RTA_PROX", "FLEX"),
-    "Torso Side Bending Segment Power": ("Torso", "Side Bending", "RTA_PROX", "SIDE"),
-    "Torso Rotational Segment Power": ("Torso", "Rotational", "RTA_PROX", "ROT"),
-    "Torso X Segment Power": ("Torso", "X", "RTA_PROX", "X"),
-    "Torso Y Segment Power": ("Torso", "Y", "RTA_PROX", "Y"),
-    "Torso Z Segment Power": ("Torso", "Z", "RTA_PROX", "Z"),
+    "Pelvis Flexion/Extension Energy Flow": ("Pelvis", "Flexion/Extension", "RPV_DIST", "FLEX"),
+    "Pelvis Side Bending Energy Flow": ("Pelvis", "Side Bending", "RPV_DIST", "SIDE"),
+    "Pelvis Rotational Energy Flow": ("Pelvis", "Rotational", "RPV_DIST", "ROT"),
+    "Torso Flexion/Extension Energy Flow": ("Torso", "Flexion/Extension", "RTA_PROX", "FLEX"),
+    "Torso Side Bending Energy Flow": ("Torso", "Side Bending", "RTA_PROX", "SIDE"),
+    "Torso Rotational Energy Flow": ("Torso", "Rotational", "RTA_PROX", "ROT"),
+    "Torso X Energy Flow": ("Torso", "X", "RTA_PROX", "X"),
+    "Torso Y Energy Flow": ("Torso", "Y", "RTA_PROX", "Y"),
+    "Torso Z Energy Flow": ("Torso", "Z", "RTA_PROX", "Z"),
 }
 
 PELVIS_TORSO_POWER_METRIC_MAP = {
@@ -6302,11 +6302,29 @@ PELVIS_TORSO_COMPONENT_COLOR_MAP = {
     for index, metric in enumerate(PELVIS_TORSO_COMPONENT_METRIC_MAP)
 }
 
+ENERGY_FLOW_METRIC_OPTIONS = [
+    *ARM_ENERGY_FLOW_COMPONENT_CONFIG,
+    *TRUNK_SHOULDER_ENERGY_FLOW_COMPONENT_CONFIG,
+    *[
+        metric for metric, (body_region, *_rest) in PELVIS_TORSO_POWER_COMPONENT_CONFIG.items()
+        if body_region == "Torso"
+    ],
+    *[
+        metric for metric, (body_region, *_rest) in PELVIS_TORSO_POWER_COMPONENT_CONFIG.items()
+        if body_region == "Pelvis"
+    ],
+    "Trunk-Shoulder Energy Flow",
+    "Arm Energy Flow",
+]
+
+ENERGY_METRIC_RENAMES = {
+    "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)": "Trunk-Shoulder Energy Flow",
+    "Arm Energy Flow (LAR_PROX | RAR_PROX)": "Arm Energy Flow",
+}
+
 ENERGY_SEGMENT_POWER_METRICS = {
-    "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)",
-    "Arm Energy Flow (LAR_PROX | RAR_PROX)",
-    "Glove Side Trunk-Shoulder Energy Flow",
-    "Glove Arm Energy Flow",
+    "Trunk-Shoulder Energy Flow",
+    "Arm Energy Flow",
 }
 
 SHOULDER_KINETICS_METRICS = [
@@ -6321,18 +6339,57 @@ SHOULDER_KINETICS_COLOR_MAP = {
     "Shoulder Internal/External Rotation Torque": "#0EA5E9",
 }
 
+ELBOW_KINETICS_METRICS = [
+    "Rotational Force",
+    "Rotational Torque",
+]
+
+ARM_TRUNK_COMPONENT_TORQUE_METRICS = [
+    metric for metric in ENERGY_COMPONENT_METRIC_MAP
+    if metric.endswith(" Torque")
+]
+
+PELVIS_TORSO_TORQUE_METRICS = [
+    metric for metric in PELVIS_TORSO_COMPONENT_METRIC_MAP
+    if metric.startswith("Torso ") and metric.endswith(" Torque")
+] + [
+    metric for metric in PELVIS_TORSO_COMPONENT_METRIC_MAP
+    if metric.startswith("Pelvis ") and metric.endswith(" Torque")
+]
+
+KINETICS_METRICS = [
+    *SHOULDER_KINETICS_METRICS,
+    *ELBOW_KINETICS_METRICS,
+    *ARM_TRUNK_COMPONENT_TORQUE_METRICS,
+    *PELVIS_TORSO_TORQUE_METRICS,
+]
+
+KINETICS_COLOR_MAP = {
+    **SHOULDER_KINETICS_COLOR_MAP,
+    "Rotational Force": "#22C55E",
+    "Rotational Torque": "#A855F7",
+    **{
+        metric: ENERGY_COMPONENT_COLOR_MAP[metric]
+        for metric in ARM_TRUNK_COMPONENT_TORQUE_METRICS
+    },
+    **{
+        metric: PELVIS_TORSO_COMPONENT_COLOR_MAP[metric]
+        for metric in PELVIS_TORSO_TORQUE_METRICS
+    },
+}
+
 ENERGY_TORQUE_METRICS = {
     "Shoulder Flexion/Extension Torque",
     "Shoulder Horizontal Abduction/Adduction Torque",
     "Shoulder Internal/External Rotation Torque",
-    "Elbow Torque (Z)",
+    "Rotational Torque",
     *{metric for metric in ENERGY_COMPONENT_METRIC_MAP if metric.endswith(" Torque")},
     *{metric for metric in PELVIS_TORSO_COMPONENT_METRIC_MAP if metric.endswith(" Torque")},
     *{metric for metric in NEW_TRUNK_PELVIS_KINETICS_METRICS if "_TORQUE_" in metric},
 }
 
 ENERGY_FORCE_METRICS = {
-    "Elbow Force (Z)",
+    "Rotational Force",
 }
 
 ENERGY_ANGULAR_VELOCITY_METRICS = {
@@ -6359,10 +6416,8 @@ ENERGY_FLOW_POWER_METRICS = {
 }
 
 ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS = {
-    "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)": {"L": "RTA_DIST_L", "R": "RTA_DIST_R"},
-    "Arm Energy Flow (LAR_PROX | RAR_PROX)": {"L": "LAR_PROX", "R": "RAR_PROX"},
-    "Glove Side Trunk-Shoulder Energy Flow": {"L": "RTA_DIST_R", "R": "RTA_DIST_L"},
-    "Glove Arm Energy Flow": {"L": "RAR_PROX", "R": "LAR_PROX"},
+    "Trunk-Shoulder Energy Flow": {"L": "RTA_DIST_L", "R": "RTA_DIST_R"},
+    "Arm Energy Flow": {"L": "LAR_PROX", "R": "RAR_PROX"},
     "Trunk-Shoulder Rotational Energy Flow": {"L": "RTA_LAR", "R": "RTA_RAR"},
     "Trunk-Shoulder Elevation/Depression Energy Flow": {"L": "RTA_LAR", "R": "RTA_RAR"},
     "Trunk-Shoulder Horizontal Abd/Add Energy Flow": {"L": "RTA_LAR", "R": "RTA_RAR"},
@@ -6377,8 +6432,8 @@ ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS = {
     "Shoulder Flexion/Extension Torque": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
     "Shoulder Horizontal Abduction/Adduction Torque": {"L": "LT_SHOULDER_RTA_MMT", "R": "RT_SHOULDER_RTA_MMT"},
     "Shoulder Internal/External Rotation Torque": {"L": "LT_SHOULDER_LAR_MMT", "R": "RT_SHOULDER_RAR_MMT"},
-    "Elbow Force (Z)": {"L": "LT_ELBOW_FORCE", "R": "RT_ELBOW_FORCE"},
-    "Elbow Torque (Z)": {"L": "LT_ELBOW_MMT", "R": "RT_ELBOW_MMT"},
+    "Rotational Force": {"L": "LT_ELBOW_FORCE", "R": "RT_ELBOW_FORCE"},
+    "Rotational Torque": {"L": "LT_ELBOW_MMT", "R": "RT_ELBOW_MMT"},
 }
 
 ENERGY_METRIC_FIXED_SEGMENTS = {
@@ -6417,7 +6472,7 @@ def get_group_energy_metric_segment_label(metric, take_ids_in_group, handedness_
 def get_energy_yaxis_title(selected_metrics):
     selected_metrics = [metric for metric in selected_metrics if metric]
     if not selected_metrics:
-        return "Energy Flow / Segment Power (W)"
+        return "Energy Flow (W)"
 
     units = set()
     metric_types = set()
@@ -6436,7 +6491,7 @@ def get_energy_yaxis_title(selected_metrics):
             metric_types.add("Angular Acceleration")
         elif metric in ENERGY_SEGMENT_POWER_METRICS:
             units.add("W")
-            metric_types.add("Segment Power")
+            metric_types.add("Energy Flow")
         elif metric in ENERGY_FLOW_POWER_METRICS:
             units.add("W")
             metric_types.add("Energy Flow")
@@ -6455,11 +6510,9 @@ def get_energy_yaxis_title(selected_metrics):
     if units == {"W"}:
         if metric_types == {"Energy Flow"}:
             return "Energy Flow (W)"
-        if metric_types == {"Segment Power"}:
-            return "Segment Power (W)"
-        return "Energy Flow / Segment Power (W)"
+        return "Energy Flow (W)"
     unit_order = [unit for unit in ("W", "N", "Nm", "deg/s", "deg/s²") if unit in units]
-    return f"Energy Flow / Segment Power / Kinetics ({' / '.join(unit_order)})"
+    return f"Energy Flow / Kinetics ({' / '.join(unit_order)})"
 
 @st.cache_data(ttl=300)
 def get_energy_flow_from_category_segment(take_ids, category_name, segment_name, component="x"):
@@ -9996,29 +10049,18 @@ with tab_joint:
     }
 
     energy_definitions = {
-        "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)": {
+        "Trunk-Shoulder Energy Flow": {
             "definition": (
                 "Measures how the trunk loads and then transfers energy to the throwing arm. "
                 "Negative = the trunk is absorbing energy (loading), positive = the trunk is "
                 "sending energy to the arm (throwing)."
             ),
         },
-        "Arm Energy Flow (LAR_PROX | RAR_PROX)": {
+        "Arm Energy Flow": {
             "definition": (
                 "Measures how the throwing arm receives and responds to energy from the trunk "
                 "at the shoulder connection. Positive values -> the arm is loading "
                 "(receiving energy). Negative values -> the arm is being accelerated by the trunk."
-            ),
-        },
-        "Glove Side Trunk-Shoulder Energy Flow": {
-            "definition": (
-                "Measures how the trunk loads and then transfers energy to the glove-side arm."
-            ),
-        },
-        "Glove Arm Energy Flow": {
-            "definition": (
-                "Measures how the glove-side arm receives and responds to energy from the trunk "
-                "at the shoulder connection."
             ),
         },
         "Trunk-Shoulder Elevation/Depression Energy Flow": {
@@ -10154,25 +10196,18 @@ with tab_joint:
                     key="joint_energy_show_signal_iqr_band_compare",
                     help="Shows the middle 50% range around each grouped mean line.",
                 )
+            compare_energy_selection_key = "joint_energy_metrics_compare"
+            if compare_energy_selection_key in st.session_state:
+                st.session_state[compare_energy_selection_key] = list(dict.fromkeys(
+                    ENERGY_METRIC_RENAMES.get(metric, metric)
+                    for metric in st.session_state[compare_energy_selection_key]
+                    if ENERGY_METRIC_RENAMES.get(metric, metric) in ENERGY_FLOW_METRIC_OPTIONS
+                ))
             compare_energy_metrics = st.multiselect(
                 "Select Energy Flow Metrics",
-                [
-                    "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)",
-                    "Arm Energy Flow (LAR_PROX | RAR_PROX)",
-                    "Glove Side Trunk-Shoulder Energy Flow",
-                    "Glove Arm Energy Flow",
-                    "Trunk-Shoulder Rotational Energy Flow",
-                    "Trunk-Shoulder Elevation/Depression Energy Flow",
-                    "Trunk-Shoulder Horizontal Abd/Add Energy Flow",
-                    "Arm Rotational Energy Flow",
-                    "Arm Elevation/Depression Energy Flow",
-                    "Arm Horizontal Abd/Add Energy Flow",
-                    "Elbow Force (Z)",
-                    "Elbow Torque (Z)",
-                    *NEW_TRUNK_PELVIS_JCS_METRICS,
-                ],
+                ENERGY_FLOW_METRIC_OPTIONS,
                 default=[],
-                key="joint_energy_metrics_compare"
+                key=compare_energy_selection_key,
             )
     else:
         display_col, options_col, spacer_col = st.columns([1.45, 1.75, 2.2])
@@ -10967,10 +11002,8 @@ with tab_joint:
                 st.info("No takes available for Energy Flow.")
             else:
                 energy_color_map = {
-                    "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)": "#4C1D95",
-                    "Arm Energy Flow (LAR_PROX | RAR_PROX)": "#7C2D12",
-                    "Glove Side Trunk-Shoulder Energy Flow": "#E11D48",
-                    "Glove Arm Energy Flow": "#14B8A6",
+                    "Trunk-Shoulder Energy Flow": "#4C1D95",
+                    "Arm Energy Flow": "#7C2D12",
                     "Trunk-Shoulder Rotational Energy Flow": "#DC2626",
                     "Trunk-Shoulder Elevation/Depression Energy Flow": "#2563EB",
                     "Trunk-Shoulder Horizontal Abd/Add Energy Flow": "#16A34A",
@@ -10978,9 +11011,8 @@ with tab_joint:
                     "Arm Elevation/Depression Energy Flow": "#06B6D4",
                     **ENERGY_COMPONENT_COLOR_MAP,
                     "Arm Horizontal Abd/Add Energy Flow": "#9333EA",
-                    "Elbow Force (Z)": "#22C55E",
-                    "Elbow Torque (Z)": "#A855F7",
                     **NEW_TRUNK_PELVIS_JCS_COLOR_MAP,
+                    **PELVIS_TORSO_POWER_COLOR_MAP,
                 }
 
                 compare_energy_data_by_metric = {}
@@ -10993,14 +11025,10 @@ with tab_joint:
                     return merged
 
                 for metric in compare_energy_metrics:
-                    if metric == "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)":
+                    if metric == "Trunk-Shoulder Energy Flow":
                         compare_energy_data_by_metric[metric] = load_compare_energy_by_handedness(get_distal_arm_segment_power)
-                    elif metric == "Arm Energy Flow (LAR_PROX | RAR_PROX)":
+                    elif metric == "Arm Energy Flow":
                         compare_energy_data_by_metric[metric] = load_compare_energy_by_handedness(get_arm_proximal_energy_transfer)
-                    elif metric == "Glove Side Trunk-Shoulder Energy Flow":
-                        compare_energy_data_by_metric[metric] = load_compare_energy_by_handedness(get_glove_side_trunk_shoulder_energy_flow)
-                    elif metric == "Glove Arm Energy Flow":
-                        compare_energy_data_by_metric[metric] = load_compare_energy_by_handedness(get_glove_arm_energy_flow)
                     elif metric == "Trunk-Shoulder Rotational Energy Flow":
                         compare_energy_data_by_metric[metric] = load_compare_energy_by_handedness(get_trunk_shoulder_rot_energy_flow)
                     elif metric == "Trunk-Shoulder Elevation/Depression Energy Flow":
@@ -11026,18 +11054,14 @@ with tab_joint:
                                 take_ids_by_handedness["L"], category_name, component_segments["L"], component="x"
                             ))
                         compare_energy_data_by_metric[metric] = component_data
-                    elif metric in {"Elbow Force (Z)", "Elbow Torque (Z)"}:
-                        segment_suffix = "FORCE" if metric == "Elbow Force (Z)" else "MMT"
-                        elbow_data = {}
-                        if take_ids_by_handedness.get("R"):
-                            elbow_data.update(get_energy_flow_from_category_segment(
-                                take_ids_by_handedness["R"], "ORIGINAL", f"RT_ELBOW_{segment_suffix}", component="z"
-                            ))
-                        if take_ids_by_handedness.get("L"):
-                            elbow_data.update(get_energy_flow_from_category_segment(
-                                take_ids_by_handedness["L"], "ORIGINAL", f"LT_ELBOW_{segment_suffix}", component="z"
-                            ))
-                        compare_energy_data_by_metric[metric] = elbow_data
+                    elif metric in PELVIS_TORSO_POWER_METRIC_MAP:
+                        segment_name, category_name = PELVIS_TORSO_POWER_METRIC_MAP[metric]
+                        compare_energy_data_by_metric[metric] = get_energy_flow_from_category_segment(
+                            take_ids,
+                            category_name,
+                            segment_name,
+                            component="x",
+                        )
                     elif metric in NEW_TRUNK_PELVIS_JCS_METRICS:
                         segment_name, category_name = NEW_TRUNK_PELVIS_JCS_METRIC_MAP[metric]
                         compare_energy_data_by_metric[metric] = get_energy_flow_from_category_segment(
@@ -11746,14 +11770,14 @@ with tab_kinetics:
         with kinetics_left_col:
             kinetics_left_metrics = st.multiselect(
                 "Select Left Plot Kinetics",
-                SHOULDER_KINETICS_METRICS,
+                KINETICS_METRICS,
                 default=[],
                 key="kinetics_left_metrics",
             )
         with kinetics_right_col:
             kinetics_right_metrics = st.multiselect(
                 "Select Right Plot Kinetics",
-                SHOULDER_KINETICS_METRICS,
+                KINETICS_METRICS,
                 default=[],
                 key="kinetics_right_metrics",
             )
@@ -11764,14 +11788,37 @@ with tab_kinetics:
         with kinetics_select_col:
             selected_kinetics_metrics = st.multiselect(
                 "Select Kinetics",
-                SHOULDER_KINETICS_METRICS,
+                KINETICS_METRICS,
                 default=[],
                 key="kinetics_metrics_single",
             )
         with kinetics_select_spacer:
             st.markdown("")
 
-    def load_shoulder_kinetics_metric(metric):
+    def load_kinetics_metric(metric):
+        if metric in PELVIS_TORSO_COMPONENT_METRIC_MAP:
+            segment_name, category_name = PELVIS_TORSO_COMPONENT_METRIC_MAP[metric]
+            return get_energy_flow_from_category_segment(
+                take_ids,
+                category_name,
+                segment_name,
+                component="x",
+            )
+
+        if metric in ENERGY_COMPONENT_METRIC_MAP:
+            category_name = ENERGY_COMPONENT_METRIC_MAP[metric]
+            component_segments = ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS[metric]
+            metric_data = {}
+            for hand, ids in take_ids_by_handedness.items():
+                if ids:
+                    metric_data.update(get_energy_flow_from_category_segment(
+                        ids,
+                        category_name,
+                        component_segments[hand],
+                        component="x",
+                    ))
+            return metric_data
+
         metric_data = {}
         for hand, ids in take_ids_by_handedness.items():
             if not ids:
@@ -11782,16 +11829,24 @@ with tab_kinetics:
             elif metric == "Shoulder Horizontal Abduction/Adduction Torque":
                 segment_name = "RT_SHOULDER_RTA_MMT" if hand == "R" else "LT_SHOULDER_RTA_MMT"
                 component = "z"
-            else:
+            elif metric == "Shoulder Internal/External Rotation Torque":
                 segment_name = "RT_SHOULDER_RAR_MMT" if hand == "R" else "LT_SHOULDER_LAR_MMT"
                 component = "z"
+            elif metric == "Rotational Force":
+                segment_name = "RT_ELBOW_FORCE" if hand == "R" else "LT_ELBOW_FORCE"
+                component = "z"
+            elif metric == "Rotational Torque":
+                segment_name = "RT_ELBOW_MMT" if hand == "R" else "LT_ELBOW_MMT"
+                component = "z"
+            else:
+                continue
             metric_data.update(get_energy_flow_from_category_segment(
                 ids, "ORIGINAL", segment_name, component=component
             ))
         return metric_data
 
     kinetics_data_by_metric = {
-        metric: load_shoulder_kinetics_metric(metric)
+        metric: load_kinetics_metric(metric)
         for metric in selected_kinetics_metrics
     }
     kinetics_data_by_metric = {metric: data for metric, data in kinetics_data_by_metric.items() if data}
@@ -11850,7 +11905,7 @@ with tab_kinetics:
                         y=normalized_values,
                         mode="lines",
                         line=dict(
-                            color=SHOULDER_KINETICS_COLOR_MAP[metric],
+                            color=KINETICS_COLOR_MAP[metric],
                             dash=trace_dash,
                         ),
                         name=f"{metric} | {date} | Pitch {take_order[take_id]}",
@@ -11870,7 +11925,7 @@ with tab_kinetics:
                             y=[None],
                             mode="lines",
                             line=dict(
-                                color=SHOULDER_KINETICS_COLOR_MAP[metric],
+                                color=KINETICS_COLOR_MAP[metric],
                                 dash=trace_dash,
                                 width=4,
                             ),
@@ -11891,7 +11946,7 @@ with tab_kinetics:
                             x=x_values + x_values[::-1],
                             y=q3_values + q1_values[::-1],
                             fill="toself",
-                            fillcolor=to_rgba(SHOULDER_KINETICS_COLOR_MAP[metric], alpha=0.25),
+                            fillcolor=to_rgba(KINETICS_COLOR_MAP[metric], alpha=0.25),
                             line=dict(width=0),
                             hoverinfo="skip",
                             showlegend=False,
@@ -11901,7 +11956,7 @@ with tab_kinetics:
                         y=y_values,
                         mode="lines",
                         line=dict(
-                            color=SHOULDER_KINETICS_COLOR_MAP[metric],
+                            color=KINETICS_COLOR_MAP[metric],
                             dash=group_dash,
                             width=4,
                         ),
@@ -11964,9 +12019,9 @@ with tab_kinetics:
         return kinetics_fig
 
     if not selected_kinetics_metrics:
-        st.info("Select at least one shoulder kinetics metric.")
+        st.info("Select at least one kinetics metric.")
     elif not kinetics_data_by_metric:
-        st.warning("No shoulder kinetics data found for the selected metrics.")
+        st.warning("No kinetics data found for the selected metrics.")
     elif kinetics_view_mode == "Comparison":
         kinetics_left_plot_col, kinetics_right_plot_col = st.columns(2)
         with kinetics_left_plot_col:
@@ -12133,21 +12188,35 @@ with tab_energy:
     with energy_window_spacer:
         st.markdown("")
 
-    energy_metric_options = [
-        "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)",
-        "Arm Energy Flow (LAR_PROX | RAR_PROX)",
-        "Glove Side Trunk-Shoulder Energy Flow",
-        "Glove Arm Energy Flow",
-        "Trunk-Shoulder Rotational Energy Flow",
-        "Trunk-Shoulder Elevation/Depression Energy Flow",
-        "Trunk-Shoulder Horizontal Abd/Add Energy Flow",
-        "Arm Rotational Energy Flow",
-        "Arm Elevation/Depression Energy Flow",
-        "Arm Horizontal Abd/Add Energy Flow",
-        "Elbow Force (Z)",
-        "Elbow Torque (Z)",
-        *PELVIS_TORSO_POWER_METRIC_MAP,
-    ]
+    energy_metric_options = ENERGY_FLOW_METRIC_OPTIONS
+
+    for selection_key in (
+        "energy_metrics_main_tab_single",
+        "energy_comparison_left_metrics",
+    ):
+        if selection_key in st.session_state:
+            st.session_state[selection_key] = list(dict.fromkeys(
+                ENERGY_METRIC_RENAMES.get(metric, metric)
+                for metric in st.session_state[selection_key]
+                if ENERGY_METRIC_RENAMES.get(metric, metric) in energy_metric_options
+            ))
+
+    previous_energy_view_mode = st.session_state.get(
+        "_previous_energy_view_mode",
+        energy_view_mode,
+    )
+    if previous_energy_view_mode != energy_view_mode:
+        if energy_view_mode == "Comparison":
+            single_metrics = st.session_state.get("energy_metrics_main_tab_single", [])
+            st.session_state["energy_comparison_left_metrics"] = [
+                metric for metric in single_metrics if metric in energy_metric_options
+            ]
+        else:
+            comparison_metrics = st.session_state.get("energy_comparison_left_metrics", [])
+            st.session_state["energy_metrics_main_tab_single"] = [
+                metric for metric in comparison_metrics if metric in energy_metric_options
+            ]
+    st.session_state["_previous_energy_view_mode"] = energy_view_mode
 
     comparison_energy_metric_groups = []
     if energy_view_mode == "Comparison":
@@ -12164,21 +12233,27 @@ with tab_energy:
             for primary_metric in left_energy_metrics
             for related_metric in ENERGY_FLOW_COMPONENT_OPTIONS_BY_PRIMARY.get(primary_metric, [])
         ))
+        right_component_key = "energy_comparison_right_components_v1"
+        if right_component_key in st.session_state:
+            st.session_state[right_component_key] = [
+                metric for metric in st.session_state[right_component_key]
+                if metric in right_energy_metric_options
+            ]
         with energy_right_select_col:
             if right_energy_metric_options:
                 right_energy_metrics = st.multiselect(
                     "Select Related Components",
                     right_energy_metric_options,
                     default=[],
-                    key="energy_comparison_right_components_v1",
+                    key=right_component_key,
                     help=(
                         "Choose torque, angular velocity, or angular acceleration for the selected "
-                        "arm, trunk-shoulder, pelvis, or torso power metric."
+                        "arm, trunk-shoulder, pelvis, or torso Energy Flow metric."
                     ),
                 )
             else:
                 right_energy_metrics = []
-                st.caption("Select a supported arm, trunk-shoulder, pelvis, or torso power metric to choose related components.")
+                st.caption("Select a supported arm, trunk-shoulder, pelvis, or torso Energy Flow metric to choose related components.")
         comparison_energy_metric_groups = [left_energy_metrics, right_energy_metrics]
         energy_metrics = list(dict.fromkeys(left_energy_metrics + right_energy_metrics))
     else:
@@ -12205,10 +12280,8 @@ with tab_energy:
 
     # --- Fixed color map for Energy Flow metrics (high-contrast palette) ---
     energy_color_map = {
-        "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)": "#4C1D95",  # deep indigo / purple
-        "Arm Energy Flow (LAR_PROX | RAR_PROX)": "#7C2D12",  # dark brown
-        "Glove Side Trunk-Shoulder Energy Flow": "#E11D48",
-        "Glove Arm Energy Flow": "#14B8A6",
+        "Trunk-Shoulder Energy Flow": "#4C1D95",  # deep indigo / purple
+        "Arm Energy Flow": "#7C2D12",  # dark brown
         "Trunk-Shoulder Rotational Energy Flow": "#DC2626",  # strong red
         "Trunk-Shoulder Elevation/Depression Energy Flow": "#2563EB",  # vivid blue
         "Trunk-Shoulder Horizontal Abd/Add Energy Flow": "#16A34A",     # strong green
@@ -12216,8 +12289,6 @@ with tab_energy:
         "Arm Elevation/Depression Energy Flow": "#06B6D4",  # cyan
         **ENERGY_COMPONENT_COLOR_MAP,
         "Arm Horizontal Abd/Add Energy Flow": "#9333EA",     # violet
-        "Elbow Force (Z)": "#22C55E",
-        "Elbow Torque (Z)": "#A855F7",
         **NEW_TRUNK_PELVIS_JCS_COLOR_MAP,
         **PELVIS_TORSO_POWER_COLOR_MAP,
         **PELVIS_TORSO_COMPONENT_COLOR_MAP,
@@ -12234,14 +12305,10 @@ with tab_energy:
         return merged
 
     for metric in energy_metrics:
-        if metric == "Trunk-Shoulder Energy Flow (RTA_DIST_L | RTA_DIST_R)":
+        if metric == "Trunk-Shoulder Energy Flow":
             energy_data_by_metric[metric] = load_energy_by_handedness(get_distal_arm_segment_power)
-        elif metric == "Arm Energy Flow (LAR_PROX | RAR_PROX)":
+        elif metric == "Arm Energy Flow":
             energy_data_by_metric[metric] = load_energy_by_handedness(get_arm_proximal_energy_transfer)
-        elif metric == "Glove Side Trunk-Shoulder Energy Flow":
-            energy_data_by_metric[metric] = load_energy_by_handedness(get_glove_side_trunk_shoulder_energy_flow)
-        elif metric == "Glove Arm Energy Flow":
-            energy_data_by_metric[metric] = load_energy_by_handedness(get_glove_arm_energy_flow)
         elif metric == "Trunk-Shoulder Rotational Energy Flow":
             energy_data_by_metric[metric] = load_energy_by_handedness(get_trunk_shoulder_rot_energy_flow)
         elif metric == "Trunk-Shoulder Elevation/Depression Energy Flow":
@@ -12267,18 +12334,6 @@ with tab_energy:
                     take_ids_by_handedness["L"], category_name, component_segments["L"], component="x"
                 ))
             energy_data_by_metric[metric] = component_data
-        elif metric in {"Elbow Force (Z)", "Elbow Torque (Z)"}:
-            segment_suffix = "FORCE" if metric == "Elbow Force (Z)" else "MMT"
-            elbow_data = {}
-            if take_ids_by_handedness.get("R"):
-                elbow_data.update(get_energy_flow_from_category_segment(
-                    take_ids_by_handedness["R"], "ORIGINAL", f"RT_ELBOW_{segment_suffix}", component="z"
-                ))
-            if take_ids_by_handedness.get("L"):
-                elbow_data.update(get_energy_flow_from_category_segment(
-                    take_ids_by_handedness["L"], "ORIGINAL", f"LT_ELBOW_{segment_suffix}", component="z"
-                ))
-            energy_data_by_metric[metric] = elbow_data
         elif metric in PELVIS_TORSO_POWER_METRIC_MAP:
             segment_name, category_name = PELVIS_TORSO_POWER_METRIC_MAP[metric]
             energy_data_by_metric[metric] = get_energy_flow_from_category_segment(
