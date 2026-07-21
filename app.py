@@ -6309,6 +6309,18 @@ ENERGY_SEGMENT_POWER_METRICS = {
     "Glove Arm Energy Flow",
 }
 
+SHOULDER_KINETICS_METRICS = [
+    "Shoulder Flexion/Extension Torque",
+    "Shoulder Horizontal Abduction/Adduction Torque",
+    "Shoulder Internal/External Rotation Torque",
+]
+
+SHOULDER_KINETICS_COLOR_MAP = {
+    "Shoulder Flexion/Extension Torque": "#F97316",
+    "Shoulder Horizontal Abduction/Adduction Torque": "#FB8C00",
+    "Shoulder Internal/External Rotation Torque": "#0EA5E9",
+}
+
 ENERGY_TORQUE_METRICS = {
     "Shoulder Flexion/Extension Torque",
     "Shoulder Horizontal Abduction/Adduction Torque",
@@ -10045,11 +10057,6 @@ with tab_joint:
                 "shoulder internal/external rotation."
             ),
         },
-        "Shoulder Horizontal Abduction/Adduction Torque": {
-            "definition": (
-                "The horizontal abduction/adduction torque at the throwing shoulder over time."
-            ),
-        },
     }
 
     def get_kinematic_unit(kinematic_name):
@@ -10160,9 +10167,6 @@ with tab_joint:
                     "Arm Rotational Energy Flow",
                     "Arm Elevation/Depression Energy Flow",
                     "Arm Horizontal Abd/Add Energy Flow",
-                    "Shoulder Flexion/Extension Torque",
-                    "Shoulder Horizontal Abduction/Adduction Torque",
-                    "Shoulder Internal/External Rotation Torque",
                     "Elbow Force (Z)",
                     "Elbow Torque (Z)",
                     *NEW_TRUNK_PELVIS_JCS_METRICS,
@@ -10974,9 +10978,6 @@ with tab_joint:
                     "Arm Elevation/Depression Energy Flow": "#06B6D4",
                     **ENERGY_COMPONENT_COLOR_MAP,
                     "Arm Horizontal Abd/Add Energy Flow": "#9333EA",
-                    "Shoulder Flexion/Extension Torque": "#F97316",
-                    "Shoulder Horizontal Abduction/Adduction Torque": "#FB8C00",
-                    "Shoulder Internal/External Rotation Torque": "#0EA5E9",
                     "Elbow Force (Z)": "#22C55E",
                     "Elbow Torque (Z)": "#A855F7",
                     **NEW_TRUNK_PELVIS_JCS_COLOR_MAP,
@@ -11025,32 +11026,6 @@ with tab_joint:
                                 take_ids_by_handedness["L"], category_name, component_segments["L"], component="x"
                             ))
                         compare_energy_data_by_metric[metric] = component_data
-                    elif metric in {
-                        "Shoulder Flexion/Extension Torque",
-                        "Shoulder Horizontal Abduction/Adduction Torque",
-                    }:
-                        component = "x" if metric == "Shoulder Flexion/Extension Torque" else "z"
-                        mmt_data = {}
-                        if take_ids_by_handedness.get("R"):
-                            mmt_data.update(get_energy_flow_from_category_segment(
-                                take_ids_by_handedness["R"], "ORIGINAL", "RT_SHOULDER_RTA_MMT", component=component
-                            ))
-                        if take_ids_by_handedness.get("L"):
-                            mmt_data.update(get_energy_flow_from_category_segment(
-                                take_ids_by_handedness["L"], "ORIGINAL", "LT_SHOULDER_RTA_MMT", component=component
-                            ))
-                        compare_energy_data_by_metric[metric] = mmt_data
-                    elif metric == "Shoulder Internal/External Rotation Torque":
-                        mmt_data = {}
-                        if take_ids_by_handedness.get("R"):
-                            mmt_data.update(get_energy_flow_from_category_segment(
-                                take_ids_by_handedness["R"], "ORIGINAL", "RT_SHOULDER_RAR_MMT", component="z"
-                            ))
-                        if take_ids_by_handedness.get("L"):
-                            mmt_data.update(get_energy_flow_from_category_segment(
-                                take_ids_by_handedness["L"], "ORIGINAL", "LT_SHOULDER_LAR_MMT", component="z"
-                            ))
-                        compare_energy_data_by_metric[metric] = mmt_data
                     elif metric in {"Elbow Force (Z)", "Elbow Torque (Z)"}:
                         segment_suffix = "FORCE" if metric == "Elbow Force (Z)" else "MMT"
                         elbow_data = {}
@@ -11694,7 +11669,266 @@ with tab_joint:
 with tab_kinetics:
     st.subheader("Kinetics")
     render_group_selection_summary()
-    st.info("Kinetics metric controls and plots will be organized here.")
+
+    kinetics_view_mode = st.session_state.get("kinetics_view_mode", "Single")
+    if kinetics_view_mode == "Comparison":
+        kinetics_view_col, kinetics_view_spacer = st.columns([1.3, 4.7])
+        with kinetics_view_col:
+            st.markdown('<div class="joint-controls-label">View Mode</div>', unsafe_allow_html=True)
+            kinetics_view_mode = st.segmented_control(
+                "Kinetics View Mode",
+                ["Single", "Comparison"],
+                default="Comparison",
+                key="kinetics_view_mode",
+                label_visibility="collapsed",
+            )
+        with kinetics_view_spacer:
+            st.markdown("")
+
+    kinetics_display_col, kinetics_options_col, kinetics_spacer_col = st.columns([1.45, 1.75, 2.2])
+    with kinetics_display_col:
+        st.markdown('<div class="joint-controls-label">Display Mode</div>', unsafe_allow_html=True)
+        kinetics_display_mode = st.segmented_control(
+            "Kinetics Display Mode",
+            ["Individual Throws", "Grouped"],
+            default="Grouped",
+            key="kinetics_display_mode",
+            label_visibility="collapsed",
+        )
+    with kinetics_options_col:
+        st.markdown('<div class="joint-controls-label joint-toggle-label">Options</div>', unsafe_allow_html=True)
+        kinetics_event_col, kinetics_signal_col = st.columns(2)
+        with kinetics_event_col:
+            show_kinetics_event_bands = st.toggle(
+                "Event Bands",
+                value=False,
+                key="kinetics_show_event_bands",
+            )
+        with kinetics_signal_col:
+            show_kinetics_signal_bands = st.toggle(
+                "Signal Bands",
+                value=True,
+                key="kinetics_show_signal_bands",
+            )
+    with kinetics_spacer_col:
+        st.markdown("")
+
+    if kinetics_view_mode == "Single":
+        kinetics_window_col, kinetics_view_col, kinetics_second_spacer = st.columns([2.35, 1.15, 2.75])
+    else:
+        kinetics_window_col, kinetics_second_spacer = st.columns([2.35, 3.65])
+
+    with kinetics_window_col:
+        st.markdown('<div class="joint-controls-label">View Window</div>', unsafe_allow_html=True)
+        kinetics_window_mode = st.segmented_control(
+            "Kinetics View",
+            ["Peak Knee Height View", "Foot Plant to Ball Release View"],
+            default="Peak Knee Height View",
+            key="kinetics_window_mode",
+            label_visibility="collapsed",
+        )
+    if kinetics_view_mode == "Single":
+        with kinetics_view_col:
+            st.markdown('<div class="joint-controls-label">View Mode</div>', unsafe_allow_html=True)
+            kinetics_view_mode = st.segmented_control(
+                "Kinetics View Mode",
+                ["Single", "Comparison"],
+                default="Single",
+                key="kinetics_view_mode",
+                label_visibility="collapsed",
+            )
+    with kinetics_second_spacer:
+        st.markdown("")
+
+    kinetics_metric_groups = []
+    if kinetics_view_mode == "Comparison":
+        kinetics_left_col, kinetics_right_col = st.columns(2)
+        with kinetics_left_col:
+            kinetics_left_metrics = st.multiselect(
+                "Select Left Plot Kinetics",
+                SHOULDER_KINETICS_METRICS,
+                default=[],
+                key="kinetics_left_metrics",
+            )
+        with kinetics_right_col:
+            kinetics_right_metrics = st.multiselect(
+                "Select Right Plot Kinetics",
+                SHOULDER_KINETICS_METRICS,
+                default=[],
+                key="kinetics_right_metrics",
+            )
+        kinetics_metric_groups = [kinetics_left_metrics, kinetics_right_metrics]
+        selected_kinetics_metrics = list(dict.fromkeys(kinetics_left_metrics + kinetics_right_metrics))
+    else:
+        kinetics_select_col, kinetics_select_spacer = st.columns([2.35, 3.65])
+        with kinetics_select_col:
+            selected_kinetics_metrics = st.multiselect(
+                "Select Kinetics",
+                SHOULDER_KINETICS_METRICS,
+                default=[],
+                key="kinetics_metrics_single",
+            )
+        with kinetics_select_spacer:
+            st.markdown("")
+
+    def load_shoulder_kinetics_metric(metric):
+        metric_data = {}
+        for hand, ids in take_ids_by_handedness.items():
+            if not ids:
+                continue
+            if metric == "Shoulder Flexion/Extension Torque":
+                segment_name = "RT_SHOULDER_RTA_MMT" if hand == "R" else "LT_SHOULDER_RTA_MMT"
+                component = "x"
+            elif metric == "Shoulder Horizontal Abduction/Adduction Torque":
+                segment_name = "RT_SHOULDER_RTA_MMT" if hand == "R" else "LT_SHOULDER_RTA_MMT"
+                component = "z"
+            else:
+                segment_name = "RT_SHOULDER_RAR_MMT" if hand == "R" else "LT_SHOULDER_LAR_MMT"
+                component = "z"
+            metric_data.update(get_energy_flow_from_category_segment(
+                ids, "ORIGINAL", segment_name, component=component
+            ))
+        return metric_data
+
+    kinetics_data_by_metric = {
+        metric: load_shoulder_kinetics_metric(metric)
+        for metric in selected_kinetics_metrics
+    }
+    kinetics_data_by_metric = {metric: data for metric, data in kinetics_data_by_metric.items() if data}
+
+    if kinetics_window_mode == "Foot Plant to Ball Release View":
+        kinetics_median_fp_frame = int(np.median(fp_event_frames)) if fp_event_frames else None
+        kinetics_window_start = kinetics_median_fp_frame - 25 if kinetics_median_fp_frame is not None else window_start
+        kinetics_window_end = 25
+    else:
+        kinetics_window_start = window_start
+        kinetics_window_end = 50
+        if mound_only_sidebar and knee_event_frames:
+            kinetics_window_start = min(window_start, int(np.median(knee_event_frames)) - 20)
+
+    def build_kinetics_figure(metrics):
+        kinetics_fig = go.Figure()
+        for metric in metrics:
+            metric_data = kinetics_data_by_metric.get(metric, {})
+            grouped_curves = {}
+            for take_id, data in metric_data.items():
+                if take_id not in br_frames:
+                    continue
+                br_frame = br_frames[take_id]
+                normalized_frames = []
+                normalized_values = []
+                for frame, value in zip(data["frame"], data["value"]):
+                    relative_frame = frame - br_frame
+                    if kinetics_window_start <= relative_frame <= kinetics_window_end:
+                        normalized_frames.append(rel_frame_to_ms(relative_frame))
+                        normalized_values.append(value)
+
+                date = take_date_map[take_id]
+                pitcher_name = take_pitcher_map.get(take_id, "")
+                group_label = take_group_map.get(take_id, "Ungrouped")
+                if comparison_grouping_enabled:
+                    group_key = (group_label, pitcher_name, date) if show_group_pitcher_breakout else (group_label, date)
+                else:
+                    group_key = (pitcher_name, date) if multi_pitcher_mode else date
+                grouped_curves.setdefault(group_key, {})[take_id] = {
+                    "frame": normalized_frames,
+                    "value": normalized_values,
+                }
+
+                if kinetics_display_mode == "Individual Throws":
+                    kinetics_fig.add_trace(go.Scatter(
+                        x=normalized_frames,
+                        y=normalized_values,
+                        mode="lines",
+                        line=dict(color=SHOULDER_KINETICS_COLOR_MAP[metric]),
+                        name=f"{metric} | {date} | Pitch {take_order[take_id]}",
+                        customdata=[[metric, date, take_order[take_id], take_velocity[take_id]]] * len(normalized_frames),
+                        hovertemplate=(
+                            "%{customdata[1]}<br>%{customdata[0]}: %{y:.1f}"
+                            + f"<br>Segment: {get_energy_metric_segment_label(metric, take_handedness.get(take_id))}"
+                            + "<br>Pitch %{customdata[2]} (%{customdata[3]:.1f} mph)"
+                            + "<br>Time: %{x:.0f} ms rel BR<extra></extra>"
+                        ),
+                        showlegend=False,
+                    ))
+
+            if kinetics_display_mode == "Grouped":
+                for group_key, curves in grouped_curves.items():
+                    x_values, y_values, q1_values, q3_values = aggregate_curves(curves, "Mean")
+                    group_name = " | ".join(str(value) for value in group_key) if isinstance(group_key, tuple) else str(group_key)
+                    if show_kinetics_signal_bands:
+                        kinetics_fig.add_trace(go.Scatter(
+                            x=x_values + x_values[::-1],
+                            y=q3_values + q1_values[::-1],
+                            fill="toself",
+                            fillcolor=to_rgba(SHOULDER_KINETICS_COLOR_MAP[metric], alpha=0.25),
+                            line=dict(width=0),
+                            hoverinfo="skip",
+                            showlegend=False,
+                        ))
+                    kinetics_fig.add_trace(go.Scatter(
+                        x=x_values,
+                        y=y_values,
+                        mode="lines",
+                        line=dict(color=SHOULDER_KINETICS_COLOR_MAP[metric], width=4),
+                        name=f"{metric} | {group_name}",
+                        hovertemplate=(
+                            f"{group_name}<br>{metric}: %{{y:.1f}}"
+                            + f"<br>Segment: {get_group_energy_metric_segment_label(metric, curves.keys(), take_handedness)}"
+                            + "<br>Time: %{x:.0f} ms rel BR<extra></extra>"
+                        ),
+                    ))
+
+        event_specs = [
+            (knee_event_frames, "Knee", "gold"),
+            (fp_event_frames, "FP", "green"),
+            (mer_event_frames, "MER", "red"),
+            ([0], "BR", "blue"),
+        ]
+        for event_frames, event_label, event_color in event_specs:
+            if not event_frames:
+                continue
+            if event_label != "BR":
+                add_event_iqr_band(kinetics_fig, event_frames, event_color, show_kinetics_event_bands)
+                event_time = rel_frame_to_ms(int(np.median(event_frames)))
+            else:
+                event_time = 0
+            kinetics_fig.add_vline(x=event_time, line_width=3, line_dash="dash", line_color=event_color)
+
+        kinetics_fig.update_layout(
+            xaxis_title="Time Relative to Ball Release (ms)",
+            yaxis_title=get_energy_yaxis_title(metrics),
+            xaxis_range=[rel_frame_to_ms(kinetics_window_start), rel_frame_to_ms(kinetics_window_end)],
+            height=600,
+            legend=dict(orientation="h", yanchor="top", y=-0.30, xanchor="center", x=0.5),
+            hoverlabel=dict(namelength=-1, font_size=13),
+        )
+        return kinetics_fig
+
+    if not selected_kinetics_metrics:
+        st.info("Select at least one shoulder kinetics metric.")
+    elif not kinetics_data_by_metric:
+        st.warning("No shoulder kinetics data found for the selected metrics.")
+    elif kinetics_view_mode == "Comparison":
+        kinetics_left_plot_col, kinetics_right_plot_col = st.columns(2)
+        with kinetics_left_plot_col:
+            st.plotly_chart(
+                build_kinetics_figure(kinetics_metric_groups[0]),
+                use_container_width=True,
+                key="kinetics_plot_left",
+            )
+        with kinetics_right_plot_col:
+            st.plotly_chart(
+                build_kinetics_figure(kinetics_metric_groups[1]),
+                use_container_width=True,
+                key="kinetics_plot_right",
+            )
+    else:
+        st.plotly_chart(
+            build_kinetics_figure(selected_kinetics_metrics),
+            use_container_width=True,
+            key="kinetics_plot_single",
+        )
 
 
 # --------------------------------------------------
@@ -11770,16 +12004,22 @@ with tab_energy:
         unsafe_allow_html=True,
     )
 
-    energy_view_col, energy_display_col, energy_options_col, energy_spacer_col = st.columns([1.3, 1.45, 1.75, 0.9])
-    with energy_view_col:
-        st.markdown('<div class="energy-controls-label">View Mode</div>', unsafe_allow_html=True)
-        energy_view_mode = st.segmented_control(
-            "Energy Flow View Mode",
-            ["Single", "Comparison"],
-            default="Single",
-            key="energy_view_mode",
-            label_visibility="collapsed",
-        )
+    energy_view_mode = st.session_state.get("energy_view_mode", "Single")
+    if energy_view_mode == "Comparison":
+        energy_view_col, energy_view_spacer = st.columns([1.3, 4.7])
+        with energy_view_col:
+            st.markdown('<div class="energy-controls-label">View Mode</div>', unsafe_allow_html=True)
+            energy_view_mode = st.segmented_control(
+                "Energy Flow View Mode",
+                ["Single", "Comparison"],
+                default="Comparison",
+                key="energy_view_mode",
+                label_visibility="collapsed",
+            )
+        with energy_view_spacer:
+            st.markdown("")
+
+    energy_display_col, energy_options_col, energy_spacer_col = st.columns([1.45, 1.75, 2.2])
     with energy_display_col:
         st.markdown('<div class="energy-controls-label">Display Mode</div>', unsafe_allow_html=True)
         display_mode = st.segmented_control(
@@ -11809,7 +12049,10 @@ with tab_energy:
     with energy_spacer_col:
         st.markdown("")
 
-    energy_window_col, energy_window_spacer = st.columns([2.35, 3.65])
+    if energy_view_mode == "Single":
+        energy_window_col, energy_view_col, energy_window_spacer = st.columns([2.35, 1.15, 2.75])
+    else:
+        energy_window_col, energy_window_spacer = st.columns([2.35, 3.65])
     with energy_window_col:
         st.markdown('<div class="energy-controls-label">View Window</div>', unsafe_allow_html=True)
         energy_window_mode = st.segmented_control(
@@ -11819,6 +12062,16 @@ with tab_energy:
             key="energy_window_mode",
             label_visibility="collapsed",
         )
+    if energy_view_mode == "Single":
+        with energy_view_col:
+            st.markdown('<div class="energy-controls-label">View Mode</div>', unsafe_allow_html=True)
+            energy_view_mode = st.segmented_control(
+                "Energy Flow View Mode",
+                ["Single", "Comparison"],
+                default="Single",
+                key="energy_view_mode",
+                label_visibility="collapsed",
+            )
     with energy_window_spacer:
         st.markdown("")
 
@@ -11833,9 +12086,6 @@ with tab_energy:
         "Arm Rotational Energy Flow",
         "Arm Elevation/Depression Energy Flow",
         "Arm Horizontal Abd/Add Energy Flow",
-        "Shoulder Flexion/Extension Torque",
-        "Shoulder Horizontal Abduction/Adduction Torque",
-        "Shoulder Internal/External Rotation Torque",
         "Elbow Force (Z)",
         "Elbow Torque (Z)",
         *PELVIS_TORSO_POWER_METRIC_MAP,
@@ -11908,9 +12158,6 @@ with tab_energy:
         "Arm Elevation/Depression Energy Flow": "#06B6D4",  # cyan
         **ENERGY_COMPONENT_COLOR_MAP,
         "Arm Horizontal Abd/Add Energy Flow": "#9333EA",     # violet
-        "Shoulder Flexion/Extension Torque": "#F97316",
-        "Shoulder Horizontal Abduction/Adduction Torque": "#FB8C00",
-        "Shoulder Internal/External Rotation Torque": "#0EA5E9",
         "Elbow Force (Z)": "#22C55E",
         "Elbow Torque (Z)": "#A855F7",
         **NEW_TRUNK_PELVIS_JCS_COLOR_MAP,
@@ -11962,32 +12209,6 @@ with tab_energy:
                     take_ids_by_handedness["L"], category_name, component_segments["L"], component="x"
                 ))
             energy_data_by_metric[metric] = component_data
-        elif metric in {
-            "Shoulder Flexion/Extension Torque",
-            "Shoulder Horizontal Abduction/Adduction Torque",
-        }:
-            component = "x" if metric == "Shoulder Flexion/Extension Torque" else "z"
-            mmt_data = {}
-            if take_ids_by_handedness.get("R"):
-                mmt_data.update(get_energy_flow_from_category_segment(
-                    take_ids_by_handedness["R"], "ORIGINAL", "RT_SHOULDER_RTA_MMT", component=component
-                ))
-            if take_ids_by_handedness.get("L"):
-                mmt_data.update(get_energy_flow_from_category_segment(
-                    take_ids_by_handedness["L"], "ORIGINAL", "LT_SHOULDER_RTA_MMT", component=component
-                ))
-            energy_data_by_metric[metric] = mmt_data
-        elif metric == "Shoulder Internal/External Rotation Torque":
-            mmt_data = {}
-            if take_ids_by_handedness.get("R"):
-                mmt_data.update(get_energy_flow_from_category_segment(
-                    take_ids_by_handedness["R"], "ORIGINAL", "RT_SHOULDER_RAR_MMT", component="z"
-                ))
-            if take_ids_by_handedness.get("L"):
-                mmt_data.update(get_energy_flow_from_category_segment(
-                    take_ids_by_handedness["L"], "ORIGINAL", "LT_SHOULDER_LAR_MMT", component="z"
-                ))
-            energy_data_by_metric[metric] = mmt_data
         elif metric in {"Elbow Force (Z)", "Elbow Torque (Z)"}:
             segment_suffix = "FORCE" if metric == "Elbow Force (Z)" else "MMT"
             elbow_data = {}
