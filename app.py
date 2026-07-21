@@ -6165,9 +6165,9 @@ NEW_TRUNK_PELVIS_JCS_COLOR_MAP = {
 }
 
 PELVIS_TORSO_POWER_COMPONENT_CONFIG = {
-    "Pelvis Flexion Power": ("Pelvis", "Flexion", "RPV_DIST", "FLEX"),
-    "Pelvis Lateral Flexion Power": ("Pelvis", "Lateral Flexion", "RPV_DIST", "SIDE"),
-    "Pelvis Rotation Power": ("Pelvis", "Rotation", "RPV_DIST", "ROT"),
+    "Pelvis Flexion/Extension Energy Flow": ("Pelvis", "Flexion/Extension", "RPV_DIST", "FLEX"),
+    "Pelvis Side Bending Energy Flow": ("Pelvis", "Side Bending", "RPV_DIST", "SIDE"),
+    "Pelvis Rotational Energy Flow": ("Pelvis", "Rotational", "RPV_DIST", "ROT"),
     "Torso-Pelvis Flexion/Extension Energy Flow": ("Torso-Pelvis", "Flexion/Extension", "RTA_PROX", "FLEX"),
     "Torso-Pelvis Lateral Flexion Energy Flow": ("Torso-Pelvis", "Lateral Flexion", "RTA_PROX", "SIDE"),
     "Torso Rotational Energy Flow": ("Torso", "Rotational", "RTA_PROX", "ROT"),
@@ -6178,19 +6178,19 @@ PELVIS_TORSO_POWER_COMPONENT_CONFIG = {
 
 PELVIS_COMPONENT_LABELS_BY_AXIS = {
     "FLEX": (
-        "Pelvis Reaction Torque — Flexion",
-        "Pelvis Flexion Velocity",
-        "Pelvis Flexion Acceleration",
+        "Pelvis Flexion/Extension Reaction Torque",
+        "Pelvis Flexion/Extension Angular Velocity",
+        "Pelvis Flexion/Extension Angular Acceleration",
     ),
     "SIDE": (
-        "Pelvis Reaction Torque — Lateral Flexion",
-        "Pelvis Lateral Flexion Velocity",
-        "Pelvis Lateral Flexion Acceleration",
+        "Pelvis Side Bending Reaction Torque",
+        "Pelvis Side Bending Angular Velocity",
+        "Pelvis Side Bending Angular Acceleration",
     ),
     "ROT": (
-        "Pelvis Reaction Torque — Rotation",
-        "Pelvis Rotation Velocity",
-        "Pelvis Rotation Acceleration",
+        "Pelvis Rotational Reaction Torque",
+        "Pelvis Rotational Angular Velocity",
+        "Pelvis Rotational Angular Acceleration",
     ),
 }
 
@@ -6362,18 +6362,21 @@ ENERGY_METRIC_RENAMES = {
     "Torso Side Bending Torque": "Torso-Pelvis Lateral Flexion Torque",
     "Torso Side Bending Angular Velocity": "Torso-Pelvis Lateral Flexion Angular Velocity",
     "Torso Side Bending Angular Acceleration": "Torso-Pelvis Lateral Flexion Angular Acceleration",
-    "Pelvis Flexion/Extension Energy Flow": "Pelvis Flexion Power",
-    "Pelvis Side Bending Energy Flow": "Pelvis Lateral Flexion Power",
-    "Pelvis Rotational Energy Flow": "Pelvis Rotation Power",
-    "Pelvis Flexion/Extension Torque": "Pelvis Reaction Torque — Flexion",
-    "Pelvis Flexion/Extension Angular Velocity": "Pelvis Flexion Velocity",
-    "Pelvis Flexion/Extension Angular Acceleration": "Pelvis Flexion Acceleration",
-    "Pelvis Side Bending Torque": "Pelvis Reaction Torque — Lateral Flexion",
-    "Pelvis Side Bending Angular Velocity": "Pelvis Lateral Flexion Velocity",
-    "Pelvis Side Bending Angular Acceleration": "Pelvis Lateral Flexion Acceleration",
-    "Pelvis Rotational Torque": "Pelvis Reaction Torque — Rotation",
-    "Pelvis Rotational Angular Velocity": "Pelvis Rotation Velocity",
-    "Pelvis Rotational Angular Acceleration": "Pelvis Rotation Acceleration",
+    "Pelvis Flexion Power": "Pelvis Flexion/Extension Energy Flow",
+    "Pelvis Lateral Flexion Power": "Pelvis Side Bending Energy Flow",
+    "Pelvis Rotation Power": "Pelvis Rotational Energy Flow",
+    "Pelvis Reaction Torque — Flexion": "Pelvis Flexion/Extension Reaction Torque",
+    "Pelvis Flexion Velocity": "Pelvis Flexion/Extension Angular Velocity",
+    "Pelvis Flexion Acceleration": "Pelvis Flexion/Extension Angular Acceleration",
+    "Pelvis Reaction Torque — Lateral Flexion": "Pelvis Side Bending Reaction Torque",
+    "Pelvis Lateral Flexion Velocity": "Pelvis Side Bending Angular Velocity",
+    "Pelvis Lateral Flexion Acceleration": "Pelvis Side Bending Angular Acceleration",
+    "Pelvis Reaction Torque — Rotation": "Pelvis Rotational Reaction Torque",
+    "Pelvis Rotation Velocity": "Pelvis Rotational Angular Velocity",
+    "Pelvis Rotation Acceleration": "Pelvis Rotational Angular Acceleration",
+    "Pelvis Flexion/Extension Torque": "Pelvis Flexion/Extension Reaction Torque",
+    "Pelvis Side Bending Torque": "Pelvis Side Bending Reaction Torque",
+    "Pelvis Rotational Torque": "Pelvis Rotational Reaction Torque",
 }
 
 ENERGY_SEGMENT_POWER_METRICS = {
@@ -6431,9 +6434,12 @@ KINETICS_METRIC_RENAMES = {
     "Rotational Torque": "Elbow Rotational Torque",
     "Torso Flexion/Extension Torque": "Torso-Pelvis Flexion/Extension Torque",
     "Torso Side Bending Torque": "Torso-Pelvis Lateral Flexion Torque",
-    "Pelvis Flexion/Extension Torque": "Pelvis Reaction Torque — Flexion",
-    "Pelvis Side Bending Torque": "Pelvis Reaction Torque — Lateral Flexion",
-    "Pelvis Rotational Torque": "Pelvis Reaction Torque — Rotation",
+    "Pelvis Flexion/Extension Torque": "Pelvis Flexion/Extension Reaction Torque",
+    "Pelvis Side Bending Torque": "Pelvis Side Bending Reaction Torque",
+    "Pelvis Rotational Torque": "Pelvis Rotational Reaction Torque",
+    "Pelvis Reaction Torque — Flexion": "Pelvis Flexion/Extension Reaction Torque",
+    "Pelvis Reaction Torque — Lateral Flexion": "Pelvis Side Bending Reaction Torque",
+    "Pelvis Reaction Torque — Rotation": "Pelvis Rotational Reaction Torque",
 }
 
 KINETICS_COLOR_MAP = {
@@ -6497,13 +6503,6 @@ ENERGY_FLOW_POWER_METRICS = {
     "Arm Horizontal Abd/Add Energy Flow",
     *NEW_TRUNK_PELVIS_ENERGY_METRICS,
     *PELVIS_TORSO_POWER_METRIC_MAP,
-}
-
-PELVIS_POWER_METRICS = {
-    metric
-    for metric, (body_region, _display_component, _segment_name, _category_component)
-    in PELVIS_TORSO_POWER_COMPONENT_CONFIG.items()
-    if body_region == "Pelvis"
 }
 
 ENERGY_METRIC_SEGMENTS_BY_HANDEDNESS = {
@@ -6580,9 +6579,6 @@ def get_energy_yaxis_title(selected_metrics):
         elif metric in ENERGY_ANGULAR_ACCELERATION_METRICS:
             units.add("deg/s²")
             metric_types.add("Angular Acceleration")
-        elif metric in PELVIS_POWER_METRICS:
-            units.add("W")
-            metric_types.add("Power")
         elif metric in ENERGY_SEGMENT_POWER_METRICS:
             units.add("W")
             metric_types.add("Energy Flow")
@@ -6602,11 +6598,9 @@ def get_energy_yaxis_title(selected_metrics):
     if units == {"deg/s²"}:
         return "Angular Acceleration (deg/s²)"
     if units == {"W"}:
-        if metric_types == {"Power"}:
-            return "Power (W)"
         if metric_types == {"Energy Flow"}:
             return "Energy Flow (W)"
-        return "Energy Flow / Power (W)"
+        return "Energy Flow (W)"
     unit_order = [unit for unit in ("W", "N", "Nm", "deg/s", "deg/s²") if unit in units]
     return f"Energy Flow / Kinetics ({' / '.join(unit_order)})"
 
