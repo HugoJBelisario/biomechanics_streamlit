@@ -7431,18 +7431,6 @@ def build_pitcher_filters_for_group(selected_group_pitchers, group_index, show_g
         if not throw_types_i:
             throw_types_i = ["Mound"]
 
-        if (
-            not group_mode_enabled
-            and group_index == 0
-            and i == 0
-        ):
-            st.sidebar.multiselect(
-                "Energy Flow Type",
-                COMPENSATION_ENERGY_OPTIONS,
-                default=["Torso Power"],
-                key="tab1_energy_plot_options",
-            )
-
         vel_min_i, vel_max_i = get_velocity_bounds(pitcher, selected_dates_i)
         if vel_min_i is not None and vel_max_i is not None:
             velocity_label = (
@@ -7469,6 +7457,14 @@ def build_pitcher_filters_for_group(selected_group_pitchers, group_index, show_g
         else:
             velocity_min_i, velocity_max_i = None, None
             st.sidebar.info(f"Velocity data not available for {pitcher}.")
+
+        if i == 0 and (not group_mode_enabled or group_index == 1):
+            st.sidebar.multiselect(
+                "Energy Flow Type",
+                COMPENSATION_ENERGY_OPTIONS,
+                default=["Torso Power"],
+                key="tab1_energy_plot_options",
+            )
 
         group_pitcher_filters[pitcher] = {
             "selected_dates": selected_dates_i,
