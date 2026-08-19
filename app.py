@@ -250,10 +250,13 @@ def compute_positive_lobe_auc(df, min_frame=None, start_after_frame=None):
 
     return np.nan, np.nan
 
-def compute_negative_lobe_auc(df, threshold=-500, min_frame=None, start_after_frame=None):
-    """Return AUC for the first negative lobe that crosses the threshold."""
+def compute_negative_lobe_auc_bounds(df, threshold=-500, min_frame=None, start_after_frame=None):
+    """Return (AUC, start_frame, end_frame) for the first zero-to-zero negative lobe
+    whose minimum dips below `threshold`. `threshold` marks the point that confirms a
+    lobe is significant; the AUC itself is still integrated over the full 0->0 span,
+    not just the portion below threshold."""
     if df.empty:
-        return np.nan, np.nan
+        return np.nan, np.nan, np.nan
 
     work = df.copy()
     work["x_data"] = pd.to_numeric(work["x_data"], errors="coerce")
@@ -263,7 +266,7 @@ def compute_negative_lobe_auc(df, threshold=-500, min_frame=None, start_after_fr
     if start_after_frame is not None and not np.isnan(start_after_frame):
         work = work[work["frame"] >= float(start_after_frame)].reset_index(drop=True)
     if len(work) < 2:
-        return np.nan, np.nan
+        return np.nan, np.nan, np.nan
 
     frames = work["frame"].to_numpy(dtype=float)
     values = work["x_data"].to_numpy(dtype=float)
@@ -292,10 +295,17 @@ def compute_negative_lobe_auc(df, threshold=-500, min_frame=None, start_after_fr
                         values[start_idx:end_idx + 1],
                         [0.0]
                     ))
-                    return float(np_trapezoid(seg_values, seg_frames)), float(end_frame)
+                    return float(np_trapezoid(seg_values, seg_frames)), float(start_frame), float(end_frame)
             continue
 
-    return np.nan, np.nan
+    return np.nan, np.nan, np.nan
+
+def compute_negative_lobe_auc(df, threshold=-500, min_frame=None, start_after_frame=None):
+    """Return (AUC, end_frame) for the first negative lobe that crosses the threshold."""
+    auc, _start_frame, end_frame = compute_negative_lobe_auc_bounds(
+        df, threshold=threshold, min_frame=min_frame, start_after_frame=start_after_frame
+    )
+    return auc, end_frame
 
 def prepare_biodex_dataframe(uploaded_file):
     """Parse a Biodex CSV upload into a plottable time-series dataframe."""
@@ -12861,6 +12871,126 @@ with tab_energy:
         energy_plot_figure = comparison_fig
 
     st.plotly_chart(energy_plot_figure, use_container_width=True, key="energy_plot_main_tab")
+
+    habd_metric_name = "Trunk-Shoulder Horizontal Abd/Add Energy Flow"
+    if habd_metric_name in energy_data_by_metric:
+        st.markdown("#### Trunk-Shoulder Horizontal Abd/Add Energy Transfer")
+        st.caption(
+            "Peak = most negative STP HorizAbd value before MER, per take. "
+            "AUC (0 → 0) integrates the first zero-to-zero lobe (from max knee "
+            "flexion onward) whose minimum dips below -200, marking the start of "
+            "energy transfer into the arm."
+        )
+
+        habd_raw_data = energy_data_by_metric[habd_metric_name]
+        habd_take_ids = [tid for tid in habd_raw_data.keys() if tid in br_frames]
+
+        if not habd_take_ids:
+            st.info("No takes available for this metric.")
+        else:
+            habd_conn = get_connection()
+            try:
+                with habd_conn.cursor() as habd_cur:
+                    placeholders = ",".join(["%s"] * len(habd_take_ids))
+                    habd_cur.execute(f"""
+                        SELECT take_id, COALESCE(throw_type, 'Mound')
+                        FROM takes
+                        WHERE take_id IN ({placeholders})
+                    """, tuple(habd_take_ids))
+                    habd_throw_type_map = dict(habd_cur.fetchall())
+
+                    habd_rows = []
+                    for tid in habd_take_ids:
+                        handedness = take_handedness.get(tid)
+                        if handedness not in ("R", "L"):
+                            continue
+                        throw_type = habd_throw_type_map.get(tid, "Mound")
+
+                        rk_frame, _rk_val = get_max_rear_knee_flexion_frame_with_heel(tid, handedness, habd_cur)
+                        mer_frame_raw = get_shoulder_er_max_frame(tid, handedness, habd_cur, throw_type=throw_type)
+
+                        if rk_frame is None or mer_frame_raw is None:
+                            continue
+                        max_knee_frame = float(rk_frame)
+                        mer_frame_val = float(int(mer_frame_raw))
+
+                        df_habd = pd.DataFrame({
+                            "frame": habd_raw_data[tid]["frame"],
+                            "x_data": habd_raw_data[tid]["value"],
+                        })
+                        df_habd["x_data"] = pd.to_numeric(df_habd["x_data"], errors="coerce")
+
+                        peak_value = np.nan
+                        peak_frame = np.nan
+                        df_pre_mer = df_habd[
+                            (df_habd["frame"] >= max_knee_frame) &
+                            (df_habd["frame"] <= mer_frame_val)
+                        ]
+                        if not df_pre_mer.empty:
+                            idxmin = df_pre_mer["x_data"].idxmin()
+                            peak_value = float(df_pre_mer.loc[idxmin, "x_data"])
+                            peak_frame = float(df_pre_mer.loc[idxmin, "frame"])
+
+                        auc_val, auc_start, auc_end = compute_negative_lobe_auc_bounds(
+                            df_habd, threshold=-200, min_frame=max_knee_frame
+                        )
+
+                        habd_rows.append({
+                            "take_id": tid,
+                            "Pitcher": take_pitcher_map.get(tid, ""),
+                            "Session Date": take_date_map.get(tid, ""),
+                            "Throw Type": throw_type,
+                            "Pitch Number": take_order.get(tid, np.nan),
+                            "Velocity": take_velocity.get(tid, np.nan),
+                            "STP HorizAbd Peak (Pre-MER)": (round(peak_value, 2) if pd.notna(peak_value) else np.nan),
+                            "STP HorizAbd Peak Frame (Pre-MER)": (peak_frame if pd.notna(peak_frame) else np.nan),
+                            "MER Frame": mer_frame_val,
+                            "STP HorizAbd AUC (0 → 0, thr -200)": (round(auc_val, 2) if pd.notna(auc_val) else np.nan),
+                            "STP HorizAbd AUC Start Frame": (round(auc_start, 1) if pd.notna(auc_start) else np.nan),
+                            "STP HorizAbd AUC End Frame": (round(auc_end, 1) if pd.notna(auc_end) else np.nan),
+                        })
+            finally:
+                habd_conn.close()
+
+            if not habd_rows:
+                st.info("No valid HorizAbd/Add metrics could be computed for the current selection.")
+            else:
+                df_habd_table = pd.DataFrame(habd_rows)
+
+                def _estimate_habd_table_height(df, row_px=35, header_px=35, buffer_px=2):
+                    return len(df) * row_px + header_px + buffer_px
+
+                habd_display_cols = [c for c in df_habd_table.columns if c != "take_id"]
+
+                if display_mode == "Individual Throws":
+                    st.markdown("**Individual Takes**")
+                    st.dataframe(
+                        df_habd_table[habd_display_cols],
+                        height=_estimate_habd_table_height(df_habd_table)
+                    )
+                else:
+                    # "Grouped" mirrors this tab's own Display Mode toggle: average
+                    # the individual peaks/AUCs within each Pitcher + Session Date +
+                    # Throw Type combination.
+                    df_habd_group_summary = (
+                        df_habd_table
+                        .groupby(["Pitcher", "Session Date", "Throw Type"], as_index=False)
+                        .agg(
+                            **{
+                                "N Takes": ("take_id", "count"),
+                                "Avg Peak (Pre-MER)": ("STP HorizAbd Peak (Pre-MER)", "mean"),
+                                "Avg AUC (0 → 0, thr -200)": ("STP HorizAbd AUC (0 → 0, thr -200)", "mean"),
+                            }
+                        )
+                    )
+                    df_habd_group_summary["Avg Peak (Pre-MER)"] = df_habd_group_summary["Avg Peak (Pre-MER)"].round(2)
+                    df_habd_group_summary["Avg AUC (0 → 0, thr -200)"] = df_habd_group_summary["Avg AUC (0 → 0, thr -200)"].round(2)
+
+                    st.markdown("**Grouped (Average of Individual Peaks)**")
+                    st.dataframe(
+                        df_habd_group_summary,
+                        height=_estimate_habd_table_height(df_habd_group_summary)
+                    )
 
     defined_energy_metrics = [
         metric for metric in energy_metrics if metric in energy_definitions
