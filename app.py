@@ -7458,14 +7458,6 @@ def build_pitcher_filters_for_group(selected_group_pitchers, group_index, show_g
             velocity_min_i, velocity_max_i = None, None
             st.sidebar.info(f"Velocity data not available for {pitcher}.")
 
-        if i == 0 and (not group_mode_enabled or group_index == 1):
-            st.sidebar.multiselect(
-                "Energy Flow Type",
-                COMPENSATION_ENERGY_OPTIONS,
-                default=["Torso Power"],
-                key="tab1_energy_plot_options",
-            )
-
         group_pitcher_filters[pitcher] = {
             "selected_dates": selected_dates_i,
             "throw_types": throw_types_i,
@@ -8596,21 +8588,6 @@ components.html(
       element.style.display = hidden ? "none" : "";
     }
 
-    function toggleCompensationSidebarControls() {
-      const sidebar = parent.document.querySelector('[data-testid="stSidebar"]');
-      if (!sidebar) return;
-
-      const showCompensationControls =
-        getSelectedTabLabel() === "Compensation Analysis";
-      const hideCompensationControls = !showCompensationControls;
-
-      sidebar
-        .querySelectorAll(".st-key-tab1_energy_plot_options")
-        .forEach((element) => {
-          setElementHidden(element, hideCompensationControls);
-        });
-    }
-
     function hideSidebarTextBlock(sidebar, text, hidden) {
       sidebar
         .querySelectorAll('[data-testid="stMarkdownContainer"]')
@@ -8724,7 +8701,6 @@ components.html(
     function syncTabs() {
       bindTabClicks();
       restoreActiveTab();
-      toggleCompensationSidebarControls();
       toggle010SidebarControls();
     }
 
@@ -13043,11 +13019,17 @@ def load_session_data(pitcher, date, rear_knee, torso_segment, shoulder_segment,
 
 with tab1:
     st.subheader("Compensation Analysis")
-    render_group_selection_summary()
 
-    energy_plot_options = st.session_state.get("tab1_energy_plot_options", ["Torso Power"])
+    energy_plot_options = st.multiselect(
+        "Energy Flow Type",
+        COMPENSATION_ENERGY_OPTIONS,
+        default=["Torso Power"],
+        key="tab1_energy_plot_options",
+    )
     if not energy_plot_options:
         energy_plot_options = ["Torso Power"]
+
+    render_group_selection_summary()
 
     take_rows = get_compensation_take_rows_from_sidebar()
 
