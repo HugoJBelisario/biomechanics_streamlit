@@ -307,6 +307,34 @@ def compute_negative_lobe_auc(df, threshold=-500, min_frame=None, start_after_fr
     )
     return auc, end_frame
 
+def compute_auc_between_frames(df, start_frame, end_frame):
+    """Integrate df's x_data from start_frame to end_frame, treating start_frame as
+    a zero-value anchor (e.g. a negative lobe's zero crossing) and linearly
+    interpolating the signal's value at end_frame (e.g. MER, which won't generally
+    land exactly on a sampled frame or on zero)."""
+    if df.empty or start_frame is None or end_frame is None:
+        return np.nan
+    if np.isnan(start_frame) or np.isnan(end_frame) or end_frame <= start_frame:
+        return np.nan
+
+    work = df.copy()
+    work["x_data"] = pd.to_numeric(work["x_data"], errors="coerce")
+    work = work.dropna(subset=["frame", "x_data"]).sort_values("frame").reset_index(drop=True)
+    if len(work) < 2:
+        return np.nan
+
+    frames = work["frame"].to_numpy(dtype=float)
+    values = work["x_data"].to_numpy(dtype=float)
+    if end_frame < frames[0] or end_frame > frames[-1]:
+        return np.nan
+
+    mask = (frames > start_frame) & (frames < end_frame)
+    value_at_end = float(np.interp(end_frame, frames, values))
+
+    seg_frames = np.concatenate(([start_frame], frames[mask], [end_frame]))
+    seg_values = np.concatenate(([0.0], values[mask], [value_at_end]))
+    return float(np_trapezoid(seg_values, seg_frames))
+
 def prepare_biodex_dataframe(uploaded_file):
     """Parse a Biodex CSV upload into a plottable time-series dataframe."""
     df = pd.read_csv(uploaded_file)
@@ -7785,9 +7813,7 @@ else:
             "selected_take_ids": [],
         }]
 
-# --- 0-10 Report: Metric Group and Metric in sidebar ---
 st.sidebar.markdown("---")
-st.sidebar.markdown("**0-10 Report Metric**")
 
 _metric_group_options_010 = [
     "All Metrics",
@@ -7797,11 +7823,6 @@ _metric_group_options_010 = [
     "COG Velocities",
     "Torso and Pelvis ROM",
 ]
-selected_metric_group_010 = st.sidebar.selectbox(
-    "Metric Group",
-    _metric_group_options_010,
-    key="010_metric_group",
-)
 
 _metric_options_010 = [
     "Max Shoulder Internal Rotation Velocity",
@@ -7872,28 +7893,6 @@ _group_to_metrics_010 = {
         "Pelvis Anterior Tilt at Ball Release",
     ],
 }
-_current_metric_options_010 = _group_to_metrics_010.get(selected_metric_group_010, _metric_options_010)
-selected_metric_010 = st.sidebar.selectbox(
-    "Select Metric",
-    _current_metric_options_010,
-    key="010_metric",
-)
-
-torso_axis = None
-if selected_metric_010 == "Max Torso Angular Velocity":
-    torso_axis = st.sidebar.selectbox("Select Torso Axis", ["X (Extension)", "X (Flexion)", "Y", "Z"], key="torso_axis")
-
-torso_pelvis_axis = None
-if selected_metric_010 == "Max Torso–Pelvis Angular Velocity":
-    torso_pelvis_axis = st.sidebar.selectbox("Select Torso–Pelvis Axis", ["X (Extension)", "X (Flexion)", "Y", "Z"], key="torso_pelvis_axis")
-
-pelvis_axis = None
-if selected_metric_010 == "Max Pelvis Angular Velocity":
-    pelvis_axis = st.sidebar.selectbox("Select Pelvis Axis", ["X", "Z"], key="pelvis_axis")
-
-com_axis = None
-if selected_metric_010 == "Max COM Velocity":
-    com_axis = st.sidebar.selectbox("Select COM Axis", ["X", "Y", "Z"], key="com_axis")
 
 selected_take_ids_union = set()
 if group_mode_enabled:
@@ -8598,37 +8597,12 @@ components.html(
       element.style.display = hidden ? "none" : "";
     }
 
-    function hideSidebarTextBlock(sidebar, text, hidden) {
-      sidebar
-        .querySelectorAll('[data-testid="stMarkdownContainer"]')
-        .forEach((element) => {
-          if (element.textContent.trim() !== text) return;
-          const container = element.closest('[data-testid="stElementContainer"]');
-          setElementHidden(container || element, hidden);
-        });
-    }
-
     function toggle010SidebarControls() {
       const sidebar = parent.document.querySelector('[data-testid="stSidebar"]');
       if (!sidebar) return;
 
       const show010Controls = getSelectedTabLabel() === "0-10 Report";
       const hide010Controls = !show010Controls;
-
-      [
-        ".st-key-010_metric_group",
-        ".st-key-010_metric",
-        ".st-key-torso_axis",
-        ".st-key-torso_pelvis_axis",
-        ".st-key-pelvis_axis",
-        ".st-key-com_axis",
-      ].forEach((selector) => {
-        sidebar.querySelectorAll(selector).forEach((element) => {
-          setElementHidden(element, hide010Controls);
-        });
-      });
-
-      hideSidebarTextBlock(sidebar, "0-10 Report Metric", hide010Controls);
 
       sidebar.querySelectorAll(".st-key-exclude_takes").forEach((element) => {
         setElementHidden(element, show010Controls);
@@ -12879,7 +12853,8 @@ with tab_energy:
             "Peak = most negative STP HorizAbd value before MER, per take. "
             "AUC (0 → 0) integrates the first zero-to-zero lobe (from max knee "
             "flexion onward) whose minimum dips below -200, marking the start of "
-            "energy transfer into the arm."
+            "energy transfer into the arm. AUC (0 → MER) integrates that same "
+            "lobe's start up to MER instead of its closing zero crossing."
         )
 
         habd_raw_data = energy_data_by_metric[habd_metric_name]
@@ -12934,6 +12909,9 @@ with tab_energy:
                         auc_val, auc_start, auc_end = compute_negative_lobe_auc_bounds(
                             df_habd, threshold=-200, min_frame=max_knee_frame
                         )
+                        auc_start_to_mer = compute_auc_between_frames(
+                            df_habd, auc_start, mer_frame_val
+                        )
 
                         habd_rows.append({
                             "take_id": tid,
@@ -12948,6 +12926,7 @@ with tab_energy:
                             "STP HorizAbd AUC (0 → 0, thr -200)": (round(auc_val, 2) if pd.notna(auc_val) else np.nan),
                             "STP HorizAbd AUC Start Frame": (round(auc_start, 1) if pd.notna(auc_start) else np.nan),
                             "STP HorizAbd AUC End Frame": (round(auc_end, 1) if pd.notna(auc_end) else np.nan),
+                            "STP HorizAbd AUC (0 → MER)": (round(auc_start_to_mer, 2) if pd.notna(auc_start_to_mer) else np.nan),
                         })
             finally:
                 habd_conn.close()
@@ -12980,11 +12959,13 @@ with tab_energy:
                                 "N Takes": ("take_id", "count"),
                                 "Avg Peak (Pre-MER)": ("STP HorizAbd Peak (Pre-MER)", "mean"),
                                 "Avg AUC (0 → 0, thr -200)": ("STP HorizAbd AUC (0 → 0, thr -200)", "mean"),
+                                "Avg AUC (0 → MER)": ("STP HorizAbd AUC (0 → MER)", "mean"),
                             }
                         )
                     )
                     df_habd_group_summary["Avg Peak (Pre-MER)"] = df_habd_group_summary["Avg Peak (Pre-MER)"].round(2)
                     df_habd_group_summary["Avg AUC (0 → 0, thr -200)"] = df_habd_group_summary["Avg AUC (0 → 0, thr -200)"].round(2)
+                    df_habd_group_summary["Avg AUC (0 → MER)"] = df_habd_group_summary["Avg AUC (0 → MER)"].round(2)
 
                     st.markdown("**Grouped (Average of Individual Peaks)**")
                     st.dataframe(
@@ -14756,6 +14737,37 @@ with tab2:
 
 
 with tab3:
+    st.subheader("0-10 Report")
+
+    selected_metric_group_010 = st.selectbox(
+        "Metric Group",
+        _metric_group_options_010,
+        key="010_metric_group",
+    )
+
+    _current_metric_options_010 = _group_to_metrics_010.get(selected_metric_group_010, _metric_options_010)
+    selected_metric_010 = st.selectbox(
+        "Select Metric",
+        _current_metric_options_010,
+        key="010_metric",
+    )
+
+    torso_axis = None
+    if selected_metric_010 == "Max Torso Angular Velocity":
+        torso_axis = st.selectbox("Select Torso Axis", ["X (Extension)", "X (Flexion)", "Y", "Z"], key="torso_axis")
+
+    torso_pelvis_axis = None
+    if selected_metric_010 == "Max Torso–Pelvis Angular Velocity":
+        torso_pelvis_axis = st.selectbox("Select Torso–Pelvis Axis", ["X (Extension)", "X (Flexion)", "Y", "Z"], key="torso_pelvis_axis")
+
+    pelvis_axis = None
+    if selected_metric_010 == "Max Pelvis Angular Velocity":
+        pelvis_axis = st.selectbox("Select Pelvis Axis", ["X", "Z"], key="pelvis_axis")
+
+    com_axis = None
+    if selected_metric_010 == "Max COM Velocity":
+        com_axis = st.selectbox("Select COM Axis", ["X", "Y", "Z"], key="com_axis")
+
     # --- Use the shared dashboard filters without rendering 0-10 tab controls ---
     selected_pitchers_010 = selected_pitchers
 
