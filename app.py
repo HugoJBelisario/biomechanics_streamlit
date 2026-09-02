@@ -2013,6 +2013,80 @@ def extract_torque_fraction_window_curves(
 
     return torque_reps_long_df, torque_mean_df, position_reps_long_df, position_mean_df, aligned_metadata
 
+def detect_position_ascent_descent_bounds(
+    time_values,
+    smooth_position,
+    velocity,
+    search_start_idx,
+    search_end_idx,
+    velocity_fraction=0.2,
+    velocity_floor=5.0,
+    sustain_seconds=0.15,
+    fs=100.0,
+):
+    """Find a rep's start/end from a smoothed Position_Deg signal: start is the onset of
+    continual ascent, end is where position returns to that same start value.
+
+    Both boundaries share one velocity threshold, scaled to `velocity_fraction` of this
+    rep's own peak |velocity| within [search_start_idx, search_end_idx] rather than a
+    fixed deg/s constant — a fixed threshold works on one file's noise level and silently
+    fails on another's (e.g. a 360 deg/s Speed-protocol test has ~16 deg/s of idle-baseline
+    jitter alone, well past a fixed 15 deg/s cutoff meant to reject noise). `velocity_floor`
+    keeps the threshold from collapsing to near-zero on an unusually quiet window.
+
+    Start: scanning forward from search_start_idx, the first index where velocity stays
+    >= the threshold for `sustain_seconds` straight — i.e. sustained ascent, not a noise
+    spike. End: scanning forward from the rep's peak position, the first point the
+    (interpolated) position curve crosses back down through the start's own position
+    value — so the rep is defined as "ascend from here, until you return to here" rather
+    than independently detecting when descent trails off, which let the two boundaries
+    drift to different reference points.
+
+    Returns None if no sustained ascent is found in the search window.
+    """
+    window_velocity = velocity[search_start_idx:search_end_idx + 1]
+    if len(window_velocity) == 0:
+        return None
+    peak_abs_velocity = float(np.max(np.abs(window_velocity)))
+    vel_threshold = max(velocity_floor, peak_abs_velocity * velocity_fraction)
+    sustain_samples = max(1, int(round(sustain_seconds * fs)))
+
+    start_idx = None
+    for idx in range(search_start_idx, search_end_idx):
+        window_end = min(len(velocity), idx + sustain_samples)
+        if window_end - idx < sustain_samples:
+            break
+        if np.all(velocity[idx:window_end] >= vel_threshold):
+            start_idx = idx
+            break
+    if start_idx is None:
+        return None
+
+    start_pos = float(smooth_position[start_idx])
+    peak_idx = start_idx + int(np.argmax(smooth_position[start_idx:search_end_idx + 1]))
+
+    end_idx = search_end_idx
+    end_time = float(time_values[search_end_idx])
+    for idx in range(peak_idx, search_end_idx):
+        if smooth_position[idx] >= start_pos and smooth_position[idx + 1] < start_pos:
+            v0, v1 = smooth_position[idx], smooth_position[idx + 1]
+            frac = (v0 - start_pos) / (v0 - v1) if (v0 - v1) != 0 else 0.0
+            end_time = float(time_values[idx] + frac * (time_values[idx + 1] - time_values[idx]))
+            end_idx = idx
+            break
+
+    return {
+        "start_idx": start_idx,
+        "start_time": float(time_values[start_idx]),
+        "start_position_deg": start_pos,
+        "end_idx": end_idx,
+        "end_time": end_time,
+        "peak_idx": peak_idx,
+        "peak_position_deg": float(smooth_position[peak_idx]),
+        "velocity_threshold_used": vel_threshold,
+        "duration_s": end_time - float(time_values[start_idx]),
+    }
+
 def detect_position_deg_rep_bounds(
     time_values,
     position_values,
