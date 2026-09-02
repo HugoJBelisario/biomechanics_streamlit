@@ -18125,21 +18125,13 @@ def render_biodex_test_tab():
             preview_protocol_type = preview_item.get("protocol_type", selected_biodex_test_protocol)
 
             if "Torque_Nm" in preview_item["numeric_columns"]:
-                preview_fig = go.Figure()
-                preview_fig.add_trace(go.Scatter(
-                    x=preview_df["Elapsed Seconds"],
-                    y=preview_df["Torque_Nm"],
-                    mode="lines",
-                    name=preview_item["test_name"],
-                ))
-                preview_fig.update_layout(
-                    hoverlabel=dict(namelength=-1),
-                    title="Stored Raw Torque Preview",
-                    xaxis_title="Elapsed Time (s)",
-                    yaxis_title="Torque_Nm",
-                    height=500,
-                )
-                st.plotly_chart(preview_fig, use_container_width=True)
+                # Position is plotted above Torque, both sharing the same Elapsed Time
+                # x-axis range, so the two curves can be visually compared stacked
+                # (e.g. spotting which position segment a torque spike lines up with).
+                shared_x_range = [
+                    float(preview_df["Elapsed Seconds"].min()),
+                    float(preview_df["Elapsed Seconds"].max()),
+                ]
 
                 if "Position_Deg" in preview_item["numeric_columns"]:
                     position_preview_fig = go.Figure()
@@ -18157,9 +18149,27 @@ def render_biodex_test_tab():
                         title=position_preview_title,
                         xaxis_title="Elapsed Time (s)",
                         yaxis_title="Position_Deg",
+                        xaxis_range=shared_x_range,
                         height=500,
                     )
                     st.plotly_chart(position_preview_fig, use_container_width=True)
+
+                preview_fig = go.Figure()
+                preview_fig.add_trace(go.Scatter(
+                    x=preview_df["Elapsed Seconds"],
+                    y=preview_df["Torque_Nm"],
+                    mode="lines",
+                    name=preview_item["test_name"],
+                ))
+                preview_fig.update_layout(
+                    hoverlabel=dict(namelength=-1),
+                    title="Stored Raw Torque Preview",
+                    xaxis_title="Elapsed Time (s)",
+                    yaxis_title="Torque_Nm",
+                    xaxis_range=shared_x_range,
+                    height=500,
+                )
+                st.plotly_chart(preview_fig, use_container_width=True)
 
                 if (
                     preview_movement == "posterior_cuff"
