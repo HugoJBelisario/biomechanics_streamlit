@@ -404,6 +404,22 @@ def prepare_biodex_dataframe(uploaded_file):
     df = pd.read_csv(uploaded_file)
     df.columns = [str(col).strip() for col in df.columns]
 
+    # Biodex CSV exports name the position column differently across software
+    # versions/exports (seen so far: "Position_Deg", plain "Position"). Position
+    # storage and every downstream position-chart/detection check look for the
+    # exact name "Position_Deg", so a differently-named column was silently
+    # dropped as if the file had no position data at all, even though the data
+    # was right there under a slightly different header. Normalize loosely
+    # (case/whitespace-insensitive "position" prefix) rather than requiring an
+    # exact match, so future header variants don't need a code change.
+    if "Position_Deg" not in df.columns:
+        position_source_col = next(
+            (col for col in df.columns if col.strip().lower().startswith("position")),
+            None,
+        )
+        if position_source_col is not None:
+            df = df.rename(columns={position_source_col: "Position_Deg"})
+
     if df.empty:
         raise ValueError("The uploaded Biodex file is empty.")
 
