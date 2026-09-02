@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -34,6 +35,69 @@ if hasattr(np, "trapezoid"):
     np_trapezoid = np.trapezoid
 else:
     np_trapezoid = np.trapz
+
+
+def persist_active_tab(storage_key, tab_labels):
+    """Keep a st.tabs() row on whichever tab the user last clicked across reruns.
+
+    st.tabs() has no notion of a "selected" session-state value, so every script
+    rerun re-mounts the tab strip visually at index 0 even though the tab bodies
+    below it already executed and kept their state. This writes the clicked tab
+    index to localStorage on click and re-clicks the matching tab button after
+    each rerun, so a widget change (or a dev-server reload) doesn't bounce the
+    user back to the first tab.
+    """
+    labels_json = json.dumps(list(tab_labels))
+    storage_key_json = json.dumps(str(storage_key))
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            const STORAGE_KEY = {storage_key_json};
+            const LABELS = {labels_json};
+            function findTabButtons() {{
+                const doc = window.parent.document;
+                const tabLists = doc.querySelectorAll('[data-baseweb="tab-list"]');
+                for (const list of tabLists) {{
+                    const buttons = Array.from(list.querySelectorAll('[data-baseweb="tab"]'));
+                    if (buttons.length === LABELS.length
+                        && buttons.every((b, i) => b.textContent.trim() === LABELS[i])) {{
+                        return buttons;
+                    }}
+                }}
+                return null;
+            }}
+            function sync() {{
+                const buttons = findTabButtons();
+                if (!buttons) return false;
+                const saved = window.parent.localStorage.getItem(STORAGE_KEY);
+                if (saved !== null) {{
+                    const idx = parseInt(saved, 10);
+                    if (buttons[idx] && buttons[idx].getAttribute('aria-selected') !== 'true') {{
+                        buttons[idx].click();
+                    }}
+                }}
+                buttons.forEach((btn, idx) => {{
+                    if (!btn.dataset.tabPersistBound) {{
+                        btn.dataset.tabPersistBound = 'true';
+                        btn.addEventListener('click', () => {{
+                            window.parent.localStorage.setItem(STORAGE_KEY, idx);
+                        }});
+                    }}
+                }});
+                return true;
+            }}
+            let attempts = 0;
+            const interval = setInterval(() => {{
+                attempts += 1;
+                sync();
+                if (attempts > 20) clearInterval(interval);
+            }}, 150);
+        }})();
+        </script>
+        """,
+        height=0,
+    )
 
 
 def render_plotly_line_reveal(
@@ -396,6 +460,38 @@ def insert_athlete(cur, conn, first_name, last_name, handedness):
     conn.commit()
     return athlete_id, athlete_name
 
+BODYWEIGHT_LB_TO_KG = 0.45359237
+
+def fetch_nearest_athlete_bodyweight_kg(cur, athlete_id, reference_date):
+    """Bodyweight (kg) from the athlete's `takes` row closest in date to `reference_date`.
+
+    `takes.weight` is the same bodyweight (in pounds) already used elsewhere in the app for
+    this athlete — reused here rather than asking for a separate entry, converted to kg for
+    Biodex torque/AUC normalization. Returns None if the athlete has no takes with a weight
+    recorded.
+    """
+    if reference_date is None:
+        return None
+    cur.execute(
+        """
+        SELECT weight, take_date
+        FROM takes
+        WHERE athlete_id = %s AND weight IS NOT NULL
+        ORDER BY ABS(take_date - %s::date)
+        LIMIT 1
+        """,
+        (int(athlete_id), reference_date),
+    )
+    row = cur.fetchone()
+    if row is None or row[0] is None:
+        return None
+    weight_lbs, source_date = row
+    return {
+        "bodyweight_kg": float(weight_lbs) * BODYWEIGHT_LB_TO_KG,
+        "bodyweight_lb": float(weight_lbs),
+        "source_date": source_date,
+    }
+
 def get_first_existing_biodex_column(df, candidates):
     for col in candidates:
         if col in df.columns:
@@ -678,6 +774,35 @@ def insert_biodex_processing_run(
     )
     return int(cur.fetchone()[0])
 
+def delete_biodex_processing_run(cur, conn, biodex_processing_run_id):
+    """Delete one saved processing run (and its rep windows/landmarks/mean curve) without
+    touching the underlying biodex_tests row or raw time series, so other saved runs
+    against the same upload are left intact."""
+    biodex_processing_run_id = int(biodex_processing_run_id)
+    cur.execute(
+        "DELETE FROM biodex_mean_curves WHERE biodex_processing_run_id = %s",
+        (biodex_processing_run_id,),
+    )
+    cur.execute(
+        """
+        DELETE FROM biodex_rep_landmarks
+        WHERE biodex_rep_window_id IN (
+            SELECT biodex_rep_window_id FROM biodex_rep_windows
+            WHERE biodex_processing_run_id = %s
+        )
+        """,
+        (biodex_processing_run_id,),
+    )
+    cur.execute(
+        "DELETE FROM biodex_rep_windows WHERE biodex_processing_run_id = %s",
+        (biodex_processing_run_id,),
+    )
+    cur.execute(
+        "DELETE FROM biodex_processing_runs WHERE biodex_processing_run_id = %s",
+        (biodex_processing_run_id,),
+    )
+    conn.commit()
+
 def insert_biodex_rep_windows(cur, biodex_processing_run_id, rep_windows, rep_df_source):
     inserted_windows = []
     for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
@@ -788,15 +913,126 @@ def insert_biodex_mean_curve(cur, biodex_processing_run_id, mean_df):
         )
     return len(rows)
 
+def fetch_biodex_compare_filter_options(cur):
+    """Distinct (athlete, protocol_type, movement, speed) combos that have at least one saved processing run.
+
+    Used to scope the Compare Sessions dropdowns to what's actually in the
+    database instead of a static list, so picking any combination is
+    guaranteed to return results.
+    """
+    cur.execute(
+        """
+        SELECT DISTINCT
+            bt.athlete_id,
+            bt.protocol_type,
+            bt.movement,
+            bt.speed_deg_per_sec
+        FROM biodex_processing_runs pr
+        JOIN biodex_tests bt ON pr.biodex_test_id = bt.biodex_test_id
+        """
+    )
+    options = {}
+    for athlete_id, protocol_type, movement, speed_deg_per_sec in cur.fetchall():
+        protocol_map = options.setdefault(int(athlete_id), {})
+        movement_map = protocol_map.setdefault(protocol_type, {})
+        speed_set = movement_map.setdefault(movement, set())
+        if speed_deg_per_sec is not None:
+            speed_set.add(int(speed_deg_per_sec))
+    return options
+
+BIODEX_ALL_FILTER_OPTION = "__all__"
+
+def biodex_compare_protocol_options(compare_filter_options, athlete_ids):
+    """Protocol types available across any of the selected athletes."""
+    protocols = set()
+    for athlete_id in athlete_ids:
+        protocols.update(compare_filter_options.get(athlete_id, {}).keys())
+    return sorted(protocols)
+
+def biodex_compare_movement_options(compare_filter_options, athlete_ids, protocol_type):
+    """Movements available across the selected athletes, unioned across every protocol when
+    protocol_type is the "All" sentinel instead of one specific protocol."""
+    movements = set()
+    for athlete_id in athlete_ids:
+        protocol_map = compare_filter_options.get(athlete_id, {})
+        protocols = protocol_map.keys() if protocol_type == BIODEX_ALL_FILTER_OPTION else [protocol_type]
+        for protocol in protocols:
+            movements.update(protocol_map.get(protocol, {}).keys())
+    return sorted(movements)
+
+def biodex_compare_speed_options(compare_filter_options, athlete_ids, protocol_type, movement):
+    """Speeds available across the selected athletes' protocol/movement selection, unioned
+    across every protocol and/or movement wherever either is the "All" sentinel."""
+    speeds = set()
+    for athlete_id in athlete_ids:
+        protocol_map = compare_filter_options.get(athlete_id, {})
+        protocols = protocol_map.keys() if protocol_type == BIODEX_ALL_FILTER_OPTION else [protocol_type]
+        for protocol in protocols:
+            movement_map = protocol_map.get(protocol, {})
+            movements = movement_map.keys() if movement == BIODEX_ALL_FILTER_OPTION else [movement]
+            for one_movement in movements:
+                speeds.update(movement_map.get(one_movement, set()))
+    return sorted(speeds)
+
+def sync_selectbox_state_to_options(key, options):
+    """Reset a selectbox's session_state value if it's stale for a new options list.
+
+    Needed for cascading dropdowns (athlete -> protocol -> movement -> speed):
+    once the parent choice changes, the previously chosen child value may no
+    longer be a valid option, which would otherwise raise a Streamlit error.
+    """
+    if not options:
+        st.session_state.pop(key, None)
+    elif st.session_state.get(key) not in options:
+        st.session_state[key] = options[0]
+
+def sync_multiselect_state_to_options(key, options):
+    """Drop any stale selections from a multiselect's session_state when its options change.
+
+    Same purpose as sync_selectbox_state_to_options but for st.multiselect, whose stored
+    value is a list — any previously-picked id no longer in the new options list would
+    otherwise raise a Streamlit error.
+    """
+    current = st.session_state.get(key)
+    if current is None:
+        return
+    valid_options = set(options)
+    filtered = [value for value in current if value in valid_options]
+    if filtered != current:
+        st.session_state[key] = filtered
+
 def fetch_biodex_processed_sessions(
     cur,
-    athlete_id,
-    protocol_type,
-    movement,
-    limb,
-    speed_deg_per_sec,
+    athlete_ids,
+    protocol_type=None,
+    movement=None,
+    limb=None,
+    speed_deg_per_sec=None,
 ):
-    query = """
+    """Saved processing runs for one or more athletes, optionally narrowed by
+    protocol/movement/limb/speed.
+
+    athlete_ids may be a single id or a list of ids. Any of protocol_type, movement, limb,
+    speed_deg_per_sec left as None matches every value for that dimension (an "All"
+    filter), rather than requiring an exact match.
+    """
+    if isinstance(athlete_ids, (list, tuple, set)):
+        athlete_id_list = [int(a) for a in athlete_ids]
+    else:
+        athlete_id_list = [int(athlete_ids)]
+    if not athlete_id_list:
+        return pd.DataFrame(columns=[
+            "biodex_processing_run_id", "biodex_test_id", "test_name", "test_date",
+            "protocol_type", "movement", "limb", "speed_deg_per_sec", "source_file_name",
+            "athlete_id", "athlete_name", "throwing_context", "processing_version", "created_at",
+            "is_reviewed", "rep_count", "peak_positive_mean_torque", "peak_negative_mean_torque",
+        ])
+    throwing_context_expr = (
+        "bt.throwing_context"
+        if table_has_column(cur, "biodex_tests", "throwing_context")
+        else "NULL AS throwing_context"
+    )
+    query = f"""
         SELECT
             pr.biodex_processing_run_id,
             bt.biodex_test_id,
@@ -807,6 +1043,9 @@ def fetch_biodex_processed_sessions(
             bt.limb,
             bt.speed_deg_per_sec,
             bt.source_file_name,
+            a.athlete_id,
+            a.athlete_name,
+            {throwing_context_expr},
             pr.processing_version,
             pr.created_at,
             pr.is_reviewed,
@@ -816,22 +1055,26 @@ def fetch_biodex_processed_sessions(
         FROM biodex_processing_runs pr
         JOIN biodex_tests bt
             ON pr.biodex_test_id = bt.biodex_test_id
+        JOIN athletes a
+            ON bt.athlete_id = a.athlete_id
         LEFT JOIN biodex_rep_windows rw
             ON pr.biodex_processing_run_id = rw.biodex_processing_run_id
         LEFT JOIN biodex_mean_curves mc
             ON pr.biodex_processing_run_id = mc.biodex_processing_run_id
-        WHERE bt.athlete_id = %s
-          AND bt.protocol_type = %s
-          AND bt.movement = %s
-          AND bt.limb = %s
+        WHERE bt.athlete_id = ANY(%s)
     """
-    params = [
-        int(athlete_id),
-        protocol_type,
-        movement,
-        limb,
-    ]
-    if protocol_type != "reactive_eccentric":
+    params = [athlete_id_list]
+
+    if protocol_type is not None:
+        query += " AND bt.protocol_type = %s"
+        params.append(protocol_type)
+    if movement is not None:
+        query += " AND bt.movement = %s"
+        params.append(movement)
+    if limb is not None:
+        query += " AND bt.limb = %s"
+        params.append(limb)
+    if speed_deg_per_sec is not None:
         query += " AND bt.speed_deg_per_sec = %s"
         params.append(int(speed_deg_per_sec))
 
@@ -846,6 +1089,9 @@ def fetch_biodex_processed_sessions(
             bt.limb,
             bt.speed_deg_per_sec,
             bt.source_file_name,
+            a.athlete_id,
+            a.athlete_name,
+            throwing_context,
             pr.processing_version,
             pr.created_at,
             pr.is_reviewed
@@ -862,6 +1108,9 @@ def fetch_biodex_processed_sessions(
         "limb",
         "speed_deg_per_sec",
         "source_file_name",
+        "athlete_id",
+        "athlete_name",
+        "throwing_context",
         "processing_version",
         "created_at",
         "is_reviewed",
@@ -2196,6 +2445,36 @@ def detect_shoulder_er_ir_speed_reps(
         "fs": fs,
     }
 
+def find_peaks_with_adaptive_prominence(
+    values,
+    target_count,
+    base_prominence,
+    distance,
+    prominence_floor=1.0,
+    relax_multipliers=(1.0, 0.8, 0.65, 0.5, 0.35, 0.25, 0.15),
+):
+    """Run find_peaks at decreasing prominence until at least target_count peaks are found.
+
+    A single global prominence threshold can under-detect peaks on reps where the
+    subject didn't fully relax between two contractions (a shallower valley between
+    peaks than other reps in the same file). Rather than requiring every rep to share
+    one hand-tuned threshold, relax the prominence per-rep, only as far as needed, so
+    reps with a genuinely clean signal are unaffected (the first, strictest multiplier
+    already satisfies them) while reps with a shallower valley still resolve correctly.
+    """
+    best_peaks = np.array([], dtype=int)
+    best_props = {"prominences": np.array([])}
+    for multiplier in relax_multipliers:
+        prominence = max(prominence_floor, float(base_prominence) * multiplier)
+        peaks, props = find_peaks(values, prominence=prominence, distance=distance)
+        if len(peaks) > len(best_peaks):
+            best_peaks, best_props = peaks, props
+        if len(peaks) >= target_count:
+            return peaks, props
+        if prominence <= prominence_floor:
+            break
+    return best_peaks, best_props
+
 def detect_biodex_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.12):
     if rep_df.empty or value_col not in rep_df.columns:
         return None
@@ -2255,6 +2534,139 @@ def detect_biodex_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=
         "indices": landmark_indices,
         "kinds": [kind for _idx, kind in candidates],
         "smooth_values": smooth_values,
+    }
+
+def detect_biodex_rep_onset_idx(values, search_end_idx, baseline_window=15, min_prominence=2.0, sustain_samples=3):
+    """Find where `values` first sustainably rises off its early baseline, scanning
+    backward from `search_end_idx` (typically the rep's first major peak).
+
+    Used to anchor a rep's "start" (0%) to the actual onset of contraction instead of
+    the raw window edge, which is just wherever the detection buffer happened to begin.
+    Two reps with different amounts of idle/relaxation time before they start pulling
+    would otherwise get stretched or compressed against each other over that lead-in,
+    throwing off alignment even when their landmarks line up fine. Returns 0 (falls back
+    to the raw window start) if no clear departure from baseline can be found.
+    """
+    values = np.asarray(values, dtype=float)
+    search_end_idx = int(max(0, min(search_end_idx, len(values) - 1)))
+    baseline_window = max(3, min(len(values), baseline_window))
+    baseline_value = float(np.nanmedian(values[:baseline_window]))
+    noise = float(np.nanstd(values[:baseline_window]))
+    threshold = baseline_value + max(min_prominence, noise * 1.5)
+
+    onset_idx = search_end_idx
+    for idx in range(search_end_idx, -1, -1):
+        window_end = min(len(values), idx + sustain_samples)
+        if np.all(values[idx:window_end] >= threshold):
+            onset_idx = idx
+        elif onset_idx != search_end_idx:
+            break
+
+    if onset_idx == search_end_idx:
+        return 0
+    return onset_idx
+
+def detect_biodex_rep_settle_idx(values, search_start_idx, baseline_window=15, min_prominence=2.0, sustain_samples=3):
+    """Find where `values` first settles back near its late-window baseline, scanning
+    forward from `search_start_idx` (typically the rep's last major landmark, e.g. NEG1).
+
+    Mirrors detect_biodex_rep_onset_idx for the tail end of a rep: anchors "end" (100%)
+    to where torque actually returns to rest instead of the raw buffered window edge, so
+    trailing buffer/relaxation time doesn't skew alignment near the end of the cycle.
+    Unlike the onset detector this only checks proximity to baseline (not direction), so
+    it works whether the last landmark is a positive or negative peak. Returns
+    len(values) - 1 (falls back to the raw window end) if no clear settle point is found.
+    """
+    values = np.asarray(values, dtype=float)
+    n = len(values)
+    search_start_idx = int(max(0, min(search_start_idx, n - 1)))
+    baseline_window = max(3, min(n, baseline_window))
+    baseline_value = float(np.nanmedian(values[-baseline_window:]))
+    noise = float(np.nanstd(values[-baseline_window:]))
+    threshold = max(min_prominence, noise * 1.5)
+
+    for idx in range(search_start_idx, n):
+        window_end = min(n, idx + sustain_samples)
+        if np.all(np.abs(values[idx:window_end] - baseline_value) <= threshold):
+            return idx
+
+    return n - 1
+
+def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.12):
+    """Detect landmarks for a conditioning rep: POS1, POS2, NEG1 (two positive peaks followed by one negative peak)."""
+    if rep_df.empty or value_col not in rep_df.columns:
+        return None
+
+    torque_values = pd.to_numeric(rep_df[value_col], errors="coerce").to_numpy(dtype=float)
+    if len(torque_values) < 7 or np.all(np.isnan(torque_values)):
+        return None
+
+    finite_mask = np.isfinite(torque_values)
+    if not finite_mask.any():
+        return None
+
+    clean_values = torque_values.copy()
+    if not finite_mask.all():
+        valid_idx = np.flatnonzero(finite_mask)
+        clean_values[~finite_mask] = np.interp(
+            np.flatnonzero(~finite_mask),
+            valid_idx,
+            torque_values[finite_mask],
+        )
+
+    smooth_window = get_valid_savgol_window(11, len(clean_values), 3)
+    if smooth_window is not None:
+        smooth_values = savgol_filter(clean_values, window_length=smooth_window, polyorder=3)
+    else:
+        smooth_values = clean_values
+
+    amplitude_span = float(np.nanmax(smooth_values) - np.nanmin(smooth_values))
+    if amplitude_span <= 0:
+        return None
+
+    min_distance = max(1, len(smooth_values) // 12)
+    prominence = max(1.0, amplitude_span * float(prominence_ratio))
+
+    pos_peaks, pos_props = find_peaks_with_adaptive_prominence(
+        smooth_values,
+        target_count=2,
+        base_prominence=prominence,
+        distance=min_distance,
+    )
+    neg_peaks, neg_props = find_peaks_with_adaptive_prominence(
+        -smooth_values,
+        target_count=1,
+        base_prominence=prominence,
+        distance=min_distance,
+    )
+
+    if len(pos_peaks) < 2 or len(neg_peaks) < 1:
+        return None
+
+    top_pos_idx = np.argsort(pos_props["prominences"])[-2:]
+    top_neg_idx = np.argsort(neg_props["prominences"])[-1:]
+
+    candidates = []
+    for idx in top_pos_idx:
+        candidates.append((int(pos_peaks[idx]), "pos"))
+    for idx in top_neg_idx:
+        candidates.append((int(neg_peaks[idx]), "neg"))
+
+    candidates = sorted(candidates, key=lambda item: item[0])
+    landmark_indices = [idx for idx, _kind in candidates]
+
+    if len(landmark_indices) != 3 or any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
+        return None
+
+    start_idx = detect_biodex_rep_onset_idx(smooth_values, landmark_indices[0])
+    end_idx = detect_biodex_rep_settle_idx(smooth_values, landmark_indices[-1])
+
+    return {
+        "indices": landmark_indices,
+        "kinds": [kind for _idx, kind in candidates],
+        "smooth_values": smooth_values,
+        "start_idx": start_idx,
+        "end_idx": end_idx,
     }
 
 def detect_shoulder_er_ir_speed_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.12):
@@ -2317,59 +2729,24 @@ def detect_shoulder_er_ir_speed_rep_landmarks(rep_df, value_col="Torque_Nm", pro
         "smooth_values": smooth_values,
     }
 
-def extract_landmark_aligned_biodex_reps(
-    df,
-    rep_windows,
-    time_col="Elapsed Seconds",
-    value_col="Torque_Nm",
-    n_points=101,
-    prominence_ratio=0.12,
-):
-    if df.empty or not rep_windows:
+def build_landmark_aligned_curve(valid_reps, time_col="Elapsed Seconds", value_col="Torque_Nm", n_points=101):
+    """Average a set of landmark-boundary-tagged reps onto a common 0-100% movement-cycle axis.
+
+    Each item in valid_reps is a dict with "rep_number", "rep_df" (must contain time_col/
+    value_col), "boundary_idx" ([0, <interior landmark sample indices>..., len(rep_df)-1],
+    strictly increasing), "landmark_indices" (the interior ones only), and "landmark_kinds".
+    Shared by live peak-detected reps (extract_landmark_aligned_biodex_reps) and reps
+    reconstructed from previously-saved landmarks (e.g. for rep-group comparisons), so both
+    paths align and average the same way.
+    """
+    if not valid_reps:
         return pd.DataFrame(), pd.DataFrame(), []
 
     percent_axis = np.linspace(0.0, 100.0, int(n_points))
-    valid_reps = []
     phase_fraction_rows = []
-
-    for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
-        rep_df = df.iloc[int(start_idx):int(end_idx) + 1].copy()
-        if rep_df.empty:
-            continue
-
-        rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
-        rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
-        rep_df = rep_df.dropna(subset=[time_col, value_col]).reset_index(drop=True)
-        if len(rep_df) < 7:
-            continue
-
-        landmark_info = detect_biodex_rep_landmarks(
-            rep_df,
-            value_col=value_col,
-            prominence_ratio=prominence_ratio,
-        )
-        if landmark_info is None:
-            continue
-
-        boundary_idx = [0] + landmark_info["indices"] + [len(rep_df) - 1]
-        if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
-            continue
-
-        phase_lengths = np.diff(boundary_idx).astype(float)
-        if np.any(phase_lengths <= 0):
-            continue
-
+    for rep_info in valid_reps:
+        phase_lengths = np.diff(rep_info["boundary_idx"]).astype(float)
         phase_fraction_rows.append(phase_lengths / phase_lengths.sum())
-        valid_reps.append({
-            "rep_number": rep_number,
-            "rep_df": rep_df,
-            "boundary_idx": boundary_idx,
-            "landmark_indices": landmark_info["indices"],
-            "landmark_kinds": landmark_info["kinds"],
-        })
-
-    if not valid_reps:
-        return pd.DataFrame(), pd.DataFrame(), []
 
     median_phase_fractions = np.nanmedian(np.vstack(phase_fraction_rows), axis=0)
     median_phase_fractions = median_phase_fractions / median_phase_fractions.sum()
@@ -2424,6 +2801,360 @@ def extract_landmark_aligned_biodex_reps(
     mean_df.attrs["landmark_labels"] = landmark_labels
 
     return reps_long_df, mean_df, aligned_rep_metadata
+
+def extract_landmark_aligned_biodex_reps(
+    df,
+    rep_windows,
+    time_col="Elapsed Seconds",
+    value_col="Torque_Nm",
+    n_points=101,
+    prominence_ratio=0.12,
+    landmark_detector=None,
+):
+    if df.empty or not rep_windows:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    detector = landmark_detector or detect_biodex_rep_landmarks
+
+    valid_reps = []
+
+    for rep_number, (start_idx, end_idx) in enumerate(rep_windows, start=1):
+        rep_df = df.iloc[int(start_idx):int(end_idx) + 1].copy()
+        if rep_df.empty:
+            continue
+
+        rep_df[time_col] = pd.to_numeric(rep_df[time_col], errors="coerce")
+        rep_df[value_col] = pd.to_numeric(rep_df[value_col], errors="coerce")
+        rep_df = rep_df.dropna(subset=[time_col, value_col]).reset_index(drop=True)
+        if len(rep_df) < 7:
+            continue
+
+        landmark_info = detector(
+            rep_df,
+            value_col=value_col,
+            prominence_ratio=prominence_ratio,
+        )
+        if landmark_info is None:
+            continue
+
+        start_idx = landmark_info.get("start_idx", 0)
+        end_idx = landmark_info.get("end_idx", len(rep_df) - 1)
+        boundary_idx = [start_idx] + landmark_info["indices"] + [end_idx]
+        if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
+            continue
+
+        phase_lengths = np.diff(boundary_idx).astype(float)
+        if np.any(phase_lengths <= 0):
+            continue
+
+        valid_reps.append({
+            "rep_number": rep_number,
+            "rep_df": rep_df,
+            "boundary_idx": boundary_idx,
+            "landmark_indices": landmark_info["indices"],
+            "landmark_kinds": landmark_info["kinds"],
+        })
+
+    return build_landmark_aligned_curve(valid_reps, time_col=time_col, value_col=value_col, n_points=n_points)
+
+def reconstruct_biodex_rep_curves_from_saved_landmarks(
+    cur,
+    biodex_processing_run_id,
+    biodex_test_id,
+    time_col="Elapsed Seconds",
+    value_col="Torque_Nm",
+):
+    """Rebuild each rep's (time, torque) series and interior landmark positions from what
+    was already saved at review time (biodex_rep_windows + biodex_rep_landmarks), sliced
+    out of the test's raw time series. This lets us regroup reps (first/middle/last-N) for
+    comparison without re-running peak detection on data a reviewer already approved.
+
+    Returns a list of dicts in the same shape build_landmark_aligned_curve expects.
+    """
+    rep_windows_df = fetch_biodex_rep_windows(cur, biodex_processing_run_id)
+    if rep_windows_df.empty:
+        return []
+
+    rep_landmarks_df = fetch_biodex_rep_landmarks(cur, biodex_processing_run_id)
+    if rep_landmarks_df.empty:
+        return []
+
+    raw_df = fetch_biodex_raw_time_series(cur, biodex_test_id)
+    if raw_df.empty:
+        return []
+
+    raw_df = raw_df.dropna(subset=["time_seconds", "torque_nm"]).sort_values("time_seconds")
+    raw_time = raw_df["time_seconds"].to_numpy(dtype=float)
+    raw_torque = raw_df["torque_nm"].to_numpy(dtype=float)
+
+    valid_reps = []
+    for _, window_row in rep_windows_df.iterrows():
+        rep_number = int(window_row["rep_number"])
+        start_time = float(window_row["start_time_seconds"])
+        end_time = float(window_row["end_time_seconds"])
+
+        mask = (raw_time >= start_time) & (raw_time <= end_time)
+        if int(mask.sum()) < 5:
+            continue
+        rep_time_values = raw_time[mask]
+        rep_torque_values = raw_torque[mask]
+        rep_df = pd.DataFrame({time_col: rep_time_values, value_col: rep_torque_values})
+
+        landmark_rows = rep_landmarks_df[rep_landmarks_df["rep_number"] == rep_number].sort_values("time_seconds")
+        if landmark_rows.empty:
+            continue
+
+        landmark_indices = []
+        landmark_kinds = []
+        for _, landmark_row in landmark_rows.iterrows():
+            idx = int(np.searchsorted(rep_time_values, float(landmark_row["time_seconds"])))
+            idx = min(max(idx, 1), len(rep_time_values) - 2)
+            landmark_indices.append(idx)
+            landmark_kinds.append("".join(ch for ch in landmark_row["landmark_name"] if not ch.isdigit()))
+
+        start_idx = 0
+        if landmark_kinds and landmark_kinds[0] == "pos":
+            start_idx = detect_biodex_rep_onset_idx(rep_torque_values, landmark_indices[0])
+
+        end_idx = detect_biodex_rep_settle_idx(rep_torque_values, landmark_indices[-1])
+
+        boundary_idx = [start_idx] + landmark_indices + [end_idx]
+        if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
+            continue
+
+        valid_reps.append({
+            "rep_number": rep_number,
+            "rep_df": rep_df,
+            "boundary_idx": boundary_idx,
+            "landmark_indices": landmark_indices,
+            "landmark_kinds": landmark_kinds,
+        })
+
+    valid_reps.sort(key=lambda item: item["rep_number"])
+    return valid_reps
+
+def _integrate_biodex_rep_phase(
+    time_values, torque_values, start_idx, end_idx, prepend_crossing_time=None, append_crossing_time=None,
+):
+    """Trapezoidal torque-time integral over [start_idx, end_idx], optionally extended by
+    an interpolated (time, 0.0) endpoint at either end for a precise zero-crossing boundary."""
+    segment_time = time_values[start_idx:end_idx + 1]
+    segment_torque = torque_values[start_idx:end_idx + 1]
+    if prepend_crossing_time is not None:
+        segment_time = np.insert(segment_time, 0, prepend_crossing_time)
+        segment_torque = np.insert(segment_torque, 0, 0.0)
+    if append_crossing_time is not None:
+        segment_time = np.append(segment_time, append_crossing_time)
+        segment_torque = np.append(segment_torque, 0.0)
+
+    if len(segment_time) < 2:
+        return None
+
+    return {
+        "auc_nm_s": float(np_trapezoid(segment_torque, segment_time)),
+        "phase_duration_s": float(segment_time[-1] - segment_time[0]),
+    }
+
+def find_biodex_internal_external_crossing_pct(movement_pct, torque_values, search_start_pct, search_end_pct):
+    """Movement-cycle percent where `torque_values` crosses from positive to negative
+    within [search_start_pct, search_end_pct], linearly interpolated between samples.
+
+    Used to split a conditioning rep/group's aligned curve into its internal-rotation
+    (positive) and external-rotation (negative) portions for the Phase View toggle, on the
+    same 0-100% axis the curves are already plotted on. Falls back to search_end_pct if no
+    crossing is found in range (e.g. a noisy or incomplete curve).
+    """
+    movement_pct = np.asarray(movement_pct, dtype=float)
+    torque_values = np.asarray(torque_values, dtype=float)
+    mask = (movement_pct >= search_start_pct) & (movement_pct <= search_end_pct)
+    idxs = np.flatnonzero(mask)
+    for i in range(len(idxs) - 1):
+        i0, i1 = idxs[i], idxs[i + 1]
+        if torque_values[i0] > 0 and torque_values[i1] <= 0:
+            v0, v1 = torque_values[i0], torque_values[i1]
+            t0, t1 = movement_pct[i0], movement_pct[i1]
+            frac = v0 / (v0 - v1) if (v0 - v1) != 0 else 0.0
+            return float(t0 + frac * (t1 - t0))
+    return float(search_end_pct)
+
+def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", value_col="Torque_Nm"):
+    """Torque-time integral (Nm·s) of a conditioning rep's internal- and external-rotation phases.
+
+    Internal rotation runs from the rep's start (the onset-normalized 0%) through the
+    positive torque region (POS1 -> POS2) up to the zero crossing before NEG1. External
+    rotation picks up at that same crossing point and runs through NEG1 to the rep's end
+    (the settle-normalized 100%) — the two phases share one boundary so they're contiguous,
+    but each ends differently: internal rotation exits on a genuine sign flip (torque
+    reliably crosses zero on its way to NEG1), while external rotation has no such crossing
+    to rely on — torque just settles back toward baseline without necessarily recrossing
+    zero inside the rep window — so it uses the already-normalized end-of-rep boundary
+    instead. The zero crossing itself is linearly interpolated between samples for a more
+    accurate boundary than snapping to the nearest sample.
+
+    Expects rep_info in the shape build_landmark_aligned_curve consumes, with exactly the
+    conditioning landmark pattern (POS1, POS2, NEG1). Returns None if the rep doesn't match
+    that pattern.
+    """
+    if rep_info.get("landmark_kinds") != ["pos", "pos", "neg"]:
+        return None
+
+    start_idx, pos1_idx, pos2_idx, neg1_idx, end_idx = rep_info["boundary_idx"]
+
+    rep_df = rep_info["rep_df"]
+    time_values = rep_df[time_col].to_numpy(dtype=float)
+    torque_values = rep_df[value_col].to_numpy(dtype=float)
+
+    crossing_idx = None
+    crossing_time = None
+    for idx in range(pos2_idx, neg1_idx):
+        if torque_values[idx] > 0 and torque_values[idx + 1] <= 0:
+            v0, v1 = torque_values[idx], torque_values[idx + 1]
+            t0, t1 = time_values[idx], time_values[idx + 1]
+            frac = v0 / (v0 - v1) if (v0 - v1) != 0 else 0.0
+            crossing_time = float(t0 + frac * (t1 - t0))
+            crossing_idx = idx
+            break
+
+    if crossing_idx is None:
+        # No exact sign flip found (e.g. torque only touches zero); fall back to NEG1.
+        crossing_idx = neg1_idx
+
+    internal = _integrate_biodex_rep_phase(
+        time_values, torque_values, start_idx, crossing_idx, append_crossing_time=crossing_time,
+    )
+    if internal is None:
+        return None
+
+    # External rotation starts at the same crossing point internal rotation ended on
+    # (its raw sample is already included in the internal segment above).
+    external_start_idx = crossing_idx + 1
+    external = _integrate_biodex_rep_phase(
+        time_values, torque_values, external_start_idx, end_idx, prepend_crossing_time=crossing_time,
+    )
+    if external is None:
+        return None
+
+    # POS1 and POS2 are two distinct sub-peaks within the internal-rotation phase (two
+    # separate contractions in one rep, not noise around one peak), so they're reported
+    # separately everywhere rather than collapsed into a single "peak positive torque" —
+    # collapsing them previously meant different tables disagreed on what "peak positive"
+    # meant (max of the two vs. an average of the two vs. POS1 alone). POS1 is treated as
+    # the internal-rotation reference point (time-to-peak and the ER/IR ratio both anchor
+    # to it), matching how the movement is coached: POS1 is the primary IR contraction.
+    external_phase_start_time = crossing_time if crossing_time is not None else float(time_values[crossing_idx])
+
+    pos1_torque_nm = float(torque_values[pos1_idx])
+    pos2_torque_nm = float(torque_values[pos2_idx])
+    neg1_torque_nm = float(np.min(torque_values[crossing_idx:end_idx + 1]))
+    # ER/IR ratio: external (NEG1/ER) strength as a fraction of internal (POS1/IR) strength
+    # — the standard clinical convention for rotator-cuff strength ratios.
+    er_ir_ratio = abs(neg1_torque_nm) / pos1_torque_nm if pos1_torque_nm > 0 else None
+
+    return {
+        "rep_number": rep_info["rep_number"],
+        "internal_auc_nm_s": internal["auc_nm_s"],
+        "internal_duration_s": internal["phase_duration_s"],
+        "internal_time_to_peak_s": float(time_values[pos1_idx] - time_values[start_idx]),
+        "pos1_torque_nm": pos1_torque_nm,
+        "pos2_torque_nm": pos2_torque_nm,
+        "external_auc_nm_s": external["auc_nm_s"],
+        "external_duration_s": external["phase_duration_s"],
+        "external_time_to_peak_s": float(time_values[neg1_idx] - external_phase_start_time),
+        "neg1_torque_nm": neg1_torque_nm,
+        "er_ir_ratio": er_ir_ratio,
+    }
+
+def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, rep_number=None):
+    """One Peak Torque table row, averaged across `auc_results` (or a single rep's values
+    when `rep_number` is given). Only includes internal (IR Torque 1/2, time to peak)
+    columns when phase_view is "Full" or "Internal", and external (ER Torque, time to peak)
+    columns when phase_view is "Full" or "External" — so the table always matches what the
+    Phase View toggle is currently showing on the chart. ER/IR Ratio only appears for
+    "Full" (it isn't a single-phase statistic).
+    """
+    row = dict(meta)
+    row["Bodyweight (kg)"] = round(bodyweight_kg, 1) if bodyweight_kg else None
+    if rep_number is not None:
+        row["Rep"] = rep_number
+    prefix = "" if rep_number is not None else "Mean "
+    unit_suffix = " (Nm)" if rep_number is not None else ""
+
+    if phase_view in ("Full", "Internal"):
+        ir1 = float(np.mean([r["pos1_torque_nm"] for r in auc_results]))
+        ir2 = float(np.mean([r["pos2_torque_nm"] for r in auc_results]))
+        row[f"{prefix}IR Torque 1{unit_suffix}"] = ir1
+        row[f"{prefix}IR Torque 2{unit_suffix}"] = ir2
+        if bodyweight_kg:
+            row[f"{prefix}IR Torque 1 (Nm/kg)"] = ir1 / bodyweight_kg
+            row[f"{prefix}IR Torque 2 (Nm/kg)"] = ir2 / bodyweight_kg
+        row[f"{prefix}Internal Time to Peak (s)"] = float(np.mean([r["internal_time_to_peak_s"] for r in auc_results]))
+    if phase_view in ("Full", "External"):
+        er = float(np.mean([r["neg1_torque_nm"] for r in auc_results]))
+        row[f"{prefix}ER Torque{unit_suffix}"] = er
+        if bodyweight_kg:
+            row[f"{prefix}ER Torque (Nm/kg)"] = er / bodyweight_kg
+        row[f"{prefix}External Time to Peak (s)"] = float(np.mean([r["external_time_to_peak_s"] for r in auc_results]))
+    if phase_view == "Full":
+        ratio_values = [r["er_ir_ratio"] for r in auc_results if r["er_ir_ratio"] is not None]
+        row[f"{prefix}ER/IR Ratio"] = float(np.mean(ratio_values)) if ratio_values else None
+    return row
+
+def build_biodex_auc_row(meta, auc_results, bodyweight_kg, phase_view, rep_number=None):
+    """One AUC table row, averaged across `auc_results` (or a single rep's values when
+    `rep_number` is given). Only includes internal-phase columns when phase_view is "Full"
+    or "Internal", external-phase columns when "Full" or "External". Time to peak and the
+    ER/IR ratio live on the Peak Torque table instead, so they aren't repeated here.
+    """
+    row = dict(meta)
+    row["Bodyweight (kg)"] = round(bodyweight_kg, 1) if bodyweight_kg else None
+    if rep_number is not None:
+        row["Rep"] = rep_number
+    prefix = "" if rep_number is not None else "Mean "
+
+    if phase_view in ("Full", "Internal"):
+        internal_auc = float(np.mean([r["internal_auc_nm_s"] for r in auc_results]))
+        row[f"{prefix}Internal AUC (Nm·s)"] = internal_auc
+        row[f"{prefix}Internal Duration (s)"] = float(np.mean([r["internal_duration_s"] for r in auc_results]))
+        if bodyweight_kg:
+            row[f"{prefix}Internal AUC (Nm·s/kg)"] = internal_auc / bodyweight_kg
+    if phase_view in ("Full", "External"):
+        external_auc = float(np.mean([r["external_auc_nm_s"] for r in auc_results]))
+        row[f"{prefix}External AUC (Nm·s)"] = external_auc
+        row[f"{prefix}External Duration (s)"] = float(np.mean([r["external_duration_s"] for r in auc_results]))
+        if bodyweight_kg:
+            row[f"{prefix}External AUC (Nm·s/kg)"] = external_auc / bodyweight_kg
+    return row
+
+def auto_distribute_biodex_rep_numbers(rep_numbers, num_groups, group_size):
+    """Evenly space `num_groups` windows of `group_size` reps across an ordered rep-number list.
+
+    The first window starts at the first rep and the last window ends at the last rep,
+    with windows in between spaced evenly (this generalizes the old fixed First/Middle/Last
+    split to any group count). When there aren't enough reps for every window to be
+    distinct, windows overlap rather than being dropped, so a comparison is still possible
+    on short sets.
+    """
+    rep_numbers = sorted(rep_numbers)
+    n = len(rep_numbers)
+    if n == 0 or num_groups <= 0 or group_size <= 0:
+        return {}
+
+    size = min(int(group_size), n)
+    max_start = n - size
+
+    if num_groups == 1:
+        starts = [0]
+    else:
+        starts = [
+            round(i * max_start / (num_groups - 1))
+            for i in range(int(num_groups))
+        ]
+
+    groups = {}
+    for i, start in enumerate(starts):
+        start = max(0, min(start, max_start))
+        groups[i + 1] = rep_numbers[start:start + size]
+    return groups
 
 def extract_position_window_normalized_biodex_reps(
     df,
@@ -8536,7 +9267,7 @@ st.title("Biomechanics Viewer")
 # --------------------------------------------------
 # Tabs
 # --------------------------------------------------
-tab_kinematic, tab_joint, tab_kinetics, tab_energy, tab1, tab2, tab3, tab5, tab6 = st.tabs([
+tab_kinematic, tab_joint, tab_kinetics, tab_energy, tab1, tab2, tab3, tab5, tab_curve_demo = st.tabs([
     "Kinematic Sequence",
     "Kinematics",
     "Kinetics",
@@ -8545,7 +9276,7 @@ tab_kinematic, tab_joint, tab_kinetics, tab_energy, tab1, tab2, tab3, tab5, tab6
     "Session Comparison",
     "0-10 Report",
     "Biodex",
-    "Biodex (Test)",
+    "Curve Shape Demo",
 ])
 
 shoulder_er_max_frames = {}
@@ -8554,145 +9285,76 @@ fp_event_frames = []
 knee_event_frames = []
 mer_event_frames = []
 window_start = -100
-# Workaround for Streamlit tab reset on rerun:
-# persist active tab in URL query param and re-select it after rerender.
+
+MAIN_TAB_LABELS = [
+    "Kinematic Sequence",
+    "Kinematics",
+    "Kinetics",
+    "Energy Flow",
+    "Compensation Analysis",
+    "Session Comparison",
+    "0-10 Report",
+    "Biodex",
+    "Curve Shape Demo",
+]
+
+# Workaround for Streamlit tab reset on rerun: persist the active tab in
+# localStorage and re-select it after rerender, without ever navigating or
+# reloading the page (a prior version of this forced a full page reload on
+# every tab click, which is what made tab switches feel like a full app reload).
+persist_active_tab("main_tabs", MAIN_TAB_LABELS)
+
+# Independently, show the "Exclude Takes" sidebar control that matches
+# whichever main tab is active (0-10 Report gets its own variant).
 components.html(
-    """
+    f"""
     <script>
-    const TAB_PARAM = "active_tab";
-    const TAB_SYNC_VERSION = "5";
-    let restoringTab = false;
-    let hasInitialRestore = false;
+    const MAIN_LABELS = {json.dumps(MAIN_TAB_LABELS)};
 
-    function getActiveTabFromUrl() {
-      const url = new URL(parent.window.location.href);
-      return url.searchParams.get(TAB_PARAM);
-    }
+    function findMainTabButtons() {{
+      const doc = parent.document;
+      const tabLists = doc.querySelectorAll('[data-baseweb="tab-list"]');
+      for (const list of tabLists) {{
+        const buttons = Array.from(list.querySelectorAll('button[role="tab"]'));
+        if (buttons.length === MAIN_LABELS.length
+            && buttons.every((b, i) => b.textContent.trim() === MAIN_LABELS[i])) {{
+          return buttons;
+        }}
+      }}
+      return null;
+    }}
 
-    function setActiveTabInUrl(tabLabel, shouldReload = false) {
-      const url = new URL(parent.window.location.href);
-      if (url.searchParams.get(TAB_PARAM) === tabLabel) return;
-
-      url.searchParams.set(TAB_PARAM, tabLabel);
-      if (shouldReload) {
-        parent.window.location.href = url.toString();
-      } else {
-        parent.window.history.replaceState({}, "", url.toString());
-      }
-    }
-
-    function getTabButtons() {
-      return Array.from(parent.document.querySelectorAll('button[role="tab"]'));
-    }
-
-    function getSelectedTabLabel() {
-      const selected = getTabButtons().find(
-        (button) => button.getAttribute("aria-selected") === "true"
-      );
-      return selected ? selected.textContent.trim() : "";
-    }
-
-    function setElementHidden(element, hidden) {
+    function setElementHidden(element, hidden) {{
       if (!element) return;
       element.style.display = hidden ? "none" : "";
-    }
+    }}
 
-    function toggle010SidebarControls() {
+    function toggle010SidebarControls() {{
       const sidebar = parent.document.querySelector('[data-testid="stSidebar"]');
       if (!sidebar) return;
 
-      const show010Controls = getSelectedTabLabel() === "0-10 Report";
-      const hide010Controls = !show010Controls;
-
-      sidebar.querySelectorAll(".st-key-exclude_takes").forEach((element) => {
-        setElementHidden(element, show010Controls);
-      });
-      sidebar.querySelectorAll(".st-key-exclude_takes_010").forEach((element) => {
-        setElementHidden(element, hide010Controls);
-      });
-    }
-
-    function handleUserTabActivation(button) {
-      if (restoringTab) return;
-      setActiveTabInUrl(button.textContent.trim(), true);
-    }
-
-    function bindTabClicks() {
-      const buttons = getTabButtons();
-      buttons.forEach((button) => {
-        if (button.dataset.terraTabBound === TAB_SYNC_VERSION) return;
-        button.dataset.terraTabBound = TAB_SYNC_VERSION;
-        button.addEventListener("pointerdown", () => {
-          handleUserTabActivation(button);
-        }, true);
-        button.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            handleUserTabActivation(button);
-          }
-        }, true);
-        button.addEventListener("click", () => {
-          handleUserTabActivation(button);
-        }, true);
-      });
-    }
-
-    function restoreActiveTab() {
-      if (hasInitialRestore) return;
-
-      const desiredTab = getActiveTabFromUrl();
-      if (!desiredTab) {
-        hasInitialRestore = true;
-        return;
-      }
-
-      const buttons = getTabButtons();
-      const target = buttons.find(
-        (button) => button.textContent.trim() === desiredTab
-      );
-      if (!target) {
-        hasInitialRestore = true;
-        return;
-      }
-
-      if (target.getAttribute("aria-selected") !== "true") {
-        restoringTab = true;
-        target.click();
-        setTimeout(() => {
-          restoringTab = false;
-        }, 0);
-      }
-      hasInitialRestore = true;
-    }
-
-    function syncSelectedTabToUrl() {
-      if (!hasInitialRestore || restoringTab) return;
-
-      const selected = getTabButtons().find(
+      const buttons = findMainTabButtons();
+      const selected = buttons && buttons.find(
         (button) => button.getAttribute("aria-selected") === "true"
       );
-      if (!selected) return;
+      const selectedLabel = selected ? selected.textContent.trim() : "";
 
-      const selectedTab = selected.textContent.trim();
-      const activeTab = getActiveTabFromUrl();
+      const show010Controls = selectedLabel === "0-10 Report";
+      const hide010Controls = !show010Controls;
 
-      if (activeTab && selectedTab !== activeTab) {
-        setActiveTabInUrl(selectedTab, true);
-      } else if (!activeTab) {
-        setActiveTabInUrl(selectedTab);
-      }
-    }
+      sidebar.querySelectorAll(".st-key-exclude_takes").forEach((element) => {{
+        setElementHidden(element, show010Controls);
+      }});
+      sidebar.querySelectorAll(".st-key-exclude_takes_010").forEach((element) => {{
+        setElementHidden(element, hide010Controls);
+      }});
+    }}
 
-    function syncTabs() {
-      bindTabClicks();
-      restoreActiveTab();
-      toggle010SidebarControls();
-    }
-
-    syncTabs();
-    if (parent.window.__terraTabSyncInterval) {
-      clearInterval(parent.window.__terraTabSyncInterval);
-    }
-    parent.window.__terraTabSyncInterval = setInterval(syncTabs, 250);
+    toggle010SidebarControls();
+    if (parent.window.__terra010ToggleInterval) {{
+      clearInterval(parent.window.__terra010ToggleInterval);
+    }}
+    parent.window.__terra010ToggleInterval = setInterval(toggle010SidebarControls, 250);
     </script>
     """,
     height=0,
@@ -16379,7 +17041,7 @@ with tab3:
         st.warning("No data found for the 0-10 report.")
 
 
-with tab5:
+if False:  # legacy Biodex tab — superseded by render_biodex_test_tab(), kept locally only
     st.subheader("Biodex")
     st.caption("Upload Biodex CSV exports to visualize a measurement over time.")
 
@@ -16477,6 +17139,7 @@ with tab5:
 
     protocol_type_options = [
         "aerobic",
+        "conditioning",
         "reactive_eccentric",
         "speed",
         "strength",
@@ -16941,6 +17604,7 @@ with tab5:
                                 xaxis_title="Movement Cycle (%)",
                                 yaxis_title="Torque_Nm",
                                 height=500,
+                                legend=dict(groupclick="toggleitem"),
                             )
                             render_plotly_line_reveal(
                                 avg_fig,
@@ -17004,13 +17668,18 @@ with tab5:
                     if preview_frames:
                         st.dataframe(pd.concat(preview_frames, ignore_index=True), use_container_width=True)
 
-with tab6:
-    st.subheader("Biodex (Test)")
-    st.caption("Separate workspace for designing the long-term Biodex upload, processing, and comparison flow.")
+@st.fragment
+def render_biodex_test_tab():
+    st.subheader("Biodex")
 
     biodex_test_tab1, biodex_test_tab2, biodex_test_tab3 = st.tabs([
         "Upload & Process",
-        "Compare Sessions",
+        "Session Comparison",
+        "Review Reps",
+    ])
+    persist_active_tab("biodex_test_subtabs", [
+        "Upload & Process",
+        "Session Comparison",
         "Review Reps",
     ])
 
@@ -17073,7 +17742,7 @@ with tab6:
 
             selected_biodex_test_protocol = st.selectbox(
                 "Protocol Type",
-                options=["aerobic", "reactive_eccentric", "speed", "strength"],
+                options=["aerobic", "conditioning", "reactive_eccentric", "speed", "strength"],
                 format_func=lambda value: value.replace("_", " ").title(),
                 key="biodex_test_upload_protocol",
                 disabled=selected_biodex_test_athlete_id is None,
@@ -17093,13 +17762,10 @@ with tab6:
                 disabled=selected_biodex_test_athlete_id is None,
             )
         with upload_col2:
-            selected_biodex_test_limb = st.selectbox(
-                "Limb",
-                options=["right", "left"],
-                format_func=lambda value: value.title(),
-                key="biodex_test_upload_limb",
-                disabled=selected_biodex_test_athlete_id is None,
-            )
+            # Limb selector hidden: every Biodex test here is the athlete's throwing arm,
+            # so asking Right/Left per upload was redundant. Kept hardcoded so downstream
+            # inserts/filters (which key off limb) don't need to change.
+            selected_biodex_test_limb = "right"
             selected_biodex_test_speed = st.number_input(
                 "Speed (deg/s)",
                 min_value=0,
@@ -17430,7 +18096,7 @@ with tab6:
                 for item in uploaded_previews
             ])
             st.markdown("### Stored Upload Summary")
-            st.dataframe(summary_df, use_container_width=True)
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
             preview_file_name = st.selectbox(
                 "Preview stored upload",
@@ -17454,6 +18120,7 @@ with tab6:
                     name=preview_item["test_name"],
                 ))
                 preview_fig.update_layout(
+                    hoverlabel=dict(namelength=-1),
                     title="Stored Raw Torque Preview",
                     xaxis_title="Elapsed Time (s)",
                     yaxis_title="Torque_Nm",
@@ -17473,6 +18140,7 @@ with tab6:
                     if preview_item.get("movement", selected_biodex_test_movement) == "d2_shoulder_pattern":
                         position_preview_title = "D2 Shoulder Pattern Position"
                     position_preview_fig.update_layout(
+                        hoverlabel=dict(namelength=-1),
                         title=position_preview_title,
                         xaxis_title="Elapsed Time (s)",
                         yaxis_title="Position_Deg",
@@ -17824,6 +18492,7 @@ with tab6:
                                     font=dict(size=11),
                                 )
                             posterior_align_fig.update_layout(
+                                hoverlabel=dict(namelength=-1),
                                 title="Posterior Cuff Reactive Eccentric: Across-File Alignment",
                                 xaxis_title=x_axis_title,
                                 yaxis_title="Torque_Nm",
@@ -17935,6 +18604,7 @@ with tab6:
                                         font=dict(size=11, color="rgba(144,238,144,0.95)"),
                                     )
                                 posterior_rom_fig.update_layout(
+                                    hoverlabel=dict(namelength=-1),
                                     title=(
                                         "Posterior Cuff Reactive Eccentric: Across-File Range of Motion (1 Hz Filtered)"
                                         if posterior_x_axis_mode == "raw_time" and posterior_anchor_mode == "zero_torque_rise"
@@ -18001,6 +18671,7 @@ with tab6:
                                         font=dict(size=11),
                                     )
                                     zero_rise_rom_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Posterior Cuff ROM When Torque Is Aligned at 0 Torque Rise",
                                         xaxis_title=str(zero_rise_rom_mean_df.attrs.get("x_axis_title", "Aligned Time (s)")),
                                         yaxis_title="Position_Deg",
@@ -18063,6 +18734,7 @@ with tab6:
                                         font=dict(size=11),
                                     )
                                     fifty_rom_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Posterior Cuff ROM When Aligned at 50% ROM (1 Hz Filtered)",
                                         xaxis_title=str(fifty_rom_mean_df.attrs.get("x_axis_title", "Aligned Time (s)")),
                                         yaxis_title="Position_Deg",
@@ -18125,6 +18797,7 @@ with tab6:
                                         font=dict(size=11),
                                     )
                                     ninety_rom_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Posterior Cuff ROM When Aligned at 90% ROM (1 Hz Filtered)",
                                         xaxis_title=str(ninety_rom_mean_df.attrs.get("x_axis_title", "Aligned Time (s)")),
                                         yaxis_title="Position_Deg",
@@ -18187,6 +18860,7 @@ with tab6:
                                         font=dict(size=11),
                                     )
                                     ninety_five_rom_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Posterior Cuff ROM When Aligned at 95% ROM (1 Hz Filtered)",
                                         xaxis_title=str(ninety_five_rom_mean_df.attrs.get("x_axis_title", "Aligned Time (s)")),
                                         yaxis_title="Position_Deg",
@@ -18263,6 +18937,7 @@ with tab6:
                                         font=dict(size=11),
                                     )
                                     five_to_ninety_eight_torque_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Posterior Cuff Torque from 5% to 98% Peak Positive Torque",
                                         xaxis_title=str(five_to_ninety_eight_torque_mean_df.attrs.get("x_axis_title", "5% to 98% Peak Positive Torque (%)")),
                                         yaxis_title="Torque_Nm",
@@ -18339,6 +19014,7 @@ with tab6:
                                         font=dict(size=11),
                                     )
                                     five_to_ninety_eight_position_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Posterior Cuff Position Degrees over 5% to 98% Peak Positive Torque",
                                         xaxis_title=str(five_to_ninety_eight_position_mean_df.attrs.get("x_axis_title", "5% to 98% Peak Positive Torque (%)")),
                                         yaxis_title="Position_Deg",
@@ -18415,6 +19091,7 @@ with tab6:
                                         font=dict(size=11),
                                     )
                                     zero_to_ninety_eight_torque_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Posterior Cuff Torque from 0 Torque Rise to 98% Peak Positive Torque",
                                         xaxis_title=str(zero_to_ninety_eight_torque_mean_df.attrs.get("x_axis_title", "0 Torque Rise to 98% Peak Positive Torque (%)")),
                                         yaxis_title="Torque_Nm",
@@ -18491,6 +19168,7 @@ with tab6:
                                         font=dict(size=11),
                                     )
                                     zero_to_ninety_eight_position_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Posterior Cuff Position Degrees from 0 Torque Rise to 98% Peak Positive Torque",
                                         xaxis_title=str(zero_to_ninety_eight_position_mean_df.attrs.get("x_axis_title", "0 Torque Rise to 98% Peak Positive Torque (%)")),
                                         yaxis_title="Position_Deg",
@@ -18542,6 +19220,7 @@ with tab6:
                                             name=file_name,
                                         ))
                                     posterior_raw_only_position_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Posterior Cuff Reactive Eccentric: Raw Position Signals",
                                         xaxis_title="Elapsed Time (s)",
                                         yaxis_title="Position_Deg",
@@ -18567,6 +19246,7 @@ with tab6:
                                             name=file_name,
                                         ))
                                     posterior_filtered_position_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Posterior Cuff Reactive Eccentric: Low-Pass Filtered Position Signals",
                                         xaxis_title="Elapsed Time (s)",
                                         yaxis_title="Position_Deg",
@@ -18663,6 +19343,7 @@ with tab6:
                                             name="Manual ROM End",
                                         ))
                                         manual_editor_fig.update_layout(
+                                            hoverlabel=dict(namelength=-1),
                                             title="Posterior Cuff Reactive Eccentric: Manual ROM End Editor",
                                             xaxis_title="Elapsed Time (s)",
                                             yaxis_title="Position_Deg",
@@ -18715,7 +19396,7 @@ with tab6:
                                                     updated_previews.append(preview_item_entry)
                                                 st.session_state["biodex_test_uploaded_previews"] = updated_previews
                                                 st.success("Saved the manual ROM end override for this rep.")
-                                                st.rerun()
+                                                st.rerun(scope="fragment")
 
                                         if clear_manual_rom_end:
                                             try:
@@ -18737,7 +19418,7 @@ with tab6:
                                                     updated_previews.append(preview_item_entry)
                                                 st.session_state["biodex_test_uploaded_previews"] = updated_previews
                                                 st.success("Cleared the manual ROM end override for this rep.")
-                                                st.rerun()
+                                                st.rerun(scope="fragment")
 
                                     common_smoothed_rom_end_values = []
                                     for position_item in raw_position_items:
@@ -18872,6 +19553,7 @@ with tab6:
                                             layer="below",
                                         )
                                     posterior_raw_position_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Posterior Cuff Reactive Eccentric: Raw Position Signals with Smoothed Start/End",
                                         xaxis_title="Elapsed Time (s)",
                                         yaxis_title="Position_Deg",
@@ -18922,7 +19604,7 @@ with tab6:
                                 "0 Torque -> Peak Positive (s)": rep_meta.get("zero_to_peak_duration_s"),
                             })
                         st.markdown("### Single-Rep Alignment Summary")
-                        st.dataframe(pd.DataFrame(posterior_summary_rows), use_container_width=True)
+                        st.dataframe(pd.DataFrame(posterior_summary_rows), use_container_width=True, hide_index=True)
                 else:
                     st.markdown("### Rep Detection Preview")
                     preview_controls_col, preview_plot_col = st.columns([0.35, 1.0], vertical_alignment="top")
@@ -18932,11 +19614,15 @@ with tab6:
                             preview_movement == "shoulder_er_ir"
                             and preview_protocol_type == "speed"
                         )
+                        is_shoulder_er_ir_conditioning_preview = (
+                            preview_movement == "shoulder_er_ir"
+                            and preview_protocol_type == "conditioning"
+                        )
                         preview_threshold = 20.0
                         preview_min_samples = 15
                         preview_buffer_samples = 20
                         preview_n_points = 101
-                        preview_landmark_prominence = 0.12
+                        preview_landmark_prominence = 0.05 if is_shoulder_er_ir_conditioning_preview else 0.12
                         preview_position_cutoff_hz = 0.5
                         preview_position_drop_fraction = 0.60
                         if is_shoulder_er_ir_speed_preview:
@@ -18950,7 +19636,7 @@ with tab6:
                                 ):
                                     st.session_state["biodex_test_preview_position_cutoff_hz"] = 0.5
                                     st.session_state["biodex_test_preview_position_drop_fraction"] = 0.60
-                                    st.rerun()
+                                    st.rerun(scope="fragment")
                                 preview_position_cutoff_hz = st.slider(
                                     "Position smoothing cutoff (Hz)",
                                     min_value=0.5,
@@ -19007,9 +19693,15 @@ with tab6:
                                 "Landmark prominence ratio",
                                 min_value=0.05,
                                 max_value=0.40,
-                                value=0.12,
+                                value=0.05 if is_shoulder_er_ir_conditioning_preview else 0.12,
                                 step=0.01,
                                 key="biodex_test_preview_prominence",
+                            )
+                        if is_shoulder_er_ir_conditioning_preview:
+                            st.caption(
+                                "Conditioning reps are aligned to a POS1 -> POS2 -> NEG1 landmark pattern "
+                                "(two positive peaks followed by one negative peak) instead of the standard "
+                                "two-cycle POS1/NEG1/POS2/NEG2 pattern."
                             )
                         if (
                             preview_movement == "d2_shoulder_pattern"
@@ -19105,7 +19797,14 @@ with tab6:
                             value_col="Torque_Nm",
                             n_points=int(preview_n_points),
                             prominence_ratio=float(preview_landmark_prominence),
+                            landmark_detector=(
+                                detect_shoulder_er_ir_conditioning_rep_landmarks
+                                if is_shoulder_er_ir_conditioning_preview
+                                else None
+                            ),
                         )
+                        if is_shoulder_er_ir_conditioning_preview:
+                            preview_processing_version = "shoulder_er_ir_conditioning_landmark_v1"
 
                     if is_shoulder_er_ir_speed_preview:
                         with preview_controls_col:
@@ -19236,6 +19935,7 @@ with tab6:
                             )
 
                         preview_raw_fig.update_layout(
+                            hoverlabel=dict(namelength=-1),
                             title=(
                                 "Detected Position Reps"
                                 if is_shoulder_er_ir_speed_preview
@@ -19327,10 +20027,19 @@ with tab6:
                                     font=dict(size=11),
                                 )
                             preview_avg_fig.update_layout(
+                                hoverlabel=dict(namelength=-1),
                                 title=preview_mean_df.attrs.get("title", "Landmark-Aligned Average Torque Curve Across Detected Reps"),
                                 xaxis_title="Movement Cycle (%)",
                                 yaxis_title="Torque_Nm",
                                 height=500,
+                                legend=dict(
+                                    orientation="h",
+                                    yanchor="top",
+                                    y=-0.2,
+                                    xanchor="center",
+                                    x=0.5,
+                                    groupclick="toggleitem",
+                                ),
                             )
                             st.plotly_chart(
                                 preview_avg_fig,
@@ -19418,6 +20127,7 @@ with tab6:
                                         name="Mean Position",
                                     ))
                                     preview_position_fig.update_layout(
+                                        hoverlabel=dict(namelength=-1),
                                         title="Position Start -> End Normalized Position Comparison",
                                         xaxis_title="Movement Cycle (%)",
                                         yaxis_title="Position_Deg",
@@ -19488,10 +20198,19 @@ with tab6:
                                         font=dict(size=11),
                                     )
                                 preview_landmark_fig.update_layout(
+                                    hoverlabel=dict(namelength=-1),
                                     title="Landmark-Aligned Torque Comparison Across Detected Reps",
                                     xaxis_title="Movement Cycle (%)",
                                     yaxis_title="Torque_Nm",
                                     height=500,
+                                    legend=dict(
+                                        orientation="h",
+                                        yanchor="top",
+                                        y=-0.2,
+                                        xanchor="center",
+                                        x=0.5,
+                                        groupclick="toggleitem",
+                                    ),
                                 )
                                 st.plotly_chart(
                                     preview_landmark_fig,
@@ -19548,81 +20267,125 @@ with tab6:
                 st.warning("The stored upload does not contain a `Torque_Nm` column for rep detection preview.")
 
     with biodex_test_tab2:
-        st.markdown("### Compare Sessions")
-        st.caption("Use this area to compare saved Biodex sessions from different days for the same exercise type.")
+        st.markdown("### Session Comparison")
+
+        compare_filter_options = fetch_biodex_compare_filter_options(cur)
 
         athlete_rows_compare = fetch_all_athletes(cur)
         athlete_options_compare = {}
         athlete_labels_compare = {}
         for athlete_id, athlete_name, first_name, last_name, handedness in athlete_rows_compare:
+            athlete_id = int(athlete_id)
+            if athlete_id not in compare_filter_options:
+                continue
             display_name = athlete_name or " ".join(part for part in [first_name, last_name] if part).strip() or f"Athlete {athlete_id}"
             handedness_suffix = f" ({handedness})" if handedness else ""
-            athlete_options_compare[int(athlete_id)] = display_name
-            athlete_labels_compare[int(athlete_id)] = f"{display_name}{handedness_suffix}"
+            athlete_options_compare[athlete_id] = display_name
+            athlete_labels_compare[athlete_id] = f"{display_name}{handedness_suffix}"
 
-        compare_col1, compare_col2 = st.columns(2)
-        with compare_col1:
+        # Limb selector hidden: every Biodex test here is the athlete's throwing arm, so
+        # asking Right/Left was redundant. Kept hardcoded so downstream filters that key
+        # off limb don't need to change.
+        selected_compare_limb = "right"
+
+        compare_row1_col1, compare_row1_col2 = st.columns(2)
+        with compare_row1_col1:
             if athlete_options_compare:
-                selected_compare_athlete_id = st.selectbox(
+                sync_multiselect_state_to_options(
+                    "biodex_test_compare_athletes",
+                    list(athlete_options_compare.keys()),
+                )
+                selected_compare_athlete_ids = st.multiselect(
                     "Athlete",
                     options=list(athlete_options_compare.keys()),
+                    default=list(athlete_options_compare.keys()),
                     format_func=lambda athlete_id: athlete_labels_compare.get(athlete_id, f"Athlete {athlete_id}"),
-                    key="biodex_test_compare_athlete",
+                    key="biodex_test_compare_athletes",
                 )
             else:
-                selected_compare_athlete_id = None
-                st.text_input("Athlete", value="No athletes found yet", disabled=True)
+                selected_compare_athlete_ids = []
+                st.text_input("Athlete", value="No athletes with saved sessions yet", disabled=True)
 
+        with compare_row1_col2:
+            protocol_options_compare = (
+                [BIODEX_ALL_FILTER_OPTION] + biodex_compare_protocol_options(
+                    compare_filter_options, selected_compare_athlete_ids,
+                )
+                if selected_compare_athlete_ids
+                else []
+            )
+            sync_selectbox_state_to_options("biodex_test_compare_protocol", protocol_options_compare)
             selected_compare_protocol = st.selectbox(
                 "Protocol Type",
-                options=["aerobic", "reactive_eccentric", "speed", "strength"],
-                format_func=lambda value: value.replace("_", " ").title(),
-                index=0,
+                options=protocol_options_compare,
+                format_func=lambda value: "All" if value == BIODEX_ALL_FILTER_OPTION else value.replace("_", " ").title(),
                 key="biodex_test_compare_protocol",
-                disabled=selected_compare_athlete_id is None,
-            )
-            selected_compare_movement = st.selectbox(
-                "Movement",
-                options=["d2_shoulder_pattern", "shoulder_er_ir", "posterior_cuff"],
-                format_func=format_biodex_movement_label,
-                index=0,
-                key="biodex_test_compare_movement",
-                disabled=selected_compare_athlete_id is None,
-            )
-        with compare_col2:
-            selected_compare_limb = st.selectbox(
-                "Limb",
-                options=["right", "left"],
-                format_func=lambda value: value.title(),
-                index=0,
-                key="biodex_test_compare_limb",
-                disabled=selected_compare_athlete_id is None,
-            )
-            selected_compare_speed = st.number_input(
-                "Speed (deg/s)",
-                min_value=0,
-                value=75,
-                step=1,
-                key="biodex_test_compare_speed",
-                disabled=(
-                    selected_compare_athlete_id is None
-                    or selected_compare_protocol == "reactive_eccentric"
-                ),
+                disabled=not protocol_options_compare,
             )
 
-        if selected_compare_athlete_id is None:
-            st.info("Select an athlete to compare saved Biodex processing runs.")
+        compare_row2_col1, compare_row2_col2 = st.columns(2)
+        with compare_row2_col1:
+            movement_options_compare = (
+                [BIODEX_ALL_FILTER_OPTION] + biodex_compare_movement_options(
+                    compare_filter_options, selected_compare_athlete_ids, selected_compare_protocol,
+                )
+                if selected_compare_athlete_ids and selected_compare_protocol
+                else []
+            )
+            sync_selectbox_state_to_options("biodex_test_compare_movement", movement_options_compare)
+            selected_compare_movement = st.selectbox(
+                "Movement",
+                options=movement_options_compare,
+                format_func=lambda value: "All" if value == BIODEX_ALL_FILTER_OPTION else format_biodex_movement_label(value),
+                key="biodex_test_compare_movement",
+                disabled=not movement_options_compare,
+            )
+
+        with compare_row2_col2:
+            speed_options_compare = (
+                biodex_compare_speed_options(
+                    compare_filter_options, selected_compare_athlete_ids, selected_compare_protocol, selected_compare_movement,
+                )
+                if (
+                    selected_compare_athlete_ids
+                    and selected_compare_protocol
+                    and selected_compare_movement
+                )
+                else []
+            )
+            speed_options_compare = [BIODEX_ALL_FILTER_OPTION] + speed_options_compare if speed_options_compare else speed_options_compare
+            sync_selectbox_state_to_options("biodex_test_compare_speed", speed_options_compare)
+            selected_compare_speed = st.selectbox(
+                "Speed (deg/s)",
+                options=speed_options_compare,
+                format_func=lambda value: "All" if value == BIODEX_ALL_FILTER_OPTION else f"{value} deg/s",
+                key="biodex_test_compare_speed",
+                disabled=not speed_options_compare,
+            )
+
+        if not selected_compare_athlete_ids:
+            st.info("Select at least one athlete to compare saved Biodex processing runs.")
+        elif not selected_compare_protocol or not selected_compare_movement:
+            st.info("No saved processing runs match these filters yet.")
         else:
+            filter_protocol_type = (
+                None if selected_compare_protocol == BIODEX_ALL_FILTER_OPTION else selected_compare_protocol
+            )
+            filter_movement = (
+                None if selected_compare_movement == BIODEX_ALL_FILTER_OPTION else selected_compare_movement
+            )
+            filter_speed = (
+                None
+                if not selected_compare_speed or selected_compare_speed == BIODEX_ALL_FILTER_OPTION
+                else int(selected_compare_speed)
+            )
             processed_sessions_df = fetch_biodex_processed_sessions(
                 cur,
-                athlete_id=int(selected_compare_athlete_id),
-                protocol_type=selected_compare_protocol,
-                movement=selected_compare_movement,
+                athlete_ids=selected_compare_athlete_ids,
+                protocol_type=filter_protocol_type,
+                movement=filter_movement,
                 limb=selected_compare_limb,
-                speed_deg_per_sec=get_biodex_effective_speed(
-                    selected_compare_protocol,
-                    selected_compare_speed,
-                ),
+                speed_deg_per_sec=filter_speed,
             )
 
             if processed_sessions_df.empty:
@@ -19630,97 +20393,623 @@ with tab6:
             else:
                 session_labels = {}
                 for _, row in processed_sessions_df.iterrows():
-                    test_date = row["test_date"].strftime("%Y-%m-%d") if pd.notna(row["test_date"]) else "No date"
-                    reviewed_suffix = "Reviewed" if row["is_reviewed"] else "Auto"
+                    test_date_str = row["test_date"].strftime("%Y-%m-%d") if pd.notna(row["test_date"]) else "No date"
+                    throwing_context_str = (
+                        format_biodex_throwing_context_label(row["throwing_context"])
+                        if pd.notna(row.get("throwing_context")) and row.get("throwing_context")
+                        else "No context"
+                    )
+                    speed_str = (
+                        f"{int(row['speed_deg_per_sec'])} deg/s"
+                        if pd.notna(row["speed_deg_per_sec"])
+                        else "No speed"
+                    )
                     session_labels[int(row["biodex_processing_run_id"])] = (
-                        f"{test_date} | Run {int(row['biodex_processing_run_id'])} | "
-                        f"{reviewed_suffix} | {int(row['rep_count'])} reps"
+                        f"{row['athlete_name']} | {test_date_str} | {throwing_context_str} | "
+                        f"{format_biodex_movement_label(row['movement'])} | "
+                        f"{row['protocol_type'].replace('_', ' ').title()} | {speed_str}"
                     )
 
-                selected_compare_run_ids = st.multiselect(
+                # Short, at-a-glance labels ("Athlete - YYYY-MM-DD") instead of the full Name |
+                # Date | Throwing-Context | Movement | Protocol | Speed dropdown label — only
+                # disambiguated further (protocol appended) when two sessions would otherwise
+                # collide (same athlete, same day). Shared by both comparison modes so a
+                # session reads the same way wherever it's referenced.
+                short_session_labels = {}
+                short_label_counts = {}
+                for _, row in processed_sessions_df.iterrows():
+                    run_id = int(row["biodex_processing_run_id"])
+                    date_full = row["test_date"].strftime("%Y-%m-%d") if pd.notna(row["test_date"]) else "?"
+                    base_label = f"{row['athlete_name']} - {date_full}"
+                    short_session_labels[run_id] = base_label
+                    short_label_counts[base_label] = short_label_counts.get(base_label, 0) + 1
+                for _, row in processed_sessions_df.iterrows():
+                    run_id = int(row["biodex_processing_run_id"])
+                    base_label = short_session_labels[run_id]
+                    if short_label_counts[base_label] > 1:
+                        short_session_labels[run_id] = f"{base_label} {row['protocol_type'].replace('_', ' ').title()}"
+
+                # One color per athlete (stable across reruns/selection changes), so every
+                # session and rep belonging to that athlete reads as the same color, and
+                # different athletes are always visually distinct, in both comparison modes.
+                athlete_color_palette = px.colors.qualitative.Bold
+                athlete_color_map = {}
+                for athlete_name in processed_sessions_df["athlete_name"]:
+                    if athlete_name not in athlete_color_map:
+                        athlete_color_map[athlete_name] = athlete_color_palette[
+                            len(athlete_color_map) % len(athlete_color_palette)
+                        ]
+
+                sync_multiselect_state_to_options(
+                    "biodex_test_compare_sessions_shared",
+                    list(session_labels.keys()),
+                )
+                selected_sessions = st.multiselect(
                     "Sessions",
                     options=list(session_labels.keys()),
                     default=list(session_labels.keys())[:2],
                     format_func=lambda run_id: session_labels.get(run_id, f"Run {run_id}"),
-                    key="biodex_test_compare_sessions",
+                    key="biodex_test_compare_sessions_shared",
                 )
 
-                if not selected_compare_run_ids:
-                    st.info("Select at least one saved session to display its mean curve.")
-                else:
+                mode_row_col1, mode_row_col2, mode_row_col3 = st.columns(3)
+                with mode_row_col1:
+                    comparison_mode = st.segmented_control(
+                        "Comparison Mode",
+                        ["Session", "Custom Groups"],
+                        default="Session",
+                        key="biodex_test_comparison_mode",
+                    )
+                with mode_row_col2:
+                    if comparison_mode == "Session":
+                        compare_display_mode = st.segmented_control(
+                            "Display Mode",
+                            ["Grouped", "Individual Reps"],
+                            default="Grouped",
+                            key="biodex_test_compare_display_mode",
+                        )
+                    else:
+                        rep_group_display_mode = st.segmented_control(
+                            "Display Mode",
+                            ["Grouped", "Individual Reps"],
+                            default="Grouped",
+                            key="biodex_test_rep_group_display_mode",
+                        )
+                with mode_row_col3:
+                    if comparison_mode == "Session":
+                        session_phase_view = st.segmented_control(
+                            "Phase View",
+                            ["Full", "Internal", "External"],
+                            default="Full",
+                            key="biodex_test_session_phase_view",
+                        )
+                    else:
+                        rep_phase_view = st.segmented_control(
+                            "Phase View",
+                            ["Full", "Internal", "External"],
+                            default="Full",
+                            key="biodex_test_rep_phase_view",
+                        )
+
+                if not selected_sessions:
+                    st.info("Select at least one saved session.")
+                elif comparison_mode == "Session":
+                    selected_compare_run_ids = selected_sessions
                     compare_fig = go.Figure()
-                    selected_summary_rows = []
+                    session_peak_torque_rows = []
+                    session_auc_rows = []
 
+                    # Bodyweight for normalized torque/AUC comes from each athlete's `takes`
+                    # row closest in date to that session's test date.
+                    session_bodyweight_by_run = {}
                     for run_id in selected_compare_run_ids:
-                        curve_df = fetch_biodex_mean_curve(cur, run_id)
-                        if curve_df.empty:
-                            continue
-
                         session_row = processed_sessions_df[
                             processed_sessions_df["biodex_processing_run_id"] == run_id
                         ].iloc[0]
-                        label = session_labels.get(run_id, f"Run {run_id}")
+                        info = fetch_nearest_athlete_bodyweight_kg(
+                            cur,
+                            athlete_id=int(session_row["athlete_id"]),
+                            reference_date=session_row["test_date"],
+                        )
+                        session_bodyweight_by_run[run_id] = info["bodyweight_kg"] if info else None
 
-                        compare_fig.add_trace(go.Scatter(
-                            x=curve_df["movement_pct"],
-                            y=curve_df["mean_torque_nm"],
-                            mode="lines",
-                            line=dict(width=4),
-                            name=label,
-                        ))
-                        compare_fig.add_trace(go.Scatter(
-                            x=curve_df["movement_pct"],
-                            y=curve_df["upper_band"],
-                            mode="lines",
-                            line=dict(width=0),
-                            legendgroup=label,
-                            showlegend=False,
-                            hoverinfo="skip",
-                        ))
-                        compare_fig.add_trace(go.Scatter(
-                            x=curve_df["movement_pct"],
-                            y=curve_df["lower_band"],
-                            mode="lines",
-                            line=dict(width=0),
-                            fill="tonexty",
-                            opacity=0.18,
-                            legendgroup=label,
-                            name=f"{label} ±1 SD",
-                        ))
+                    if compare_display_mode == "Individual Reps":
+                        for run_id in selected_compare_run_ids:
+                            session_row = processed_sessions_df[
+                                processed_sessions_df["biodex_processing_run_id"] == run_id
+                            ].iloc[0]
+                            label = short_session_labels.get(run_id, f"Run {run_id}")
+                            color = athlete_color_map.get(session_row["athlete_name"], "#9ca3af")
+                            bodyweight_kg = session_bodyweight_by_run.get(run_id)
+                            session_date_str = (
+                                session_row["test_date"].strftime("%Y-%m-%d")
+                                if pd.notna(session_row["test_date"])
+                                else "No date"
+                            )
+                            row_meta = {"Athlete": session_row["athlete_name"], "Session Date": session_date_str}
 
-                        selected_summary_rows.append({
-                            "Processing Run": int(run_id),
-                            "Test ID": int(session_row["biodex_test_id"]),
-                            "Test Date": session_row["test_date"],
-                            "Source File": session_row["source_file_name"],
-                            "Rep Count": int(session_row["rep_count"]),
-                            "Peak Positive Mean Torque": float(session_row["peak_positive_mean_torque"]),
-                            "Peak Negative Mean Torque": float(session_row["peak_negative_mean_torque"]),
-                            "Processing Version": session_row["processing_version"],
-                            "Reviewed": bool(session_row["is_reviewed"]),
-                        })
+                            session_valid_reps = reconstruct_biodex_rep_curves_from_saved_landmarks(
+                                cur,
+                                biodex_processing_run_id=int(run_id),
+                                biodex_test_id=int(session_row["biodex_test_id"]),
+                            )
+                            if not session_valid_reps:
+                                continue
+                            reps_long_df, _, _ = build_landmark_aligned_curve(session_valid_reps)
+                            if reps_long_df.empty:
+                                continue
+
+                            rep_numbers = sorted(reps_long_df["rep_number"].unique())
+                            for i, rep_number in enumerate(rep_numbers):
+                                rep_curve = reps_long_df[reps_long_df["rep_number"] == rep_number]
+                                compare_fig.add_trace(go.Scatter(
+                                    x=rep_curve["movement_pct"],
+                                    y=rep_curve["torque_nm"],
+                                    mode="lines",
+                                    line=dict(width=1.25, color=color),
+                                    opacity=0.45,
+                                    legendgroup=label,
+                                    showlegend=(i == 0),
+                                    name=label,
+                                    hovertemplate=f"{label} — Rep {rep_number}<br>%{{x:.0f}}%: %{{y:.1f}} Nm<extra></extra>",
+                                ))
+
+                            for rep_info in session_valid_reps:
+                                auc_result = compute_biodex_conditioning_rep_auc(rep_info)
+                                if auc_result is None:
+                                    continue
+                                session_peak_torque_rows.append(build_biodex_peak_torque_row(
+                                    row_meta, [auc_result], bodyweight_kg, session_phase_view,
+                                    rep_number=auc_result["rep_number"],
+                                ))
+                                session_auc_rows.append(build_biodex_auc_row(
+                                    row_meta, [auc_result], bodyweight_kg, session_phase_view,
+                                    rep_number=auc_result["rep_number"],
+                                ))
+                    else:
+                        for run_id in selected_compare_run_ids:
+                            curve_df = fetch_biodex_mean_curve(cur, run_id)
+                            if curve_df.empty:
+                                continue
+
+                            session_row = processed_sessions_df[
+                                processed_sessions_df["biodex_processing_run_id"] == run_id
+                            ].iloc[0]
+                            label = short_session_labels.get(run_id, f"Run {run_id}")
+                            color = athlete_color_map.get(session_row["athlete_name"], "#9ca3af")
+                            bodyweight_kg = session_bodyweight_by_run.get(run_id)
+                            session_date_str = (
+                                session_row["test_date"].strftime("%Y-%m-%d")
+                                if pd.notna(session_row["test_date"])
+                                else "No date"
+                            )
+                            row_meta = {"Athlete": session_row["athlete_name"], "Session Date": session_date_str}
+
+                            compare_fig.add_trace(go.Scatter(
+                                x=curve_df["movement_pct"],
+                                y=curve_df["mean_torque_nm"],
+                                mode="lines",
+                                line=dict(width=4, color=color),
+                                name=label,
+                                legendgroup=label,
+                            ))
+                            compare_fig.add_trace(go.Scatter(
+                                x=curve_df["movement_pct"],
+                                y=curve_df["upper_band"],
+                                mode="lines",
+                                line=dict(width=0),
+                                legendgroup=label,
+                                showlegend=False,
+                                hoverinfo="skip",
+                            ))
+                            compare_fig.add_trace(go.Scatter(
+                                x=curve_df["movement_pct"],
+                                y=curve_df["lower_band"],
+                                mode="lines",
+                                line=dict(width=0, color=color),
+                                fill="tonexty",
+                                opacity=0.18,
+                                legendgroup=label,
+                                name=f"{label} ±1 SD",
+                                visible="legendonly",
+                            ))
+
+                            session_valid_reps = reconstruct_biodex_rep_curves_from_saved_landmarks(
+                                cur,
+                                biodex_processing_run_id=int(run_id),
+                                biodex_test_id=int(session_row["biodex_test_id"]),
+                            )
+                            session_auc_results = [
+                                r for r in (
+                                    compute_biodex_conditioning_rep_auc(rep_info)
+                                    for rep_info in session_valid_reps
+                                )
+                                if r is not None
+                            ]
+                            if session_auc_results:
+                                session_peak_torque_rows.append(build_biodex_peak_torque_row(
+                                    row_meta, session_auc_results, bodyweight_kg, session_phase_view,
+                                ))
+                                session_auc_rows.append(build_biodex_auc_row(
+                                    row_meta, session_auc_results, bodyweight_kg, session_phase_view,
+                                ))
 
                     if not compare_fig.data:
-                        st.warning("Selected sessions do not have saved mean-curve points.")
+                        st.warning("Selected sessions do not have data to plot for this display mode.")
                     else:
                         compare_fig.update_layout(
-                            title="Saved Landmark-Aligned Biodex Mean Curves",
+                            hoverlabel=dict(namelength=-1),
+                            title=(
+                                "Individual Reps by Session"
+                                if compare_display_mode == "Individual Reps"
+                                else "Saved Landmark-Aligned Biodex Mean Curves"
+                            ),
                             xaxis_title="Movement Cycle (%)",
-                            yaxis_title="Torque_Nm",
+                            yaxis_title="Torque",
                             height=600,
                             legend=dict(
                                 orientation="h",
-                                yanchor="bottom",
-                                y=1.02,
+                                yanchor="top",
+                                y=-0.15,
                                 xanchor="center",
                                 x=0.5,
+                                groupclick="toggleitem" if compare_display_mode == "Grouped" else "togglegroup",
                             ),
                         )
                         st.plotly_chart(compare_fig, use_container_width=True)
 
-                    if selected_summary_rows:
-                        st.markdown("### Selected Session Summary")
-                        st.dataframe(pd.DataFrame(selected_summary_rows), use_container_width=True)
+                    if compare_display_mode == "Individual Reps":
+                        if session_peak_torque_rows:
+                            st.markdown("#### Per-Rep Peak Torque by Session")
+                            st.dataframe(
+                                pd.DataFrame(session_peak_torque_rows).sort_values(["Athlete", "Rep"]).reset_index(drop=True),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+                        if session_auc_rows:
+                            st.markdown("#### Per-Rep AUC by Session")
+                            st.dataframe(
+                                pd.DataFrame(session_auc_rows).sort_values(["Athlete", "Rep"]).reset_index(drop=True),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+                    else:
+                        if session_peak_torque_rows:
+                            st.markdown("#### Peak Torque by Session")
+                            st.dataframe(pd.DataFrame(session_peak_torque_rows), use_container_width=True, hide_index=True)
+                        if session_auc_rows:
+                            st.markdown("#### AUC by Session")
+                            st.dataframe(pd.DataFrame(session_auc_rows), use_container_width=True, hide_index=True)
+
+                else:
+                    group_compare_run_ids = selected_sessions
+
+                    # Reconstruct each selected session's reps up front so the group-size
+                    # controls below can be bounded sensibly across all of them at once.
+                    sessions_data = {}
+                    for run_id in group_compare_run_ids:
+                        session_row = processed_sessions_df[
+                            processed_sessions_df["biodex_processing_run_id"] == run_id
+                        ].iloc[0]
+                        valid_reps = reconstruct_biodex_rep_curves_from_saved_landmarks(
+                            cur,
+                            biodex_processing_run_id=int(run_id),
+                            biodex_test_id=int(session_row["biodex_test_id"]),
+                        )
+                        sessions_data[run_id] = {
+                            "session_row": session_row,
+                            "valid_reps": valid_reps,
+                            "available_rep_numbers": sorted(item["rep_number"] for item in valid_reps),
+                            "valid_reps_by_number": {item["rep_number"]: item for item in valid_reps},
+                        }
+
+                    usable_run_ids = [
+                        run_id for run_id, data in sessions_data.items()
+                        if len(data["valid_reps"]) >= 2
+                    ]
+                    if not usable_run_ids:
+                        st.info("Not enough saved reps with landmarks to build a group comparison for these sessions.")
+                    else:
+                        max_available = max(len(sessions_data[r]["available_rep_numbers"]) for r in usable_run_ids)
+
+                        # Bodyweight for normalized torque/AUC comes from each athlete's
+                        # `takes` row closest in date to that session's test date — the same
+                        # bodyweight used elsewhere in the app. Surfaced directly in the
+                        # tables below rather than its own control here.
+                        bodyweight_info_by_run = {}
+                        for run_id in usable_run_ids:
+                            session_row = sessions_data[run_id]["session_row"]
+                            bodyweight_info_by_run[run_id] = fetch_nearest_athlete_bodyweight_kg(
+                                cur,
+                                athlete_id=int(session_row["athlete_id"]),
+                                reference_date=session_row["test_date"],
+                            )
+
+                        session_final_groups = {}
+                        with st.expander("Customize Groups", expanded=False):
+                            cg_count_col, cg_size_col = st.columns(2)
+                            with cg_count_col:
+                                group_count = st.number_input(
+                                    "Number of Groups",
+                                    min_value=2,
+                                    max_value=max(2, max_available),
+                                    value=min(3, max_available),
+                                    step=1,
+                                    key="biodex_test_compare_group_count",
+                                )
+                            with cg_size_col:
+                                group_size = st.number_input(
+                                    "Repetitions Per group",
+                                    min_value=1,
+                                    max_value=max_available,
+                                    value=min(5, max_available),
+                                    step=1,
+                                    key="biodex_test_compare_group_size",
+                                )
+
+                            # Each session gets its own evenly-spaced grouping (its own rep
+                            # count may be smaller than another session's), independently
+                            # customizable per session.
+                            for run_id in usable_run_ids:
+                                data = sessions_data[run_id]
+                                auto_groups = auto_distribute_biodex_rep_numbers(
+                                    data["available_rep_numbers"],
+                                    num_groups=int(group_count),
+                                    group_size=int(group_size),
+                                )
+                                st.markdown(f"**{session_labels.get(run_id, f'Run {run_id}')}**")
+                                final_group_rep_numbers = {}
+                                for group_index, auto_rep_numbers in auto_groups.items():
+                                    # Scoped to run/count/size so changing those controls
+                                    # always starts from the new evenly-spaced default
+                                    # instead of a stale hand-edited selection.
+                                    widget_key = (
+                                        f"biodex_test_compare_group_reps_{run_id}_"
+                                        f"{group_count}_{group_size}_{group_index}"
+                                    )
+                                    final_group_rep_numbers[group_index] = st.multiselect(
+                                        f"Group {group_index} Repetitions",
+                                        options=data["available_rep_numbers"],
+                                        default=auto_rep_numbers,
+                                        key=widget_key,
+                                    )
+                                session_final_groups[run_id] = final_group_rep_numbers
+
+                        group_dash_sequence = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"]
+                        group_color_sequence = px.colors.qualitative.Bold
+
+                        # With a single athlete selected, differentiate groups by color
+                        # (there's no athlete ambiguity to resolve, so color is free to
+                        # encode group identity). With multiple athletes, color instead
+                        # encodes the athlete (consistent with Session Comparison) and dash
+                        # style differentiates groups within that athlete's sessions.
+                        distinct_athlete_ids = {
+                            int(sessions_data[r]["session_row"]["athlete_id"]) for r in usable_run_ids
+                        }
+                        single_athlete_mode = len(distinct_athlete_ids) == 1
+
+                        group_fig = go.Figure()
+                        group_peak_torque_rows = []
+                        group_auc_rows = []
+                        rep_peak_torque_rows = []
+                        rep_auc_rows = []
+
+                        for run_id in usable_run_ids:
+                            data = sessions_data[run_id]
+                            session_row = data["session_row"]
+                            valid_reps_by_number = data["valid_reps_by_number"]
+                            athlete_id = int(session_row["athlete_id"])
+                            athlete_name = session_row["athlete_name"]
+                            session_date_str = (
+                                session_row["test_date"].strftime("%Y-%m-%d")
+                                if pd.notna(session_row["test_date"])
+                                else "No date"
+                            )
+                            bodyweight_info = bodyweight_info_by_run.get(run_id)
+                            bodyweight_kg = bodyweight_info["bodyweight_kg"] if bodyweight_info else None
+                            session_label = short_session_labels.get(run_id, session_labels.get(run_id, f"Run {run_id}"))
+                            player_color = athlete_color_map.get(athlete_name, "#9ca3af")
+
+                            rep_to_group_label = {}
+                            for group_index, rep_numbers in session_final_groups.get(run_id, {}).items():
+                                for rep_number in rep_numbers:
+                                    rep_to_group_label[rep_number] = f"Group {group_index}"
+
+                            auc_by_rep_number = {}
+                            for rep_info in data["valid_reps"]:
+                                auc_result = compute_biodex_conditioning_rep_auc(rep_info)
+                                if auc_result is None:
+                                    continue
+                                auc_by_rep_number[auc_result["rep_number"]] = auc_result
+                                rep_meta = {
+                                    "Athlete": athlete_name,
+                                    "Session Date": session_date_str,
+                                    "Group": rep_to_group_label.get(auc_result["rep_number"], "—"),
+                                }
+                                rep_peak_torque_rows.append(build_biodex_peak_torque_row(
+                                    rep_meta, [auc_result], bodyweight_kg, rep_phase_view,
+                                    rep_number=auc_result["rep_number"],
+                                ))
+                                rep_auc_rows.append(build_biodex_auc_row(
+                                    rep_meta, [auc_result], bodyweight_kg, rep_phase_view,
+                                    rep_number=auc_result["rep_number"],
+                                ))
+
+                            for position, (group_index, rep_numbers) in enumerate(session_final_groups.get(run_id, {}).items()):
+                                if not rep_numbers:
+                                    continue
+
+                                group_reps = [
+                                    valid_reps_by_number[rep_number]
+                                    for rep_number in rep_numbers
+                                    if rep_number in valid_reps_by_number
+                                ]
+                                if len(group_reps) < 1:
+                                    continue
+
+                                group_reps_long_df, group_mean_df, group_metadata = build_landmark_aligned_curve(group_reps)
+                                if group_mean_df.empty:
+                                    continue
+
+                                # Phase View: trim what's plotted to the internal-rotation
+                                # (positive) or external-rotation (negative) portion of the
+                                # cycle, split at the same positive-to-negative crossing the
+                                # AUC tables use — computed here on the group mean curve
+                                # since that's already on the shared 0-100% axis being plotted.
+                                plot_group_mean_df = group_mean_df
+                                plot_group_reps_long_df = group_reps_long_df
+                                if rep_phase_view != "Full" and group_metadata:
+                                    boundary_pct = group_mean_df.attrs.get("landmark_boundary_pct", [])
+                                    if group_metadata[0]["landmark_kinds"] == ["pos", "pos", "neg"] and len(boundary_pct) == 3:
+                                        crossing_pct = find_biodex_internal_external_crossing_pct(
+                                            group_mean_df["movement_pct"].to_numpy(),
+                                            group_mean_df["mean_torque_nm"].to_numpy(),
+                                            boundary_pct[1],
+                                            boundary_pct[2],
+                                        )
+                                        if rep_phase_view == "Internal":
+                                            plot_group_mean_df = group_mean_df[group_mean_df["movement_pct"] <= crossing_pct]
+                                            plot_group_reps_long_df = group_reps_long_df[
+                                                group_reps_long_df["movement_pct"] <= crossing_pct
+                                            ]
+                                        else:
+                                            plot_group_mean_df = group_mean_df[group_mean_df["movement_pct"] >= crossing_pct]
+                                            plot_group_reps_long_df = group_reps_long_df[
+                                                group_reps_long_df["movement_pct"] >= crossing_pct
+                                            ]
+                                if plot_group_mean_df.empty:
+                                    continue
+
+                                group_label = f"Group {group_index}"
+                                trace_legendgroup = f"{session_label} — {group_label}"
+                                trace_name = f"{session_label} — {group_label}"
+                                if single_athlete_mode:
+                                    trace_color = group_color_sequence[position % len(group_color_sequence)]
+                                    dash = "solid"
+                                else:
+                                    trace_color = player_color
+                                    dash = group_dash_sequence[position % len(group_dash_sequence)]
+
+                                if rep_group_display_mode == "Individual Reps":
+                                    group_rep_numbers = sorted(plot_group_reps_long_df["rep_number"].unique())
+                                    for i, rep_number in enumerate(group_rep_numbers):
+                                        rep_curve = plot_group_reps_long_df[plot_group_reps_long_df["rep_number"] == rep_number]
+                                        group_fig.add_trace(go.Scatter(
+                                            x=rep_curve["movement_pct"],
+                                            y=rep_curve["torque_nm"],
+                                            mode="lines",
+                                            line=dict(width=1.25, color=trace_color, dash=dash),
+                                            opacity=0.5,
+                                            legendgroup=trace_legendgroup,
+                                            showlegend=(i == 0),
+                                            name=trace_name,
+                                            hovertemplate=(
+                                                f"{trace_name} — Rep {rep_number}"
+                                                "<br>%{x:.0f}%: %{y:.1f} Nm<extra></extra>"
+                                            ),
+                                        ))
+                                else:
+                                    group_fig.add_trace(go.Scatter(
+                                        x=plot_group_mean_df["movement_pct"],
+                                        y=plot_group_mean_df["mean_torque_nm"],
+                                        mode="lines",
+                                        line=dict(width=4, color=trace_color, dash=dash),
+                                        name=trace_name,
+                                        legendgroup=trace_legendgroup,
+                                    ))
+                                    group_fig.add_trace(go.Scatter(
+                                        x=plot_group_mean_df["movement_pct"],
+                                        y=plot_group_mean_df["upper_band"],
+                                        mode="lines",
+                                        line=dict(width=0),
+                                        legendgroup=trace_legendgroup,
+                                        showlegend=False,
+                                        hoverinfo="skip",
+                                    ))
+                                    group_fig.add_trace(go.Scatter(
+                                        x=plot_group_mean_df["movement_pct"],
+                                        y=plot_group_mean_df["lower_band"],
+                                        mode="lines",
+                                        line=dict(width=0, color=trace_color),
+                                        fill="tonexty",
+                                        opacity=0.15,
+                                        legendgroup=trace_legendgroup,
+                                        name=f"{trace_name} ±1 SD",
+                                        visible="legendonly",
+                                    ))
+
+                                group_auc_results = [
+                                    auc_by_rep_number[rep_number]
+                                    for rep_number in rep_numbers
+                                    if rep_number in auc_by_rep_number
+                                ]
+                                if group_auc_results:
+                                    group_meta = {
+                                        "Athlete": athlete_name,
+                                        "Session Date": session_date_str,
+                                        "Group": group_label,
+                                    }
+                                    group_peak_torque_rows.append(build_biodex_peak_torque_row(
+                                        group_meta, group_auc_results, bodyweight_kg, rep_phase_view,
+                                    ))
+                                    group_auc_rows.append(build_biodex_auc_row(
+                                        group_meta, group_auc_results, bodyweight_kg, rep_phase_view,
+                                    ))
+
+                        if not group_fig.data:
+                            st.warning("Could not build aligned curves for these rep groups.")
+                        else:
+                            session_titles = ", ".join(
+                                short_session_labels.get(r, session_labels.get(r, f"Run {r}")) for r in usable_run_ids
+                            )
+                            phase_title_suffix = (
+                                ""
+                                if rep_phase_view == "Full"
+                                else f" ({rep_phase_view})"
+                            )
+                            group_fig.update_layout(
+                                hoverlabel=dict(namelength=-1),
+                                title=(
+                                    f"Individual Reps by Group — {session_titles}{phase_title_suffix}"
+                                    if rep_group_display_mode == "Individual Reps"
+                                    else f"Rep Group Comparison — {session_titles}{phase_title_suffix}"
+                                ),
+                                xaxis_title="Movement Cycle (%)",
+                                yaxis_title="Torque",
+                                height=550,
+                                legend=dict(
+                                    orientation="h",
+                                    yanchor="top",
+                                    y=-0.15,
+                                    xanchor="center",
+                                    x=0.5,
+                                    groupclick="toggleitem" if rep_group_display_mode == "Grouped" else "togglegroup",
+                                ),
+                            )
+                            st.plotly_chart(group_fig, use_container_width=True)
+
+                        if rep_group_display_mode == "Individual Reps":
+                            if rep_peak_torque_rows:
+                                st.markdown("#### Per-Rep Peak Torque by Group")
+                                st.dataframe(
+                                    pd.DataFrame(rep_peak_torque_rows).sort_values(["Athlete", "Rep"]).reset_index(drop=True),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+                            if rep_auc_rows:
+                                st.markdown("#### Per-Rep AUC by Group")
+                                st.dataframe(
+                                    pd.DataFrame(rep_auc_rows).sort_values(["Athlete", "Rep"]).reset_index(drop=True),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+                        else:
+                            if group_peak_torque_rows:
+                                st.markdown("#### Peak Torque by Group")
+                                st.dataframe(pd.DataFrame(group_peak_torque_rows), use_container_width=True, hide_index=True)
+                            if group_auc_rows:
+                                st.markdown("#### AUC by Group")
+                                st.dataframe(pd.DataFrame(group_auc_rows), use_container_width=True, hide_index=True)
 
     with biodex_test_tab3:
         st.markdown("### Review Reps")
@@ -19781,6 +21070,7 @@ with tab6:
                     "Landmark Prominence": selected_review_row["landmark_prominence_ratio"],
                 }]),
                 use_container_width=True,
+                hide_index=True,
             )
 
             raw_review_df = fetch_biodex_raw_time_series(
@@ -19851,6 +21141,7 @@ with tab6:
                         ))
 
                 review_raw_fig.update_layout(
+                    hoverlabel=dict(namelength=-1),
                     title="Saved Rep Windows and Landmarks",
                     xaxis_title="Elapsed Time (s)",
                     yaxis_title="Torque_Nm",
@@ -19887,6 +21178,7 @@ with tab6:
                     name="Mean Torque",
                 ))
                 review_mean_fig.update_layout(
+                    hoverlabel=dict(namelength=-1),
                     title="Saved Landmark-Aligned Mean Curve",
                     xaxis_title="Movement Cycle (%)",
                     yaxis_title="Torque_Nm",
@@ -19914,4 +21206,146 @@ with tab6:
                     else:
                         if updated_count:
                             st.success("Processing run marked as reviewed.")
-                            st.rerun()
+                            st.rerun(scope="fragment")
+
+with tab5:
+    render_biodex_test_tab()
+
+with tab_curve_demo:
+    st.subheader("Curve Shape Demo")
+    st.caption(
+        "Illustrative, non-clinical example: signals that stay flat along the zero line, rise "
+        "into the positive in a single bell-curve shape, then return to flat zero."
+    )
+
+    @st.fragment
+    def render_curve_shape_demo():
+        # Scoped as a fragment so checking a box or nudging the animation slider only
+        # reruns this chart, instead of rerunning the whole app (DB queries, every other
+        # tab, etc.) on each interaction.
+        curve_demo_x = np.linspace(0, 100, 240)
+
+        def build_positive_bell_bump(x, amp, start, end):
+            """Flat at zero outside [start, end]; a single positive, bell-shaped rise inside it."""
+            envelope = np.zeros_like(x, dtype=float)
+            mask = (x >= start) & (x <= end)
+            t = (x[mask] - start) / (end - start)
+            envelope[mask] = 0.5 - 0.5 * np.cos(2 * np.pi * t)
+            return amp * envelope
+
+        # The retrace sits exactly on top of the baseline (same amp/start/end), so with all
+        # four lines drawn at equal thickness it's distinguished purely by color — a bold
+        # magenta laid over the electric-blue baseline, drawn last so it renders on top.
+        curve_demo_definitions = [
+            {
+                "key": "baseline",
+                "label": "Curve 1 – Baseline Bump",
+                "color": "#0A84FF",
+                "params": dict(amp=45.0, start=20.0, end=55.0),
+            },
+            {
+                "key": "deep",
+                "label": "Curve 2 – Big Bump",
+                "color": "#FF3B30",
+                "params": dict(amp=95.0, start=15.0, end=70.0),
+            },
+            {
+                "key": "moderate",
+                "label": "Curve 3 – Moderate Bump",
+                "color": "#FF9500",
+                "params": dict(amp=55.0, start=20.0, end=58.0),
+            },
+            {
+                "key": "retrace",
+                "label": "Curve 4 – Retrace of Baseline",
+                "color": "#F72585",
+                "opacity": 0.95,
+                "params": dict(amp=45.0, start=20.0, end=55.0),
+            },
+        ]
+        curve_demo_max_amp = max(cd["params"]["amp"] for cd in curve_demo_definitions)
+
+        curve_demo_selection_cols = st.columns(len(curve_demo_definitions))
+        curve_demo_selected_keys = set()
+        for selection_col, curve_def in zip(curve_demo_selection_cols, curve_demo_definitions):
+            with selection_col:
+                show_curve = st.checkbox(
+                    curve_def["label"],
+                    value=True,
+                    key=f"curve_demo_show_{curve_def['key']}",
+                )
+                if show_curve:
+                    curve_demo_selected_keys.add(curve_def["key"])
+
+        curve_demo_controls_col, _ = st.columns([0.35, 1.0], vertical_alignment="center")
+        with curve_demo_controls_col:
+            animate_curve_demo_lines = st.toggle(
+                "Animate line draw",
+                value=False,
+                key="curve_demo_animate_lines",
+            )
+            curve_demo_animation_speed = st.slider(
+                "Animation speed",
+                min_value=0.005,
+                max_value=0.08,
+                value=0.02,
+                step=0.005,
+                format="%.3f s/frame",
+                key="curve_demo_animation_speed",
+                disabled=not animate_curve_demo_lines,
+            )
+            if animate_curve_demo_lines:
+                st.caption("Use the chart's Play/Pause controls to run the line animation.")
+
+        fig_curve_demo = go.Figure()
+        fig_curve_demo.add_hline(
+            y=0,
+            line_width=1,
+            line_dash="dash",
+            line_color="rgba(150,150,150,0.6)",
+        )
+
+        for curve_def in curve_demo_definitions:
+            if curve_def["key"] not in curve_demo_selected_keys:
+                continue
+            curve_demo_y = build_positive_bell_bump(curve_demo_x, **curve_def["params"])
+            fig_curve_demo.add_trace(go.Scatter(
+                x=curve_demo_x,
+                y=curve_demo_y,
+                mode="lines",
+                name=curve_def["label"],
+                line=dict(color=curve_def["color"], width=curve_def.get("width", 5)),
+                opacity=curve_def.get("opacity", 1.0),
+            ))
+
+        fig_curve_demo.update_layout(
+            height=550,
+            margin=dict(b=80),
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.15,
+                xanchor="center",
+                x=0.5,
+            ),
+        )
+        fig_curve_demo.update_xaxes(title_text=None)
+        fig_curve_demo.update_yaxes(
+            title_text=None,
+            # Fixed range (not derived from the selected curves) so the plot's scale stays
+            # put — it always reserves room for the biggest bump, even when that curve's
+            # checkbox is unchecked, instead of rescaling as selections change.
+            range=[-40.0, curve_demo_max_amp * 1.05],
+        )
+
+        if not fig_curve_demo.data or len(curve_demo_selected_keys) == 0:
+            st.info("Select at least one curve above to display the chart.")
+        else:
+            render_plotly_line_reveal(
+                fig_curve_demo,
+                animate=animate_curve_demo_lines,
+                use_container_width=True,
+                frame_delay=float(curve_demo_animation_speed),
+            )
+
+    render_curve_shape_demo()
