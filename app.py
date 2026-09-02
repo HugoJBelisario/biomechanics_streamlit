@@ -18150,12 +18150,49 @@ def render_biodex_test_tab():
                 ]
 
                 if "Position_Deg" in preview_item["numeric_columns"]:
+                    # Same display-only Savitzky-Golay smoothing (and same default
+                    # window/polyorder) the old Biodex tab offered for its raw-curve
+                    # preview, just applied to Position here instead of Torque.
+                    smooth_biodex_position_plot = st.toggle(
+                        "Smooth position plot for display only",
+                        value=False,
+                        key="biodex_smooth_position_plot",
+                    )
+                    biodex_position_plot_window = st.slider(
+                        "Position plot smoothing window",
+                        min_value=5,
+                        max_value=31,
+                        value=9,
+                        step=2,
+                        key="biodex_position_plot_window",
+                        disabled=not smooth_biodex_position_plot,
+                    )
+                    biodex_position_plot_polyorder = st.slider(
+                        "Position plot smoothing polynomial order",
+                        min_value=2,
+                        max_value=5,
+                        value=3,
+                        step=1,
+                        key="biodex_position_plot_polyorder",
+                        disabled=not smooth_biodex_position_plot,
+                    )
+
+                    position_values = preview_df["Position_Deg"].to_numpy(dtype=float)
+                    position_trace_name = "Position_Deg"
+                    if smooth_biodex_position_plot:
+                        position_values = smooth_biodex_display_curve(
+                            position_values,
+                            window_length=int(biodex_position_plot_window),
+                            polyorder=int(biodex_position_plot_polyorder),
+                        )
+                        position_trace_name = f"{position_trace_name} (Display-Smoothed)"
+
                     position_preview_fig = go.Figure()
                     position_preview_fig.add_trace(go.Scatter(
                         x=preview_df["Elapsed Seconds"],
-                        y=preview_df["Position_Deg"],
+                        y=position_values,
                         mode="lines",
-                        name="Position_Deg",
+                        name=position_trace_name,
                     ))
                     position_preview_title = "Stored Raw Position Preview"
                     if preview_item.get("movement", selected_biodex_test_movement) == "d2_shoulder_pattern":
