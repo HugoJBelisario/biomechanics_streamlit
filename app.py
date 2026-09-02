@@ -2593,7 +2593,19 @@ def detect_biodex_rep_settle_idx(values, search_start_idx, baseline_window=15, m
     return n - 1
 
 def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.12):
-    """Detect landmarks for a conditioning rep: POS1, POS2, NEG1 (two positive peaks followed by one negative peak)."""
+    """Detect landmarks for a conditioning rep: POS1, POS2, NEG1 (two positive peaks followed by one negative peak).
+
+    POS2 is often much lower-prominence than POS1 (the subject doesn't always fully
+    relax between the two internal-rotation contractions, or the second contraction is
+    just weaker), so it's found by restricting the positive-peak search to samples
+    *before* the negative landmark, rather than by picking the two highest-prominence
+    positive peaks anywhere in the window. Searching the whole window let a small,
+    biomechanically meaningless ripple in the post-NEG1 settle/recovery tail (after the
+    subject has already released the contraction) outrank the genuine-but-subtle POS2,
+    producing a pos/neg/pos landmark order that silently failed the pos/pos/neg check
+    downstream (in compute_biodex_conditioning_rep_auc) and dropped the rep from every
+    table and chart with no indication why.
+    """
     if rep_df.empty or value_col not in rep_df.columns:
         return None
 
@@ -2627,35 +2639,42 @@ def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_N
     min_distance = max(1, len(smooth_values) // 12)
     prominence = max(1.0, amplitude_span * float(prominence_ratio))
 
-    pos_peaks, pos_props = find_peaks_with_adaptive_prominence(
-        smooth_values,
-        target_count=2,
-        base_prominence=prominence,
-        distance=min_distance,
-    )
     neg_peaks, neg_props = find_peaks_with_adaptive_prominence(
         -smooth_values,
         target_count=1,
         base_prominence=prominence,
         distance=min_distance,
     )
+    if len(neg_peaks) < 1:
+        return None
+    top_neg_idx = np.argsort(neg_props["prominences"])[-1:]
+    neg_idx = int(neg_peaks[top_neg_idx[0]])
 
-    if len(pos_peaks) < 2 or len(neg_peaks) < 1:
+    # Both positive (internal-rotation) landmarks must precede the negative one.
+    pos_search_values = smooth_values[:neg_idx]
+    if len(pos_search_values) < 2:
+        return None
+
+    pos_peaks, pos_props = find_peaks_with_adaptive_prominence(
+        pos_search_values,
+        target_count=2,
+        base_prominence=prominence,
+        distance=min_distance,
+    )
+    if len(pos_peaks) < 2:
         return None
 
     top_pos_idx = np.argsort(pos_props["prominences"])[-2:]
-    top_neg_idx = np.argsort(neg_props["prominences"])[-1:]
 
-    candidates = []
-    for idx in top_pos_idx:
-        candidates.append((int(pos_peaks[idx]), "pos"))
-    for idx in top_neg_idx:
-        candidates.append((int(neg_peaks[idx]), "neg"))
-
+    candidates = [(int(pos_peaks[idx]), "pos") for idx in top_pos_idx]
+    candidates.append((neg_idx, "neg"))
     candidates = sorted(candidates, key=lambda item: item[0])
     landmark_indices = [idx for idx, _kind in candidates]
+    landmark_kinds = [kind for _idx, kind in candidates]
 
     if len(landmark_indices) != 3 or any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
+        return None
+    if landmark_kinds != ["pos", "pos", "neg"]:
         return None
 
     start_idx = detect_biodex_rep_onset_idx(smooth_values, landmark_indices[0])
@@ -2663,7 +2682,7 @@ def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_N
 
     return {
         "indices": landmark_indices,
-        "kinds": [kind for _idx, kind in candidates],
+        "kinds": landmark_kinds,
         "smooth_values": smooth_values,
         "start_idx": start_idx,
         "end_idx": end_idx,
