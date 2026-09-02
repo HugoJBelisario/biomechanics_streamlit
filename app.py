@@ -2593,18 +2593,25 @@ def detect_biodex_rep_settle_idx(values, search_start_idx, baseline_window=15, m
     return n - 1
 
 def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.12):
-    """Detect landmarks for a conditioning rep: POS1, POS2, NEG1 (two positive peaks followed by one negative peak).
+    """Find the internal/external zero crossing for a conditioning rep.
 
-    POS2 is often much lower-prominence than POS1 (the subject doesn't always fully
-    relax between the two internal-rotation contractions, or the second contraction is
-    just weaker), so it's found by restricting the positive-peak search to samples
-    *before* the negative landmark, rather than by picking the two highest-prominence
-    positive peaks anywhere in the window. Searching the whole window let a small,
-    biomechanically meaningless ripple in the post-NEG1 settle/recovery tail (after the
-    subject has already released the contraction) outrank the genuine-but-subtle POS2,
-    producing a pos/neg/pos landmark order that silently failed the pos/pos/neg check
-    downstream (in compute_biodex_conditioning_rep_auc) and dropped the rep from every
-    table and chart with no indication why.
+    Conditioning reps only need one landmark for alignment: the point where torque
+    crosses from positive (internal rotation) to negative (external rotation). Older
+    versions of this detector pinned three peak-based landmarks (POS1, POS2, NEG1) for
+    alignment, but the second internal-rotation peak is often too subtle for reliable
+    peak-finding (see compute_biodex_conditioning_rep_auc for the history there), and
+    peak torque values for the tables don't actually need to be pinned to specific
+    sub-peaks — the overall max/min within each phase (computed separately in
+    compute_biodex_conditioning_rep_auc) is what's reported. So alignment now only
+    needs this one robust, purely sign-based crossing, with no peak-finding at all.
+
+    The crossing search starts at the window's overall peak-torque sample and scans
+    forward from there (not from the window's raw edge), so it can't latch onto a
+    spurious near-zero sign flip in the idle/buffer time before the subject's
+    contraction actually begins.
+
+    `prominence_ratio` is accepted for call-signature compatibility with other
+    landmark detectors but unused here — sign-crossing detection needs no prominence.
     """
     if rep_df.empty or value_col not in rep_df.columns:
         return None
@@ -2636,53 +2643,23 @@ def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_N
     if amplitude_span <= 0:
         return None
 
-    min_distance = max(1, len(smooth_values) // 12)
-    prominence = max(1.0, amplitude_span * float(prominence_ratio))
-
-    neg_peaks, neg_props = find_peaks_with_adaptive_prominence(
-        -smooth_values,
-        target_count=1,
-        base_prominence=prominence,
-        distance=min_distance,
-    )
-    if len(neg_peaks) < 1:
-        return None
-    top_neg_idx = np.argsort(neg_props["prominences"])[-1:]
-    neg_idx = int(neg_peaks[top_neg_idx[0]])
-
-    # Both positive (internal-rotation) landmarks must precede the negative one.
-    pos_search_values = smooth_values[:neg_idx]
-    if len(pos_search_values) < 2:
+    peak_idx = int(np.argmax(smooth_values))
+    crossing_idx = None
+    for idx in range(peak_idx, len(smooth_values) - 1):
+        if smooth_values[idx] > 0 and smooth_values[idx + 1] <= 0:
+            crossing_idx = idx
+            break
+    if crossing_idx is None:
         return None
 
-    pos_peaks, pos_props = find_peaks_with_adaptive_prominence(
-        pos_search_values,
-        target_count=2,
-        base_prominence=prominence,
-        distance=min_distance,
-    )
-    if len(pos_peaks) < 2:
+    start_idx = detect_biodex_rep_onset_idx(smooth_values, peak_idx)
+    end_idx = detect_biodex_rep_settle_idx(smooth_values, crossing_idx)
+    if not (start_idx < crossing_idx < end_idx):
         return None
-
-    top_pos_idx = np.argsort(pos_props["prominences"])[-2:]
-
-    candidates = [(int(pos_peaks[idx]), "pos") for idx in top_pos_idx]
-    candidates.append((neg_idx, "neg"))
-    candidates = sorted(candidates, key=lambda item: item[0])
-    landmark_indices = [idx for idx, _kind in candidates]
-    landmark_kinds = [kind for _idx, kind in candidates]
-
-    if len(landmark_indices) != 3 or any(b <= a for a, b in zip(landmark_indices, landmark_indices[1:])):
-        return None
-    if landmark_kinds != ["pos", "pos", "neg"]:
-        return None
-
-    start_idx = detect_biodex_rep_onset_idx(smooth_values, landmark_indices[0])
-    end_idx = detect_biodex_rep_settle_idx(smooth_values, landmark_indices[-1])
 
     return {
-        "indices": landmark_indices,
-        "kinds": landmark_kinds,
+        "indices": [crossing_idx],
+        "kinds": ["crossing"],
         "smooth_values": smooth_values,
         "start_idx": start_idx,
         "end_idx": end_idx,
@@ -2811,11 +2788,20 @@ def build_landmark_aligned_curve(valid_reps, time_col="Elapsed Seconds", value_c
     mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
     mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
 
+    # Kinds appearing only once (e.g. conditioning's single "crossing" landmark) get a
+    # plain capitalized label ("Crossing"); kinds appearing more than once (e.g. two
+    # "pos" peaks in other protocols) get numbered ("POS1", "POS2") to distinguish them.
+    kind_totals = {}
+    for kind in aligned_rep_metadata[0]["landmark_kinds"]:
+        kind_totals[kind] = kind_totals.get(kind, 0) + 1
     landmark_counts = {}
     landmark_labels = []
     for kind in aligned_rep_metadata[0]["landmark_kinds"]:
         landmark_counts[kind] = landmark_counts.get(kind, 0) + 1
-        landmark_labels.append(f"{kind.upper()}{landmark_counts[kind]}")
+        if kind_totals[kind] > 1:
+            landmark_labels.append(f"{kind.upper()}{landmark_counts[kind]}")
+        else:
+            landmark_labels.append(kind.capitalize())
     mean_df.attrs["landmark_boundary_pct"] = boundary_pct[1:-1].tolist()
     mean_df.attrs["landmark_labels"] = landmark_labels
 
@@ -2932,7 +2918,7 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
             landmark_kinds.append("".join(ch for ch in landmark_row["landmark_name"] if not ch.isdigit()))
 
         start_idx = 0
-        if landmark_kinds and landmark_kinds[0] == "pos":
+        if landmark_kinds and landmark_kinds[0] in ("pos", "crossing"):
             start_idx = detect_biodex_rep_onset_idx(rep_torque_values, landmark_indices[0])
 
         end_idx = detect_biodex_rep_settle_idx(rep_torque_values, landmark_indices[-1])
@@ -2997,27 +2983,31 @@ def find_biodex_internal_external_crossing_pct(movement_pct, torque_values, sear
     return float(search_end_pct)
 
 def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", value_col="Torque_Nm"):
-    """Torque-time integral (Nm·s) of a conditioning rep's internal- and external-rotation phases.
+    """Torque-time integral (Nm·s) and peak torque of a conditioning rep's internal- and
+    external-rotation phases, split at the internal/external zero crossing.
 
-    Internal rotation runs from the rep's start (the onset-normalized 0%) through the
-    positive torque region (POS1 -> POS2) up to the zero crossing before NEG1. External
-    rotation picks up at that same crossing point and runs through NEG1 to the rep's end
-    (the settle-normalized 100%) — the two phases share one boundary so they're contiguous,
-    but each ends differently: internal rotation exits on a genuine sign flip (torque
-    reliably crosses zero on its way to NEG1), while external rotation has no such crossing
-    to rely on — torque just settles back toward baseline without necessarily recrossing
-    zero inside the rep window — so it uses the already-normalized end-of-rep boundary
-    instead. The zero crossing itself is linearly interpolated between samples for a more
-    accurate boundary than snapping to the nearest sample.
+    Internal rotation runs from the rep's start (the onset-normalized 0%) to the zero
+    crossing; external rotation picks up at that same crossing point and runs to the
+    rep's end (the settle-normalized 100%) — the two phases share one boundary so
+    they're contiguous. The crossing itself is linearly interpolated between samples
+    for a more accurate boundary than snapping to the nearest sample.
 
-    Expects rep_info in the shape build_landmark_aligned_curve consumes, with exactly the
-    conditioning landmark pattern (POS1, POS2, NEG1). Returns None if the rep doesn't match
+    Peak torque per phase is simply the overall max (internal) / min (external) torque
+    sample within that phase, not anchored to a specific sub-peak. Earlier versions
+    reported POS1/POS2 as two separate internal-rotation values, but the second
+    contraction is often too subtle for reliable peak-finding to isolate on its own —
+    landmark detection (see detect_shoulder_er_ir_conditioning_rep_landmarks) no
+    longer even attempts to find it. One overall peak per phase is both simpler and
+    far more robust.
+
+    Expects rep_info in the shape build_landmark_aligned_curve consumes, with the
+    conditioning zero-crossing landmark pattern. Returns None if the rep doesn't match
     that pattern.
     """
-    if rep_info.get("landmark_kinds") != ["pos", "pos", "neg"]:
+    if rep_info.get("landmark_kinds") != ["crossing"]:
         return None
 
-    start_idx, pos1_idx, pos2_idx, neg1_idx, end_idx = rep_info["boundary_idx"]
+    start_idx, landmark_crossing_idx, end_idx = rep_info["boundary_idx"]
 
     rep_df = rep_info["rep_df"]
     time_values = rep_df[time_col].to_numpy(dtype=float)
@@ -3025,7 +3015,7 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
 
     crossing_idx = None
     crossing_time = None
-    for idx in range(pos2_idx, neg1_idx):
+    for idx in range(start_idx, end_idx):
         if torque_values[idx] > 0 and torque_values[idx + 1] <= 0:
             v0, v1 = torque_values[idx], torque_values[idx + 1]
             t0, t1 = time_values[idx], time_values[idx + 1]
@@ -3035,8 +3025,9 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
             break
 
     if crossing_idx is None:
-        # No exact sign flip found (e.g. torque only touches zero); fall back to NEG1.
-        crossing_idx = neg1_idx
+        # No exact sign flip found on the raw signal (e.g. torque only touches zero);
+        # fall back to the crossing already found on the smoothed signal.
+        crossing_idx = landmark_crossing_idx
 
     internal = _integrate_biodex_rep_phase(
         time_values, torque_values, start_idx, crossing_idx, append_crossing_time=crossing_time,
@@ -3053,43 +3044,45 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     if external is None:
         return None
 
-    # POS1 and POS2 are two distinct sub-peaks within the internal-rotation phase (two
-    # separate contractions in one rep, not noise around one peak), so they're reported
-    # separately everywhere rather than collapsed into a single "peak positive torque" —
-    # collapsing them previously meant different tables disagreed on what "peak positive"
-    # meant (max of the two vs. an average of the two vs. POS1 alone). POS1 is treated as
-    # the internal-rotation reference point (time-to-peak and the ER/IR ratio both anchor
-    # to it), matching how the movement is coached: POS1 is the primary IR contraction.
     external_phase_start_time = crossing_time if crossing_time is not None else float(time_values[crossing_idx])
 
-    pos1_torque_nm = float(torque_values[pos1_idx])
-    pos2_torque_nm = float(torque_values[pos2_idx])
-    neg1_torque_nm = float(np.min(torque_values[crossing_idx:end_idx + 1]))
-    # ER/IR ratio: external (NEG1/ER) strength as a fraction of internal (POS1/IR) strength
-    # — the standard clinical convention for rotator-cuff strength ratios.
-    er_ir_ratio = abs(neg1_torque_nm) / pos1_torque_nm if pos1_torque_nm > 0 else None
+    internal_segment = torque_values[start_idx:crossing_idx + 1]
+    external_segment = torque_values[crossing_idx:end_idx + 1]
+    internal_peak_local_idx = int(np.argmax(internal_segment))
+    external_peak_local_idx = int(np.argmin(external_segment))
+    internal_peak_idx = start_idx + internal_peak_local_idx
+    external_peak_idx = crossing_idx + external_peak_local_idx
+
+    internal_peak_torque_nm = float(internal_segment[internal_peak_local_idx])
+    external_peak_torque_nm = float(external_segment[external_peak_local_idx])
+    # ER/IR ratio: external (ER) strength as a fraction of internal (IR) strength — the
+    # standard clinical convention for rotator-cuff strength ratios.
+    er_ir_ratio = abs(external_peak_torque_nm) / internal_peak_torque_nm if internal_peak_torque_nm > 0 else None
 
     return {
         "rep_number": rep_info["rep_number"],
         "internal_auc_nm_s": internal["auc_nm_s"],
         "internal_duration_s": internal["phase_duration_s"],
-        "internal_time_to_peak_s": float(time_values[pos1_idx] - time_values[start_idx]),
-        "pos1_torque_nm": pos1_torque_nm,
-        "pos2_torque_nm": pos2_torque_nm,
+        "internal_time_to_peak_s": float(time_values[internal_peak_idx] - time_values[start_idx]),
+        "internal_peak_torque_nm": internal_peak_torque_nm,
         "external_auc_nm_s": external["auc_nm_s"],
         "external_duration_s": external["phase_duration_s"],
-        "external_time_to_peak_s": float(time_values[neg1_idx] - external_phase_start_time),
-        "neg1_torque_nm": neg1_torque_nm,
+        "external_time_to_peak_s": float(time_values[external_peak_idx] - external_phase_start_time),
+        "external_peak_torque_nm": external_peak_torque_nm,
         "er_ir_ratio": er_ir_ratio,
     }
 
 def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, rep_number=None):
     """One Peak Torque table row, averaged across `auc_results` (or a single rep's values
-    when `rep_number` is given). Only includes internal (IR Torque 1/2, time to peak)
+    when `rep_number` is given). Only includes internal (IR Torque, time to peak)
     columns when phase_view is "Full" or "Internal", and external (ER Torque, time to peak)
     columns when phase_view is "Full" or "External" — so the table always matches what the
     Phase View toggle is currently showing on the chart. ER/IR Ratio only appears for
     "Full" (it isn't a single-phase statistic).
+
+    IR/ER Torque are each the single overall peak within their phase (see
+    compute_biodex_conditioning_rep_auc) rather than two separate internal-rotation
+    sub-peaks — reporting one number per phase.
     """
     row = dict(meta)
     row["Bodyweight (kg)"] = round(bodyweight_kg, 1) if bodyweight_kg else None
@@ -3099,16 +3092,13 @@ def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, r
     unit_suffix = " (Nm)" if rep_number is not None else ""
 
     if phase_view in ("Full", "Internal"):
-        ir1 = float(np.mean([r["pos1_torque_nm"] for r in auc_results]))
-        ir2 = float(np.mean([r["pos2_torque_nm"] for r in auc_results]))
-        row[f"{prefix}IR Torque 1{unit_suffix}"] = ir1
-        row[f"{prefix}IR Torque 2{unit_suffix}"] = ir2
+        ir = float(np.mean([r["internal_peak_torque_nm"] for r in auc_results]))
+        row[f"{prefix}IR Torque{unit_suffix}"] = ir
         if bodyweight_kg:
-            row[f"{prefix}IR Torque 1 (Nm/kg)"] = ir1 / bodyweight_kg
-            row[f"{prefix}IR Torque 2 (Nm/kg)"] = ir2 / bodyweight_kg
+            row[f"{prefix}IR Torque (Nm/kg)"] = ir / bodyweight_kg
         row[f"{prefix}Internal Time to Peak (s)"] = float(np.mean([r["internal_time_to_peak_s"] for r in auc_results]))
     if phase_view in ("Full", "External"):
-        er = float(np.mean([r["neg1_torque_nm"] for r in auc_results]))
+        er = float(np.mean([r["external_peak_torque_nm"] for r in auc_results]))
         row[f"{prefix}ER Torque{unit_suffix}"] = er
         if bodyweight_kg:
             row[f"{prefix}ER Torque (Nm/kg)"] = er / bodyweight_kg
@@ -17205,6 +17195,8 @@ if False:  # legacy Biodex tab — superseded by render_biodex_test_tab(), kept 
     selected_test_date = st.date_input(
         "Test Date",
         key="biodex_test_date",
+        min_value=datetime(1990, 1, 1).date(),
+        max_value=datetime(2100, 12, 31).date(),
         disabled=selected_athlete is None,
     )
     entered_biodex_notes = st.text_area(
@@ -17799,6 +17791,8 @@ def render_biodex_test_tab():
             selected_biodex_test_date = st.date_input(
                 "Test Date",
                 key="biodex_test_upload_date",
+                min_value=datetime(1990, 1, 1).date(),
+                max_value=datetime(2100, 12, 31).date(),
                 disabled=selected_biodex_test_athlete_id is None,
             )
             selected_biodex_test_time = st.time_input(
@@ -19718,9 +19712,11 @@ def render_biodex_test_tab():
                             )
                         if is_shoulder_er_ir_conditioning_preview:
                             st.caption(
-                                "Conditioning reps are aligned to a POS1 -> POS2 -> NEG1 landmark pattern "
-                                "(two positive peaks followed by one negative peak) instead of the standard "
-                                "two-cycle POS1/NEG1/POS2/NEG2 pattern."
+                                "Conditioning reps are aligned to the internal/external zero-crossing point "
+                                "(no peak detection) instead of the standard two-cycle POS1/NEG1/POS2/NEG2 "
+                                "pattern. Peak torque values for the tables are found separately as the "
+                                "overall max/min within each phase, so the landmark prominence ratio below "
+                                "doesn't affect conditioning reps."
                             )
                         if (
                             preview_movement == "d2_shoulder_pattern"
@@ -20879,13 +20875,23 @@ def render_biodex_test_tab():
                                 plot_group_reps_long_df = group_reps_long_df
                                 if rep_phase_view != "Full" and group_metadata:
                                     boundary_pct = group_mean_df.attrs.get("landmark_boundary_pct", [])
-                                    if group_metadata[0]["landmark_kinds"] == ["pos", "pos", "neg"] and len(boundary_pct) == 3:
+                                    landmark_kinds = group_metadata[0]["landmark_kinds"]
+                                    crossing_pct = None
+                                    if landmark_kinds == ["crossing"] and len(boundary_pct) == 1:
+                                        # Current scheme: the crossing is itself the only
+                                        # pinned interior landmark, already on the shared axis.
+                                        crossing_pct = boundary_pct[0]
+                                    elif landmark_kinds == ["pos", "pos", "neg"] and len(boundary_pct) == 3:
+                                        # Runs saved before the crossing-only alignment change
+                                        # still carry the old three-landmark scheme; fall back
+                                        # to searching for the crossing on the mean curve.
                                         crossing_pct = find_biodex_internal_external_crossing_pct(
                                             group_mean_df["movement_pct"].to_numpy(),
                                             group_mean_df["mean_torque_nm"].to_numpy(),
                                             boundary_pct[1],
                                             boundary_pct[2],
                                         )
+                                    if crossing_pct is not None:
                                         if rep_phase_view == "Internal":
                                             plot_group_mean_df = group_mean_df[group_mean_df["movement_pct"] <= crossing_pct]
                                             plot_group_reps_long_df = group_reps_long_df[
