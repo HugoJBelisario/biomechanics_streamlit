@@ -2023,6 +2023,7 @@ def detect_position_ascent_descent_bounds(
     velocity_floor=5.0,
     sustain_seconds=0.15,
     fs=100.0,
+    edge_guard_seconds=0.25,
 ):
     """Find a rep's start/end from a smoothed Position_Deg signal: start is the onset of
     continual ascent, end is where position returns to that same start value.
@@ -2034,17 +2035,29 @@ def detect_position_ascent_descent_bounds(
     jitter alone, well past a fixed 15 deg/s cutoff meant to reject noise). `velocity_floor`
     keeps the threshold from collapsing to near-zero on an unusually quiet window.
 
-    Start: scanning forward from search_start_idx, the first index where velocity stays
-    >= the threshold for `sustain_seconds` straight — i.e. sustained ascent, not a noise
-    spike. End: scanning forward from the rep's peak position, the first point the
-    (interpolated) position curve crosses back down through the start's own position
-    value — so the rep is defined as "ascend from here, until you return to here" rather
-    than independently detecting when descent trails off, which let the two boundaries
-    drift to different reference points.
+    The velocity search skips the first `edge_guard_seconds` of the window before looking
+    for a sustained ascent. filtfilt has no real data before sample 0 to condition its
+    zero-phase filter on, so it can "ring" right at that edge and produce a spurious,
+    momentarily huge derivative there — which otherwise gets mistaken for the start of a
+    genuine sustained ascent, anchoring the whole rep to the window's raw edge instead of
+    the real onset (silently wrecking downstream peak/AUC values for that one rep, since
+    its "internal" phase then barely covers any real signal). The outer rep window always
+    carries a buffer of idle time before the true onset, so this guard costs nothing real.
+
+    Start: scanning forward from search_start_idx + edge guard, the first index where
+    velocity stays >= the threshold for `sustain_seconds` straight — i.e. sustained
+    ascent, not a noise spike. End: scanning forward from the rep's peak position, the
+    first point the (interpolated) position curve crosses back down through the start's
+    own position value — so the rep is defined as "ascend from here, until you return to
+    here" rather than independently detecting when descent trails off, which let the two
+    boundaries drift to different reference points.
 
     Returns None if no sustained ascent is found in the search window.
     """
-    window_velocity = velocity[search_start_idx:search_end_idx + 1]
+    edge_guard_samples = max(0, int(round(edge_guard_seconds * fs)))
+    guarded_start_idx = min(search_start_idx + edge_guard_samples, search_end_idx)
+
+    window_velocity = velocity[guarded_start_idx:search_end_idx + 1]
     if len(window_velocity) == 0:
         return None
     peak_abs_velocity = float(np.max(np.abs(window_velocity)))
@@ -2052,7 +2065,7 @@ def detect_position_ascent_descent_bounds(
     sustain_samples = max(1, int(round(sustain_seconds * fs)))
 
     start_idx = None
-    for idx in range(search_start_idx, search_end_idx):
+    for idx in range(guarded_start_idx, search_end_idx):
         window_end = min(len(velocity), idx + sustain_samples)
         if window_end - idx < sustain_samples:
             break
@@ -2742,10 +2755,34 @@ def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_N
     if crossing_idx is None:
         return None
 
-    start_idx = detect_biodex_rep_onset_idx(smooth_values, peak_idx)
-    end_idx = detect_biodex_rep_settle_idx(smooth_values, crossing_idx)
-    if not (start_idx < crossing_idx < end_idx):
-        return None
+    # Prefer Position_Deg-based boundaries (start = onset of continual ascent, end =
+    # position returning to that same start value) over torque onset/settle when this
+    # rep has position data — validated against real conditioning sessions to track the
+    # actual movement more tightly than torque's onset/settle, which anchors to
+    # torque departing/returning to its own noisy baseline rather than true ROM. Falls
+    # back to torque-based boundaries when position data is missing or too noisy to
+    # find a sustained ascent (e.g. older uploads without a recognized position column).
+    start_idx = None
+    end_idx = None
+    if "Position_Deg" in rep_df.columns and "Elapsed Seconds" in rep_df.columns:
+        position_values = pd.to_numeric(rep_df["Position_Deg"], errors="coerce").to_numpy(dtype=float)
+        if np.isfinite(position_values).any():
+            time_values = pd.to_numeric(rep_df["Elapsed Seconds"], errors="coerce").to_numpy(dtype=float)
+            smooth_position, position_fs, _clean_position = smooth_position_deg_signal(time_values, position_values)
+            velocity = np.gradient(smooth_position, time_values)
+            position_bounds = detect_position_ascent_descent_bounds(
+                time_values, smooth_position, velocity, 0, len(rep_df) - 1,
+                fs=position_fs or 100.0,
+            )
+            if position_bounds is not None and position_bounds["start_idx"] < crossing_idx < position_bounds["end_idx"]:
+                start_idx = position_bounds["start_idx"]
+                end_idx = position_bounds["end_idx"]
+
+    if start_idx is None or end_idx is None:
+        start_idx = detect_biodex_rep_onset_idx(smooth_values, peak_idx)
+        end_idx = detect_biodex_rep_settle_idx(smooth_values, crossing_idx)
+        if not (start_idx < crossing_idx < end_idx):
+            return None
 
     return {
         "indices": [crossing_idx],
@@ -2981,6 +3018,7 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
     raw_df = raw_df.dropna(subset=["time_seconds", "torque_nm"]).sort_values("time_seconds")
     raw_time = raw_df["time_seconds"].to_numpy(dtype=float)
     raw_torque = raw_df["torque_nm"].to_numpy(dtype=float)
+    raw_position = raw_df["position_deg"].to_numpy(dtype=float) if "position_deg" in raw_df.columns else None
 
     valid_reps = []
     for _, window_row in rep_windows_df.iterrows():
@@ -2993,7 +3031,11 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
             continue
         rep_time_values = raw_time[mask]
         rep_torque_values = raw_torque[mask]
-        rep_df = pd.DataFrame({time_col: rep_time_values, value_col: rep_torque_values})
+        rep_position_values = raw_position[mask] if raw_position is not None else None
+        rep_df_columns = {time_col: rep_time_values, value_col: rep_torque_values}
+        if rep_position_values is not None:
+            rep_df_columns["Position_Deg"] = rep_position_values
+        rep_df = pd.DataFrame(rep_df_columns)
 
         landmark_rows = rep_landmarks_df[rep_landmarks_df["rep_number"] == rep_number].sort_values("time_seconds")
         if landmark_rows.empty:
@@ -3007,11 +3049,36 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
             landmark_indices.append(idx)
             landmark_kinds.append("".join(ch for ch in landmark_row["landmark_name"] if not ch.isdigit()))
 
-        start_idx = 0
-        if landmark_kinds and landmark_kinds[0] in ("pos", "crossing"):
-            start_idx = detect_biodex_rep_onset_idx(rep_torque_values, landmark_indices[0])
+        # Mirrors detect_shoulder_er_ir_conditioning_rep_landmarks: prefer
+        # Position_Deg-based boundaries (ascent onset -> return to that same
+        # position) over torque onset/settle when this rep has position data,
+        # so reconstructed reps (used for Session Comparison / regrouping) match
+        # what live detection would produce, not a torque-only approximation.
+        start_idx = None
+        end_idx = None
+        if (
+            landmark_kinds
+            and landmark_kinds[0] == "crossing"
+            and rep_position_values is not None
+            and np.isfinite(rep_position_values).any()
+        ):
+            smooth_position, position_fs, _clean_position = smooth_position_deg_signal(
+                rep_time_values, rep_position_values,
+            )
+            velocity = np.gradient(smooth_position, rep_time_values)
+            position_bounds = detect_position_ascent_descent_bounds(
+                rep_time_values, smooth_position, velocity, 0, len(rep_time_values) - 1,
+                fs=position_fs or 100.0,
+            )
+            if position_bounds is not None and position_bounds["start_idx"] < landmark_indices[0] < position_bounds["end_idx"]:
+                start_idx = position_bounds["start_idx"]
+                end_idx = position_bounds["end_idx"]
 
-        end_idx = detect_biodex_rep_settle_idx(rep_torque_values, landmark_indices[-1])
+        if start_idx is None or end_idx is None:
+            start_idx = 0
+            if landmark_kinds and landmark_kinds[0] in ("pos", "crossing"):
+                start_idx = detect_biodex_rep_onset_idx(rep_torque_values, landmark_indices[0])
+            end_idx = detect_biodex_rep_settle_idx(rep_torque_values, landmark_indices[-1])
 
         boundary_idx = [start_idx] + landmark_indices + [end_idx]
         if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
@@ -3103,9 +3170,18 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     time_values = rep_df[time_col].to_numpy(dtype=float)
     torque_values = rep_df[value_col].to_numpy(dtype=float)
 
+    # Refine the already-known-good smoothed-signal crossing (landmark_crossing_idx) to
+    # an exact raw-signal sign flip nearby, rather than scanning the whole
+    # [start_idx, end_idx] range from scratch. start_idx can come from Position_Deg-based
+    # boundary detection now (see detect_shoulder_er_ir_conditioning_rep_landmarks), which
+    # may sit earlier than torque's own onset — inside torque's pre-contraction noise,
+    # where the raw signal flips sign spuriously. Scanning from there instead of near the
+    # landmark picked up that early noise crossing instead of the real one, collapsing the
+    # internal-rotation phase to a sliver and wrecking its peak/AUC values.
+    crossing_search_start_idx = max(start_idx, landmark_crossing_idx - 150)
     crossing_idx = None
     crossing_time = None
-    for idx in range(start_idx, end_idx):
+    for idx in range(crossing_search_start_idx, end_idx):
         if torque_values[idx] > 0 and torque_values[idx + 1] <= 0:
             v0, v1 = torque_values[idx], torque_values[idx + 1]
             t0, t1 = time_values[idx], time_values[idx + 1]
