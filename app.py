@@ -2100,7 +2100,7 @@ def detect_position_ascent_descent_bounds(
         "duration_s": end_time - float(time_values[start_idx]),
     }
 
-def refine_rep_start_to_torque_baseline(torque_values, anchor_idx, lookback_samples=150):
+def refine_rep_start_to_torque_baseline(torque_values, anchor_idx, lookback_samples=150, smoothing_window=5):
     """Pull a rep's start index back to the true torque baseline trough before it.
 
     detect_position_ascent_descent_bounds anchors a rep's start to when *position*
@@ -2115,6 +2115,15 @@ def refine_rep_start_to_torque_baseline(torque_values, anchor_idx, lookback_samp
     torque in the window just before the position-derived anchor — the last quiet
     instant before the contraction actually begins — so pulling start back to that
     point instead should make the aligned curves start at consistent torque values.
+    This resting value is not just sensor noise around zero — the dynamometer handle's
+    own weight loads the sensor via gravity whenever the athlete isn't actively
+    pushing, so a small negative reading at rest is a real, physically meaningful
+    baseline, not a fluke to be distrusted.
+
+    The minimum is found on a short rolling-mean-smoothed copy of the window, not the
+    raw single-sample minimum — a lone noisy sample landing a little low can otherwise
+    pick a trough that isn't representative of the true resting level. Smoothing first
+    means the selected index reflects a sustained low point rather than one outlier.
 
     Searches only backward from `anchor_idx` within `lookback_samples`, never forward,
     so this can only pull start earlier (recovering the beginning of the ascent the
@@ -2124,7 +2133,10 @@ def refine_rep_start_to_torque_baseline(torque_values, anchor_idx, lookback_samp
     window = torque_values[search_start:anchor_idx + 1]
     if len(window) == 0:
         return anchor_idx
-    return search_start + int(np.argmin(window))
+    smooth_window = (
+        pd.Series(window).rolling(window=smoothing_window, center=True, min_periods=1).mean().to_numpy()
+    )
+    return search_start + int(np.argmin(smooth_window))
 
 def detect_position_deg_rep_bounds(
     time_values,
@@ -3145,18 +3157,23 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
     return valid_reps
 
 def _integrate_biodex_rep_phase(
-    time_values, torque_values, start_idx, end_idx, prepend_crossing_time=None, append_crossing_time=None,
+    time_values, torque_values, start_idx, end_idx,
+    prepend_crossing_time=None, append_crossing_time=None, crossing_torque=0.0,
 ):
     """Trapezoidal torque-time integral over [start_idx, end_idx], optionally extended by
-    an interpolated (time, 0.0) endpoint at either end for a precise zero-crossing boundary."""
+    an interpolated (time, crossing_torque) endpoint at either end for a precise
+    zero-crossing boundary. `crossing_torque` defaults to 0.0 (the raw-signal crossing
+    point); pass the crossing's own baseline-corrected value when `torque_values` has
+    already been baseline-shifted, so the inserted endpoint stays consistent with the
+    rest of the (shifted) segment instead of re-introducing an un-shifted zero."""
     segment_time = time_values[start_idx:end_idx + 1]
     segment_torque = torque_values[start_idx:end_idx + 1]
     if prepend_crossing_time is not None:
         segment_time = np.insert(segment_time, 0, prepend_crossing_time)
-        segment_torque = np.insert(segment_torque, 0, 0.0)
+        segment_torque = np.insert(segment_torque, 0, crossing_torque)
     if append_crossing_time is not None:
         segment_time = np.append(segment_time, append_crossing_time)
-        segment_torque = np.append(segment_torque, 0.0)
+        segment_torque = np.append(segment_torque, crossing_torque)
 
     if len(segment_time) < 2:
         return None
@@ -3188,6 +3205,43 @@ def find_biodex_internal_external_crossing_pct(movement_pct, torque_values, sear
             return float(t0 + frac * (t1 - t0))
     return float(search_end_pct)
 
+def _diagnose_biodex_internal_peak_structure(segment_time, segment_torque):
+    """Diagnostic only — does not affect IR Torque, RTD, alignment, or any other value.
+
+    IR Torque (and therefore Internal RTD) is `argmax` over the internal segment. When
+    a rep has two comparable-height sub-contractions (a double peak) or a broad
+    plateau, sample-level noise can flip which candidate wins, moving IR Torque and RTD
+    by a large amount even though the underlying contraction barely changed. This
+    doesn't fix that — it can't, the ambiguity is real — but it reports how many
+    distinct peaks were found and how far apart the top two are in time, so a
+    suspicious jump in IR Torque or Internal RTD between reps can be checked against
+    "did this rep actually have two peaks" instead of just guessed at.
+
+    Returns (peak_count, gap_seconds). peak_count is 1 for a clean single-peak rep
+    (the normal case); gap_seconds is None unless at least two candidate peaks were
+    found.
+    """
+    if len(segment_torque) < 7:
+        return 1, None
+    smooth_window = get_valid_savgol_window(11, len(segment_torque), 3)
+    smooth = (
+        savgol_filter(segment_torque, window_length=smooth_window, polyorder=3)
+        if smooth_window is not None else segment_torque
+    )
+    amplitude_span = float(np.nanmax(smooth) - np.nanmin(smooth))
+    if amplitude_span <= 0:
+        return 1, None
+    prominence = max(1.0, amplitude_span * 0.15)
+    min_distance = max(1, len(smooth) // 12)
+    peaks, props = find_peaks(smooth, prominence=prominence, distance=min_distance)
+    if len(peaks) < 1:
+        return 1, None
+    gap_s = None
+    if len(peaks) >= 2:
+        top2 = np.sort(peaks[np.argsort(props["prominences"])[-2:]])
+        gap_s = float(segment_time[top2[1]] - segment_time[top2[0]])
+    return len(peaks), gap_s
+
 def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", value_col="Torque_Nm"):
     """Torque-time integral (Nm·s) and peak torque of a conditioning rep's internal- and
     external-rotation phases, split at the internal/external zero crossing.
@@ -3199,12 +3253,23 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     for a more accurate boundary than snapping to the nearest sample.
 
     Peak torque per phase is simply the overall max (internal) / min (external) torque
-    sample within that phase, not anchored to a specific sub-peak. Earlier versions
-    reported POS1/POS2 as two separate internal-rotation values, but the second
-    contraction is often too subtle for reliable peak-finding to isolate on its own —
-    landmark detection (see detect_shoulder_er_ir_conditioning_rep_landmarks) no
-    longer even attempts to find it. One overall peak per phase is both simpler and
-    far more robust.
+    sample within that phase, not anchored to a specific sub-peak — reported as a raw
+    sensor reading, unadjusted. Earlier versions reported POS1/POS2 as two separate
+    internal-rotation values, but the second contraction is often too subtle for
+    reliable peak-finding to isolate on its own — landmark detection (see
+    detect_shoulder_er_ir_conditioning_rep_landmarks) no longer even attempts to find
+    it. This is inherently fragile when a rep has two comparable-height peaks (see
+    _diagnose_biodex_internal_peak_structure) — not fixed here, just measured.
+
+    AUC, by contrast, IS baseline-corrected: the dynamometer handle's own weight loads
+    the sensor via gravity whenever the athlete isn't pushing, so the resting torque
+    right at rep start is a real physical offset (typically a few Nm, not zero) rather
+    than sensor noise. Left uncorrected, that offset gets integrated across the full
+    phase duration and biases AUC — small per rep, but if it isn't perfectly constant
+    across a session it could look like a fake fatigue trend on the Fatigue Trend
+    chart, which is exactly the metric this needs to not contaminate. Each rep's own
+    resting value (averaged over a small window at its own start, not just start's
+    peak torque and RTD) is subtracted from that rep's torque before integrating.
 
     Expects rep_info in the shape build_landmark_aligned_curve consumes, with the
     conditioning zero-crossing landmark pattern. Returns None if the rep doesn't match
@@ -3218,6 +3283,9 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     rep_df = rep_info["rep_df"]
     time_values = rep_df[time_col].to_numpy(dtype=float)
     torque_values = rep_df[value_col].to_numpy(dtype=float)
+    position_values = (
+        rep_df["Position_Deg"].to_numpy(dtype=float) if "Position_Deg" in rep_df.columns else None
+    )
 
     # Refine the already-known-good smoothed-signal crossing (landmark_crossing_idx) to
     # an exact raw-signal sign flip nearby, rather than scanning the whole
@@ -3244,8 +3312,19 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
         # fall back to the crossing already found on the smoothed signal.
         crossing_idx = landmark_crossing_idx
 
+    # Per-rep resting baseline (dynamometer handle weight, not noise) — averaged over a
+    # small window at this rep's own start rather than a single sample, then subtracted
+    # from the torque trace before integrating, so AUC reflects the athlete's own
+    # applied torque rather than the handle's constant gravitational contribution.
+    baseline_window_lo = max(0, start_idx - 2)
+    baseline_window_hi = min(len(torque_values), start_idx + 3)
+    baseline_torque_nm = float(np.mean(torque_values[baseline_window_lo:baseline_window_hi]))
+    corrected_torque_values = torque_values - baseline_torque_nm
+    corrected_crossing_torque = 0.0 - baseline_torque_nm
+
     internal = _integrate_biodex_rep_phase(
-        time_values, torque_values, start_idx, crossing_idx, append_crossing_time=crossing_time,
+        time_values, corrected_torque_values, start_idx, crossing_idx,
+        append_crossing_time=crossing_time, crossing_torque=corrected_crossing_torque,
     )
     if internal is None:
         return None
@@ -3254,7 +3333,8 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     # (its raw sample is already included in the internal segment above).
     external_start_idx = crossing_idx + 1
     external = _integrate_biodex_rep_phase(
-        time_values, torque_values, external_start_idx, end_idx, prepend_crossing_time=crossing_time,
+        time_values, corrected_torque_values, external_start_idx, end_idx,
+        prepend_crossing_time=crossing_time, crossing_torque=corrected_crossing_torque,
     )
     if external is None:
         return None
@@ -3273,6 +3353,24 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     internal_time_to_peak_s = float(time_values[internal_peak_idx] - time_values[start_idx])
     external_time_to_peak_s = float(time_values[external_peak_idx] - external_phase_start_time)
 
+    internal_peak_count, internal_peak_gap_s = _diagnose_biodex_internal_peak_structure(
+        time_values[start_idx:crossing_idx + 1], internal_segment,
+    )
+
+    # ROM (range of motion) per phase, from Position_Deg — separate from torque
+    # entirely. A fatigued rep can still hit a normal peak torque while sweeping less
+    # angle, which torque-only metrics have no way to show; None when position data
+    # isn't available for this test.
+    internal_rom_deg = None
+    external_rom_deg = None
+    if position_values is not None:
+        internal_pos_segment = position_values[start_idx:crossing_idx + 1]
+        external_pos_segment = position_values[crossing_idx:end_idx + 1]
+        if np.isfinite(internal_pos_segment).any():
+            internal_rom_deg = float(np.nanmax(internal_pos_segment) - np.nanmin(internal_pos_segment))
+        if np.isfinite(external_pos_segment).any():
+            external_rom_deg = float(np.nanmax(external_pos_segment) - np.nanmin(external_pos_segment))
+
     # ER/IR ratio: external (ER) strength as a fraction of internal (IR) strength — the
     # standard clinical convention for rotator-cuff strength ratios. Peak-torque-based,
     # so it's a single-instant snapshot — see the AUC-based ratio below for a
@@ -3288,12 +3386,21 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     # Rate of Torque Development: peak torque divided by the time it took to get there.
     # A common strength/power-assessment metric, and often more sensitive to fatigue or
     # neuromuscular readiness than peak torque alone — two reps can reach the same peak
-    # at very different speeds, and RTD is what captures that difference.
+    # at very different speeds, and RTD is what captures that difference. Inherits IR
+    # Torque's peak-selection fragility (and worse: numerator and denominator can both
+    # jump together if peak selection flips) — cross-check against internal_peak_count.
     internal_rtd_nm_s = (
         internal_peak_torque_nm / internal_time_to_peak_s if internal_time_to_peak_s > 0 else None
     )
     external_rtd_nm_s = (
         abs(external_peak_torque_nm) / external_time_to_peak_s if external_time_to_peak_s > 0 else None
+    )
+    # What fraction of the rep's total duration was spent in internal rotation before
+    # the reversal — a rep that reverses later (a rising fraction across a set) is a
+    # different fatigue signal than the phases' individual durations shown separately.
+    total_duration_s = internal["phase_duration_s"] + external["phase_duration_s"]
+    internal_phase_fraction = (
+        internal["phase_duration_s"] / total_duration_s if total_duration_s > 0 else None
     )
 
     return {
@@ -3303,13 +3410,19 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
         "internal_time_to_peak_s": internal_time_to_peak_s,
         "internal_peak_torque_nm": internal_peak_torque_nm,
         "internal_rtd_nm_s": internal_rtd_nm_s,
+        "internal_peak_count": internal_peak_count,
+        "internal_peak_gap_s": internal_peak_gap_s,
+        "internal_rom_deg": internal_rom_deg,
         "external_auc_nm_s": external["auc_nm_s"],
         "external_duration_s": external["phase_duration_s"],
         "external_time_to_peak_s": external_time_to_peak_s,
         "external_peak_torque_nm": external_peak_torque_nm,
         "external_rtd_nm_s": external_rtd_nm_s,
+        "external_rom_deg": external_rom_deg,
         "er_ir_ratio": er_ir_ratio,
         "auc_er_ir_ratio": auc_er_ir_ratio,
+        "internal_phase_fraction": internal_phase_fraction,
+        "baseline_torque_nm": baseline_torque_nm,
     }
 
 def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, rep_number=None):
@@ -3325,6 +3438,14 @@ def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, r
     sub-peaks — reporting one number per phase. RTD (Rate of Torque Development) is
     that peak divided by its own time to peak — how fast torque developed, not just how
     high it got, which is often more sensitive to fatigue than peak torque alone.
+
+    IR Torque and Internal RTD are both fragile when a rep has two comparable-height
+    internal peaks (double-peak or plateau reps) — sample-level noise can flip which
+    candidate `argmax` picks, moving both values by a large amount for no real
+    physiological reason. Internal Peak Count / Internal Peak Gap are included so a
+    suspicious swing in either can be checked against "did this rep actually have two
+    peaks" — a count of 1 means the pick was unambiguous; 2+ means treat that rep's IR
+    Torque and RTD with more skepticism than usual, especially if the gap is small.
     """
     row = dict(meta)
     row["Bodyweight (kg)"] = round(bodyweight_kg, 1) if bodyweight_kg else None
@@ -3341,6 +3462,11 @@ def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, r
         row[f"{prefix}Internal Time to Peak (s)"] = float(np.mean([r["internal_time_to_peak_s"] for r in auc_results]))
         internal_rtd_values = [r["internal_rtd_nm_s"] for r in auc_results if r["internal_rtd_nm_s"] is not None]
         row[f"{prefix}Internal RTD (Nm/s)"] = float(np.mean(internal_rtd_values)) if internal_rtd_values else None
+        row[f"{prefix}Internal Peak Count"] = float(np.mean([r["internal_peak_count"] for r in auc_results]))
+        peak_gap_values = [r["internal_peak_gap_s"] for r in auc_results if r["internal_peak_gap_s"] is not None]
+        row[f"{prefix}Internal Peak Gap (s)"] = float(np.mean(peak_gap_values)) if peak_gap_values else None
+        rom_values = [r["internal_rom_deg"] for r in auc_results if r["internal_rom_deg"] is not None]
+        row[f"{prefix}Internal ROM (deg)"] = float(np.mean(rom_values)) if rom_values else None
     if phase_view in ("Full", "External"):
         er = float(np.mean([r["external_peak_torque_nm"] for r in auc_results]))
         row[f"{prefix}ER Torque{unit_suffix}"] = er
@@ -3349,9 +3475,12 @@ def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, r
         row[f"{prefix}External Time to Peak (s)"] = float(np.mean([r["external_time_to_peak_s"] for r in auc_results]))
         external_rtd_values = [r["external_rtd_nm_s"] for r in auc_results if r["external_rtd_nm_s"] is not None]
         row[f"{prefix}External RTD (Nm/s)"] = float(np.mean(external_rtd_values)) if external_rtd_values else None
+        external_rom_values = [r["external_rom_deg"] for r in auc_results if r["external_rom_deg"] is not None]
+        row[f"{prefix}External ROM (deg)"] = float(np.mean(external_rom_values)) if external_rom_values else None
     if phase_view == "Full":
         ratio_values = [r["er_ir_ratio"] for r in auc_results if r["er_ir_ratio"] is not None]
         row[f"{prefix}ER/IR Ratio"] = float(np.mean(ratio_values)) if ratio_values else None
+        row[f"{prefix}Baseline Torque (Nm)"] = float(np.mean([r["baseline_torque_nm"] for r in auc_results]))
     return row
 
 def build_biodex_auc_row(meta, auc_results, bodyweight_kg, phase_view, rep_number=None):
@@ -3361,7 +3490,12 @@ def build_biodex_auc_row(meta, auc_results, bodyweight_kg, phase_view, rep_numbe
     peak-torque-based ER/IR ratio live on the Peak Torque table instead, so they aren't
     repeated here — but an AUC-based ER/IR Ratio is included for "Full", since it's a
     whole-phase-impulse variant of that ratio (less sensitive to one noisy sample than
-    the peak-based version) rather than a peak-torque statistic.
+    the peak-based version) rather than a peak-torque statistic. Internal Phase
+    Fraction (also "Full" only) is Internal Duration as a share of the whole rep's
+    duration — the balance between the two phases, distinct from either phase's
+    duration shown alone; a rising fraction across a set means the reversal into
+    external rotation is happening later, which the two duration columns individually
+    don't make obvious.
     """
     row = dict(meta)
     row["Bodyweight (kg)"] = round(bodyweight_kg, 1) if bodyweight_kg else None
@@ -3384,6 +3518,8 @@ def build_biodex_auc_row(meta, auc_results, bodyweight_kg, phase_view, rep_numbe
     if phase_view == "Full":
         auc_ratio_values = [r["auc_er_ir_ratio"] for r in auc_results if r["auc_er_ir_ratio"] is not None]
         row[f"{prefix}AUC ER/IR Ratio"] = float(np.mean(auc_ratio_values)) if auc_ratio_values else None
+        fraction_values = [r["internal_phase_fraction"] for r in auc_results if r["internal_phase_fraction"] is not None]
+        row[f"{prefix}Internal Phase Fraction"] = float(np.mean(fraction_values)) if fraction_values else None
     return row
 
 def prepare_biodex_fatigue_trend_data(peak_torque_rows, auc_rows, series_col="Athlete"):
@@ -3433,7 +3569,9 @@ def prepare_biodex_fatigue_trend_data(peak_torque_rows, auc_rows, series_col="At
         "Internal Time to Peak (s)", "External Time to Peak (s)",
         "Internal RTD (Nm/s)", "External RTD (Nm/s)",
         "Internal AUC (Nm·s)", "External AUC (Nm·s)",
-        "Internal Duration (s)", "External Duration (s)",
+        "Internal Duration (s)", "External Duration (s)", "Internal Phase Fraction",
+        "Internal ROM (deg)", "External ROM (deg)",
+        "Internal Peak Count", "Internal Peak Gap (s)", "Baseline Torque (Nm)",
     ]
     metric_cols = [col for col in metric_priority if col in df.columns]
     metric_cols += [
@@ -21513,23 +21651,45 @@ def render_biodex_test_tab():
                 """
 Every rep is split into two phases at the internal/external zero crossing — the point
 where torque flips from positive (internal rotation) to negative (external rotation).
-**Rep start** is the local minimum of raw torque just before the contraction begins
-(the true quiescent baseline, not just where torque departs from noise); **rep end** is
-where Position_Deg returns to that same starting value after the external-rotation
-descent. All of the metrics below are computed per rep from those three points, then
+**Rep start** and **rep end** are deliberately detected from two *different* signals,
+not the same one: start is found on **torque** (the local minimum right before the
+contraction begins), end is found on **Position_Deg** (where the arm's angle returns to
+that same starting value after the external-rotation descent). This isn't an
+inconsistency — torque is the cleaner signal for "did a contraction begin," while
+position is the cleaner signal for "did the arm actually come back to rest," so each
+boundary uses whichever channel is more reliable for that specific question. Because of
+this, Internal Duration and External Duration aren't measured with symmetric logic even
+though they look like a matched pair.
+
+That torque minimum at rep start is a real, physically meaningful value, not just
+noise around zero: the dynamometer handle's own weight loads the sensor via gravity
+whenever the athlete isn't actively pushing, so a small negative resting reading (a few
+Nm, not zero) is expected. To avoid one noisy single sample being mistaken for that
+resting level, the start index itself is chosen as the minimum of a short
+rolling-smoothed window rather than a single raw sample.
+
+All of the metrics below are computed per rep from the start/crossing/end points, then
 averaged across reps for a "Mean" row.
 
 **IR Torque / ER Torque (Nm)** — the single highest torque sample in the internal phase
 (IR) and the single lowest (most negative) torque sample in the external phase (ER).
-Raw peak readings, not smoothed or averaged within the rep.
+Raw peak readings, not smoothed or averaged within the rep. ⚠️ **IR Torque is landmark-
+fragile**: when a rep has two comparable-height internal peaks (a double contraction or
+a broad plateau), sample-level noise can flip which one `argmax` picks, moving this
+value by a large amount even though the underlying contraction barely changed. Treat an
+isolated jump in IR Torque with more skepticism than the equivalent ER Torque jump, and
+cross-check it against **Internal Peak Count** below — ER Torque doesn't have this
+problem since the external phase only ever has one candidate trough.
 
 **IR Torque / ER Torque (Nm/kg)** — the above divided by the athlete's bodyweight in kg
-(looked up from the `takes` table, nearest date to the session), for cross-athlete
-comparison.
+(looked up from the `takes` table, nearest date to the session — if the nearest record
+on file is a long way from the test date, e.g. months, these `/kg` columns are being
+normalized against a possibly-stale weight with no warning shown; treat them with more
+caution for older or infrequently-weighed athletes).
 
 **ER/IR Ratio** — `|ER Torque| / IR Torque`, the standard clinical convention for
 rotator-cuff strength ratios. A single-instant snapshot, since it's built from each
-phase's peak sample.
+phase's peak sample — inherits IR Torque's fragility above.
 
 **AUC ER/IR Ratio** — the same ratio, but built from `|External AUC| / Internal AUC`
 (each phase's total impulse) instead of peak torque. Less sensitive to one noisy
@@ -21539,11 +21699,24 @@ contraction and a lower-but-sustained one can share a peak while differing in AU
 **Internal/External AUC (Nm·s)** — the trapezoidal integral of torque over time across
 each phase (angular impulse: how much torque was applied, sustained over how long — not
 just its peak height). Internal AUC comes out positive, External AUC negative, matching
-the sign of torque in each phase. The `(Nm·s/kg)` variants divide by bodyweight.
+the sign of torque in each phase. **Baseline-corrected**: each rep's own resting torque
+(averaged over a small window at that rep's start, not just one sample — see
+**Baseline Torque** below) is subtracted before integrating, so this measures the
+athlete's own applied torque rather than including the handle's constant gravitational
+contribution. Left uncorrected, that offset would get integrated across the whole phase
+duration and could look like a fake fatigue trend on the Fatigue Trend chart if it isn't
+perfectly constant across a session — this is why it's corrected here but IR/ER Torque
+above are intentionally left as raw, unadjusted sensor readings. The `(Nm·s/kg)`
+variants divide by bodyweight.
 
 **Internal/External Duration (s)** — the elapsed wall-clock time each phase's segment
 spans: crossing time minus start time (Internal), end time minus crossing time
 (External).
+
+**Internal Phase Fraction** — Internal Duration as a share of the whole rep's duration
+(Internal ÷ [Internal + External]). The balance between the two phases, which the two
+duration columns shown separately don't make obvious — a rising fraction across a set
+means the reversal into external rotation is happening progressively later.
 
 **Internal/External Time to Peak (s)** — elapsed time from the phase's start (rep start
 for Internal, the crossing for External) to wherever that phase's peak torque sample
@@ -21552,13 +21725,39 @@ actually occurred.
 **Internal/External RTD — Rate of Torque Development (Nm/s)** — peak torque divided by
 its own time to peak. A standard strength/power metric, and often more sensitive to
 fatigue or neuromuscular readiness than peak torque alone: two reps can reach the same
-peak at very different speeds, and RTD is what captures that difference.
+peak at very different speeds, and RTD is what captures that difference. ⚠️ **Inherits
+IR Torque's fragility, worse**: if peak selection flips between two candidate peaks,
+both the numerator (torque) and denominator (time to reach it) shift at once, which can
+swing RTD by a large factor even when the contraction was nearly identical. This is the
+most fatigue-sensitive metric here by design, which is exactly why it's the one you can
+least afford to misread as physiology when it's actually landmark noise — always check
+**Internal Peak Count** alongside a notable RTD swing.
 
-**Fatigue Trend by Rep** — the metrics above plotted against rep number instead of the
-landmark-aligned 0-100% movement-cycle axis used elsewhere on this page. The aligned
-curve overlay is built for shape/quality comparison and warps every rep onto the same
-axis, which hides exactly the kind of change (slower ascent, longer duration) that
-fatigue produces — this chart shows it directly as a slope across reps instead.
+**Internal Peak Count / Internal Peak Gap (s)** — diagnostics for the fragility flagged
+above, not fatigue metrics themselves. Peak Count is how many distinct local maxima
+(above a prominence threshold) were found in the internal phase: 1 means IR Torque and
+Internal RTD came from an unambiguous single peak; 2 or more means there were multiple
+comparable candidates, and Peak Gap (time between the top two) tells you how close
+together they were — a small gap with a large IR Torque or RTD swing from the previous
+rep is a sign of landmark noise, not a real strength change.
+
+**Internal/External ROM (deg)** — the range of Position_Deg swept during each phase
+(max − min), independent of torque entirely. A fatigued rep can still hit a normal peak
+torque while sweeping less angle — torque-only metrics have no way to show that, so ROM
+is the metric to watch for excursion shrinking even when the strength numbers still
+look fine.
+
+**Baseline Torque (Nm)** — the per-rep resting torque value subtracted before AUC
+integration (see above), shown directly so it can be checked: it should sit in a
+similar (small, negative) range across every rep in a session. If it visibly drifts in
+one direction across the Fatigue Trend chart, that points at thermal or mechanical
+drift in the equipment rather than the athlete.
+
+**Fatigue Trend by Rep** — any of the metrics above plotted against rep number instead
+of the landmark-aligned 0-100% movement-cycle axis used elsewhere on this page. The
+aligned curve overlay is built for shape/quality comparison and warps every rep onto
+the same axis, which hides exactly the kind of change (slower ascent, longer duration)
+that fatigue produces — this chart shows it directly as a slope across reps instead.
                 """
             )
 
