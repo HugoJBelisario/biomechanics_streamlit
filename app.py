@@ -21372,14 +21372,70 @@ def render_biodex_test_tab():
                             )
                             if not session_valid_reps:
                                 continue
-                            reps_long_df, _, _ = build_biodex_aligned_curve_auto(session_valid_reps)
+                            reps_long_df, mean_df, curve_metadata = build_biodex_aligned_curve_auto(session_valid_reps)
                             if reps_long_df.empty:
                                 continue
 
                             uses_time_axis = "rel_time_s" in reps_long_df.columns
+
+                            # External Phase View gets re-zeroed at each rep's own
+                            # internal/external crossing instead of the 10 Nm ascent
+                            # threshold -- see the matching Custom Groups logic below for
+                            # why: those are two different, unrelated moments in the rep,
+                            # so trimming the threshold-zeroed curve to the external half
+                            # leaves it starting at whatever offset each rep happened to
+                            # reach the crossing at, not a shared 0.
+                            if (
+                                session_phase_view == "External"
+                                and uses_time_axis
+                                and any(r.get("crossing_time") is not None for r in session_valid_reps)
+                            ):
+                                reps_long_df, mean_df, curve_metadata = build_time_aligned_curve(
+                                    session_valid_reps, zero_time_key="crossing_time",
+                                )
+                                if reps_long_df.empty:
+                                    continue
+
                             x_col = "rel_time_s" if uses_time_axis else "movement_pct"
                             compare_used_time_axis = compare_used_time_axis or uses_time_axis
                             hover_x_fmt = "%{x:.2f}s" if uses_time_axis else "%{x:.0f}%"
+
+                            # Phase View: trim what's plotted to the internal-rotation
+                            # (positive) or external-rotation (negative) portion of the
+                            # cycle, split at the same positive-to-negative crossing the
+                            # AUC tables use -- mirrors the Custom Groups Phase View trim.
+                            if session_phase_view != "Full" and curve_metadata:
+                                boundary_pct = mean_df.attrs.get("landmark_boundary_pct", [])
+                                landmark_kinds = curve_metadata[0]["landmark_kinds"]
+                                x_values = mean_df[x_col].to_numpy()
+                                crossing_x = None
+                                if uses_time_axis:
+                                    crossing_x = find_biodex_internal_external_crossing_pct(
+                                        x_values, mean_df["mean_torque_nm"].to_numpy(),
+                                        float(x_values.min()), float(x_values.max()),
+                                    )
+                                elif landmark_kinds == ["ascent"]:
+                                    crossing_x = find_biodex_internal_external_crossing_pct(
+                                        x_values, mean_df["mean_torque_nm"].to_numpy(), 0.0, 100.0,
+                                    )
+                                elif landmark_kinds == ["crossing"] and len(boundary_pct) == 1:
+                                    crossing_x = boundary_pct[0]
+                                elif landmark_kinds == ["crossing"]:
+                                    crossing_x = find_biodex_internal_external_crossing_pct(
+                                        x_values, mean_df["mean_torque_nm"].to_numpy(), 0.0, 100.0,
+                                    )
+                                elif landmark_kinds == ["pos", "pos", "neg"] and len(boundary_pct) == 3:
+                                    crossing_x = find_biodex_internal_external_crossing_pct(
+                                        x_values, mean_df["mean_torque_nm"].to_numpy(),
+                                        boundary_pct[1], boundary_pct[2],
+                                    )
+                                if crossing_x is not None:
+                                    if session_phase_view == "Internal":
+                                        reps_long_df = reps_long_df[reps_long_df[x_col] <= crossing_x]
+                                    else:
+                                        reps_long_df = reps_long_df[reps_long_df[x_col] >= crossing_x]
+                            if reps_long_df.empty:
+                                continue
 
                             rep_numbers = sorted(reps_long_df["rep_number"].unique())
                             for i, rep_number in enumerate(rep_numbers):
@@ -21482,7 +21538,10 @@ def render_biodex_test_tab():
                         compare_fig.update_layout(
                             hoverlabel=dict(namelength=-1),
                             title=(
-                                "Individual Reps by Session"
+                                (
+                                    "Individual Reps by Session"
+                                    + ("" if session_phase_view == "Full" else f" ({session_phase_view})")
+                                )
                                 if compare_display_mode == "Individual Reps"
                                 else "Saved Landmark-Aligned Biodex Mean Curves"
                             ),
