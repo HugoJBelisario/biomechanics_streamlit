@@ -2902,6 +2902,14 @@ def build_landmark_aligned_curve(valid_reps, time_col="Elapsed Seconds", value_c
             "landmark_kinds": rep_info["landmark_kinds"],
             "landmark_times": landmark_times,
             "landmark_torques": landmark_torques,
+            # The rep's actual detected start/end (e.g. Position_Deg-based ascent/descent
+            # bounds for conditioning reps), as real elapsed-time values -- distinct from
+            # the outer torque-threshold window this rep was extracted from, which is
+            # wider (it carries a buffer on each side for the landmark detector to search
+            # within). Charts that want to show what was actually detected, not just the
+            # search window, should use these instead of the raw rep window's bounds.
+            "start_time": float(time_values[rep_info["boundary_idx"][0]]),
+            "end_time": float(time_values[rep_info["boundary_idx"][-1]]),
         })
 
     curves_arr = np.vstack(normalized_curves)
@@ -20095,9 +20103,23 @@ def render_biodex_test_tab():
                             if preview_diff.size:
                                 preview_dt = float(np.median(preview_diff))
                         preview_min_visible_width = max(preview_dt * 2.0, 0.25)
+                        # Prefer each rep's actual detected start/end (e.g. Position_Deg
+                        # ascent/descent bounds for conditioning reps) over the outer
+                        # torque-threshold search window, when available — the window is
+                        # deliberately wider (it carries a buffer for the landmark
+                        # detector to search within), so it overstates the rep's real
+                        # boundaries in the chart.
+                        preview_detected_bounds_by_rep = {
+                            meta["rep_number"]: (meta["start_time"], meta["end_time"])
+                            for meta in preview_aligned_rep_metadata
+                            if "start_time" in meta and "end_time" in meta
+                        }
                         for rep_number, (start_idx, end_idx) in enumerate(preview_rep_windows, start=1):
-                            x0 = float(preview_df.iloc[start_idx]["Elapsed Seconds"])
-                            x1 = float(preview_df.iloc[end_idx]["Elapsed Seconds"])
+                            if rep_number in preview_detected_bounds_by_rep:
+                                x0, x1 = preview_detected_bounds_by_rep[rep_number]
+                            else:
+                                x0 = float(preview_df.iloc[start_idx]["Elapsed Seconds"])
+                                x1 = float(preview_df.iloc[end_idx]["Elapsed Seconds"])
                             if not np.isfinite(x0) or not np.isfinite(x1):
                                 continue
                             if x1 < x0:
@@ -21319,6 +21341,24 @@ def render_biodex_test_tab():
             landmarks_review_df = fetch_biodex_rep_landmarks(cur, selected_review_run_id)
             mean_review_df = fetch_biodex_mean_curve(cur, selected_review_run_id)
 
+            # Each rep's actual detected start/end (e.g. Position_Deg ascent/descent
+            # bounds for conditioning reps), re-derived the same way Session Comparison
+            # does — the saved rep window is deliberately wider (a buffer for the
+            # landmark detector to search within), so it overstates the rep's real
+            # boundaries if shown as-is.
+            review_detected_bounds_by_rep = {}
+            for rep_info in reconstruct_biodex_rep_curves_from_saved_landmarks(
+                cur,
+                biodex_processing_run_id=selected_review_run_id,
+                biodex_test_id=int(selected_review_row["biodex_test_id"]),
+            ):
+                rep_time_values = rep_info["rep_df"]["Elapsed Seconds"].to_numpy(dtype=float)
+                boundary_idx = rep_info["boundary_idx"]
+                review_detected_bounds_by_rep[rep_info["rep_number"]] = (
+                    float(rep_time_values[boundary_idx[0]]),
+                    float(rep_time_values[boundary_idx[-1]]),
+                )
+
             if raw_review_df.empty:
                 st.warning("No raw time-series rows were found for this Biodex test.")
             else:
@@ -21342,8 +21382,12 @@ def render_biodex_test_tab():
 
                 review_shapes = []
                 for _, window_row in windows_review_df.iterrows():
-                    x0 = float(window_row["start_time_seconds"])
-                    x1 = float(window_row["end_time_seconds"])
+                    review_rep_number = int(window_row["rep_number"])
+                    if review_rep_number in review_detected_bounds_by_rep:
+                        x0, x1 = review_detected_bounds_by_rep[review_rep_number]
+                    else:
+                        x0 = float(window_row["start_time_seconds"])
+                        x1 = float(window_row["end_time_seconds"])
                     review_shapes.append(dict(
                         type="rect",
                         xref="x",
