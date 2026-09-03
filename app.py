@@ -2100,6 +2100,32 @@ def detect_position_ascent_descent_bounds(
         "duration_s": end_time - float(time_values[start_idx]),
     }
 
+def refine_rep_start_to_torque_baseline(torque_values, anchor_idx, lookback_samples=150):
+    """Pull a rep's start index back to the true torque baseline trough before it.
+
+    detect_position_ascent_descent_bounds anchors a rep's start to when *position*
+    starts sustained ascent, but position and torque don't move in lockstep — torque
+    typically keeps rising for a stretch before position's own velocity threshold
+    trips. Anchoring alignment to the position-derived instant means every rep starts
+    at a different, essentially arbitrary point already partway up the torque ramp
+    (e.g. one rep's "start" reading 2 Nm, another's reading 22 Nm on the same session)
+    instead of a consistent quiescent baseline — which is exactly the kind of
+    inter-trial registration error that blurs an ensemble average and inflates its
+    variance at the alignment boundary. The true baseline is the local minimum of raw
+    torque in the window just before the position-derived anchor — the last quiet
+    instant before the contraction actually begins — so pulling start back to that
+    point instead should make the aligned curves start at consistent torque values.
+
+    Searches only backward from `anchor_idx` within `lookback_samples`, never forward,
+    so this can only pull start earlier (recovering the beginning of the ascent the
+    position-based anchor was cutting off), never push it later.
+    """
+    search_start = max(0, anchor_idx - lookback_samples)
+    window = torque_values[search_start:anchor_idx + 1]
+    if len(window) == 0:
+        return anchor_idx
+    return search_start + int(np.argmin(window))
+
 def detect_position_deg_rep_bounds(
     time_values,
     position_values,
@@ -2762,6 +2788,12 @@ def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_N
     # torque departing/returning to its own noisy baseline rather than true ROM. Falls
     # back to torque-based boundaries when position data is missing or too noisy to
     # find a sustained ascent (e.g. older uploads without a recognized position column).
+    #
+    # Position and torque don't move in lockstep, though: torque typically keeps
+    # climbing for a stretch after the position anchor already fires, so using that
+    # instant directly as "start" put every rep at a different, inconsistent point
+    # already partway up its own torque ramp (see refine_rep_start_to_torque_baseline).
+    # Pulling start back to the torque baseline trough just before it fixes that.
     start_idx = None
     end_idx = None
     if "Position_Deg" in rep_df.columns and "Elapsed Seconds" in rep_df.columns:
@@ -2775,7 +2807,7 @@ def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_N
                 fs=position_fs or 100.0,
             )
             if position_bounds is not None and position_bounds["start_idx"] < crossing_idx < position_bounds["end_idx"]:
-                start_idx = position_bounds["start_idx"]
+                start_idx = refine_rep_start_to_torque_baseline(torque_values, position_bounds["start_idx"])
                 end_idx = position_bounds["end_idx"]
 
     if start_idx is None or end_idx is None:
@@ -3086,7 +3118,7 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
                 fs=position_fs or 100.0,
             )
             if position_bounds is not None and position_bounds["start_idx"] < landmark_indices[0] < position_bounds["end_idx"]:
-                start_idx = position_bounds["start_idx"]
+                start_idx = refine_rep_start_to_torque_baseline(rep_torque_values, position_bounds["start_idx"])
                 end_idx = position_bounds["end_idx"]
 
         if start_idx is None or end_idx is None:
