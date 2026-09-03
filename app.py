@@ -2979,7 +2979,14 @@ def extract_landmark_aligned_biodex_reps(
 
         start_idx = landmark_info.get("start_idx", 0)
         end_idx = landmark_info.get("end_idx", len(rep_df) - 1)
-        boundary_idx = [start_idx] + landmark_info["indices"] + [end_idx]
+        # Conditioning reps align on start/end alone (no interior landmark pinned) —
+        # the crossing is still detected and kept as separate metadata (used by
+        # compute_biodex_conditioning_rep_auc to split internal/external phases), it
+        # just no longer warps the alignment curve to a fixed movement-cycle percent.
+        if landmark_info["kinds"] == ["crossing"]:
+            boundary_idx = [start_idx, end_idx]
+        else:
+            boundary_idx = [start_idx] + landmark_info["indices"] + [end_idx]
         if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
             continue
 
@@ -3088,7 +3095,14 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
                 start_idx = detect_biodex_rep_onset_idx(rep_torque_values, landmark_indices[0])
             end_idx = detect_biodex_rep_settle_idx(rep_torque_values, landmark_indices[-1])
 
-        boundary_idx = [start_idx] + landmark_indices + [end_idx]
+        # Conditioning reps align on start/end alone (no interior landmark pinned) —
+        # the crossing stays in landmark_indices/landmark_kinds for
+        # compute_biodex_conditioning_rep_auc's internal/external split, it just no
+        # longer warps the alignment curve to a fixed movement-cycle percent.
+        if landmark_kinds == ["crossing"]:
+            boundary_idx = [start_idx, end_idx]
+        else:
+            boundary_idx = [start_idx] + landmark_indices + [end_idx]
         if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
             continue
 
@@ -3172,7 +3186,8 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     if rep_info.get("landmark_kinds") != ["crossing"]:
         return None
 
-    start_idx, landmark_crossing_idx, end_idx = rep_info["boundary_idx"]
+    start_idx, end_idx = rep_info["boundary_idx"]
+    landmark_crossing_idx = rep_info["landmark_indices"][0]
 
     rep_df = rep_info["rep_df"]
     time_values = rep_df[time_col].to_numpy(dtype=float)
@@ -19933,11 +19948,12 @@ def render_biodex_test_tab():
                             )
                         if is_shoulder_er_ir_conditioning_preview:
                             st.caption(
-                                "Conditioning reps are aligned to the internal/external zero-crossing point "
-                                "(no peak detection) instead of the standard two-cycle POS1/NEG1/POS2/NEG2 "
-                                "pattern. Peak torque values for the tables are found separately as the "
-                                "overall max/min within each phase, so the landmark prominence ratio below "
-                                "doesn't affect conditioning reps."
+                                "Conditioning reps are aligned on Position_Deg-based start/end alone "
+                                "(no peak detection, and no interior landmark pinned) instead of the "
+                                "standard two-cycle POS1/NEG1/POS2/NEG2 pattern. The internal/external "
+                                "zero-crossing and peak torque values for the tables are still found "
+                                "separately, as the overall max/min within each phase, so the landmark "
+                                "prominence ratio below doesn't affect conditioning reps."
                             )
                         if (
                             preview_movement == "d2_shoulder_pattern"
@@ -21113,9 +21129,19 @@ def render_biodex_test_tab():
                                     landmark_kinds = group_metadata[0]["landmark_kinds"]
                                     crossing_pct = None
                                     if landmark_kinds == ["crossing"] and len(boundary_pct) == 1:
-                                        # Current scheme: the crossing is itself the only
-                                        # pinned interior landmark, already on the shared axis.
+                                        # Old crossing-pinned-alignment scheme: the crossing
+                                        # was itself a pinned interior landmark, already on
+                                        # the shared axis.
                                         crossing_pct = boundary_pct[0]
+                                    elif landmark_kinds == ["crossing"]:
+                                        # Current scheme: alignment only pins start/end, not
+                                        # the crossing, so there's no shared-axis boundary to
+                                        # read — search the mean curve directly instead.
+                                        crossing_pct = find_biodex_internal_external_crossing_pct(
+                                            group_mean_df["movement_pct"].to_numpy(),
+                                            group_mean_df["mean_torque_nm"].to_numpy(),
+                                            0.0, 100.0,
+                                        )
                                     elif landmark_kinds == ["pos", "pos", "neg"] and len(boundary_pct) == 3:
                                         # Runs saved before the crossing-only alignment change
                                         # still carry the old three-landmark scheme; fall back
