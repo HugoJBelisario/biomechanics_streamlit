@@ -3011,14 +3011,13 @@ def extract_landmark_aligned_biodex_reps(
 
         start_idx = landmark_info.get("start_idx", 0)
         end_idx = landmark_info.get("end_idx", len(rep_df) - 1)
-        # Conditioning reps align on start/end alone (no interior landmark pinned) —
-        # the crossing is still detected and kept as separate metadata (used by
-        # compute_biodex_conditioning_rep_auc to split internal/external phases), it
-        # just no longer warps the alignment curve to a fixed movement-cycle percent.
-        if landmark_info["kinds"] == ["crossing"]:
-            boundary_idx = [start_idx, end_idx]
-        else:
-            boundary_idx = [start_idx] + landmark_info["indices"] + [end_idx]
+        # The internal/external crossing is pinned as an interior alignment landmark
+        # (not just detected metadata) so the internal->external transition lands at
+        # a consistent movement-cycle percent across reps. Without it, alignment was
+        # only a single linear stretch from start to end, so reps whose ascent phase
+        # took a different fraction of their total rep duration than others fanned
+        # out badly during that phase even though both endpoints lined up.
+        boundary_idx = [start_idx] + landmark_info["indices"] + [end_idx]
         if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
             continue
 
@@ -3127,14 +3126,10 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
                 start_idx = detect_biodex_rep_onset_idx(rep_torque_values, landmark_indices[0])
             end_idx = detect_biodex_rep_settle_idx(rep_torque_values, landmark_indices[-1])
 
-        # Conditioning reps align on start/end alone (no interior landmark pinned) —
-        # the crossing stays in landmark_indices/landmark_kinds for
-        # compute_biodex_conditioning_rep_auc's internal/external split, it just no
-        # longer warps the alignment curve to a fixed movement-cycle percent.
-        if landmark_kinds == ["crossing"]:
-            boundary_idx = [start_idx, end_idx]
-        else:
-            boundary_idx = [start_idx] + landmark_indices + [end_idx]
+        # The internal/external crossing is pinned as an interior alignment landmark
+        # (see extract_landmark_aligned_biodex_reps) so reconstructed reps align the
+        # same way live-detected ones do.
+        boundary_idx = [start_idx] + landmark_indices + [end_idx]
         if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
             continue
 
@@ -3218,8 +3213,7 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     if rep_info.get("landmark_kinds") != ["crossing"]:
         return None
 
-    start_idx, end_idx = rep_info["boundary_idx"]
-    landmark_crossing_idx = rep_info["landmark_indices"][0]
+    start_idx, landmark_crossing_idx, end_idx = rep_info["boundary_idx"]
 
     rep_df = rep_info["rep_df"]
     time_values = rep_df[time_col].to_numpy(dtype=float)
@@ -19980,12 +19974,16 @@ def render_biodex_test_tab():
                             )
                         if is_shoulder_er_ir_conditioning_preview:
                             st.caption(
-                                "Conditioning reps are aligned on Position_Deg-based start/end alone "
-                                "(no peak detection, and no interior landmark pinned) instead of the "
-                                "standard two-cycle POS1/NEG1/POS2/NEG2 pattern. The internal/external "
-                                "zero-crossing and peak torque values for the tables are still found "
-                                "separately, as the overall max/min within each phase, so the landmark "
-                                "prominence ratio below doesn't affect conditioning reps."
+                                "Conditioning reps are aligned on Position_Deg-based start/end plus the "
+                                "internal/external zero crossing as a pinned interior landmark, instead of "
+                                "the standard two-cycle POS1/NEG1/POS2/NEG2 pattern. Pinning the crossing "
+                                "keeps the internal-to-external transition at a consistent movement-cycle "
+                                "percent across reps — without it, reps whose ascent took a different share "
+                                "of their total duration than others fanned out during that phase even "
+                                "though both endpoints lined up. Peak torque values for the tables are still "
+                                "found separately, as the overall max/min within each phase (no peak "
+                                "detection for alignment itself), so the landmark prominence ratio below "
+                                "doesn't affect conditioning reps."
                             )
                         if (
                             preview_movement == "d2_shoulder_pattern"
