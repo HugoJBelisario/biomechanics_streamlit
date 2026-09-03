@@ -2837,16 +2837,32 @@ def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_N
     # The alignment landmark: first sample (searching forward from start) where the
     # ascent climbs through the threshold, then pulled back by the lead-in so the
     # pinned point sits a little before the crossing itself.
-    ascent_idx = None
+    threshold_idx = None
     for idx in range(start_idx, crossing_idx):
         if smooth_values[idx] >= BIODEX_CONDITIONING_ASCENT_THRESHOLD_NM:
-            ascent_idx = idx
+            threshold_idx = idx
             break
-    if ascent_idx is None:
+    if threshold_idx is None:
         return None
-    ascent_idx = max(start_idx + 1, ascent_idx - BIODEX_CONDITIONING_ASCENT_LEAD_IN_SAMPLES)
+    ascent_idx = max(start_idx + 1, threshold_idx - BIODEX_CONDITIONING_ASCENT_LEAD_IN_SAMPLES)
     if not (start_idx < ascent_idx < end_idx):
         return None
+
+    # Exact (interpolated) time the smoothed torque crosses the threshold, distinct from
+    # ascent_idx above -- this is the true "hits 10 Nm" instant reps should share when
+    # aligned on a raw-time axis, whereas ascent_idx is the buffered sample used for the
+    # 0-100% movement-cycle alignment (where it looks a little early on purpose).
+    threshold_crossing_time = None
+    if "Elapsed Seconds" in rep_df.columns:
+        time_values = pd.to_numeric(rep_df["Elapsed Seconds"], errors="coerce").to_numpy(dtype=float)
+        if threshold_idx > 0:
+            v0, v1 = smooth_values[threshold_idx - 1], smooth_values[threshold_idx]
+            t0, t1 = time_values[threshold_idx - 1], time_values[threshold_idx]
+            if v1 != v0:
+                frac = (BIODEX_CONDITIONING_ASCENT_THRESHOLD_NM - v0) / (v1 - v0)
+                threshold_crossing_time = float(t0 + frac * (t1 - t0))
+        if threshold_crossing_time is None:
+            threshold_crossing_time = float(time_values[threshold_idx])
 
     return {
         "indices": [ascent_idx],
@@ -2854,6 +2870,7 @@ def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_N
         "smooth_values": smooth_values,
         "start_idx": start_idx,
         "end_idx": end_idx,
+        "threshold_crossing_time": threshold_crossing_time,
     }
 
 def detect_shoulder_er_ir_speed_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.12):
@@ -3006,17 +3023,88 @@ def build_landmark_aligned_curve(valid_reps, time_col="Elapsed Seconds", value_c
 
     return reps_long_df, mean_df, aligned_rep_metadata
 
-def extract_landmark_aligned_biodex_reps(
+def build_time_aligned_curve(valid_reps, time_col="Elapsed Seconds", value_col="Torque_Nm", n_points=101):
+    """Average a set of reps onto a common raw-time axis, zeroed at each rep's own
+    threshold-crossing instant ("threshold_time" in each rep_info dict) -- unlike
+    build_landmark_aligned_curve's 0-100% movement-cycle axis, this does NOT stretch
+    each rep's phases to a shared percentage; a rep's own clock keeps running, so reps
+    that take longer to reach the threshold, or longer to finish afterward, simply
+    have less overlap with the others at the edges of the window instead of being
+    time-warped to fit. This is what makes every rep's curve actually cross 10 Nm at
+    the same point on the x-axis, not just at the same normalized percentage.
+
+    Each item in valid_reps needs "rep_number", "rep_df", and "threshold_time" (the
+    rep's own elapsed-seconds instant the threshold was crossed at). Reps missing a
+    threshold_time are skipped.
+    """
+    usable_reps = [r for r in valid_reps if r.get("threshold_time") is not None]
+    if not usable_reps:
+        return pd.DataFrame(), pd.DataFrame(), []
+
+    rel_time_rows = []
+    for rep_info in usable_reps:
+        rep_df = rep_info["rep_df"]
+        time_values = rep_df[time_col].to_numpy(dtype=float)
+        rel_time_rows.append(time_values - rep_info["threshold_time"])
+
+    window_lo = float(np.median([rt.min() for rt in rel_time_rows]))
+    window_hi = float(np.median([rt.max() for rt in rel_time_rows]))
+    time_axis = np.linspace(window_lo, window_hi, int(n_points))
+
+    normalized_curves = []
+    rep_rows = []
+    aligned_rep_metadata = []
+
+    for rep_info, rel_time in zip(usable_reps, rel_time_rows):
+        rep_df = rep_info["rep_df"]
+        torque_values = rep_df[value_col].to_numpy(dtype=float)
+
+        interp_torque = np.full(len(time_axis), np.nan)
+        in_range = (time_axis >= rel_time.min()) & (time_axis <= rel_time.max())
+        interp_torque[in_range] = np.interp(time_axis[in_range], rel_time, torque_values)
+
+        normalized_curves.append(interp_torque)
+        rep_rows.append(pd.DataFrame({
+            "rep_number": rep_info["rep_number"],
+            "rel_time_s": rel_time,
+            "torque_nm": torque_values,
+        }))
+        aligned_rep_metadata.append({
+            "rep_number": rep_info["rep_number"],
+            "threshold_time": rep_info["threshold_time"],
+            "start_time": float(rel_time.min()),
+            "end_time": float(rel_time.max()),
+        })
+
+    curves_arr = np.vstack(normalized_curves)
+    reps_long_df = pd.concat(rep_rows, ignore_index=True)
+
+    mean_df = pd.DataFrame({
+        "rel_time_s": time_axis,
+        "mean_torque_nm": np.nanmean(curves_arr, axis=0),
+        "std_torque_nm": np.nanstd(curves_arr, axis=0),
+        "n_reps": np.sum(~np.isnan(curves_arr), axis=0),
+    })
+    mean_df["upper_band"] = mean_df["mean_torque_nm"] + mean_df["std_torque_nm"]
+    mean_df["lower_band"] = mean_df["mean_torque_nm"] - mean_df["std_torque_nm"]
+
+    return reps_long_df, mean_df, aligned_rep_metadata
+
+def _build_biodex_valid_reps_from_windows(
     df,
     rep_windows,
     time_col="Elapsed Seconds",
     value_col="Torque_Nm",
-    n_points=101,
     prominence_ratio=0.12,
     landmark_detector=None,
 ):
+    """Detect landmarks within each rep window and return the valid_reps list both
+    build_landmark_aligned_curve and build_time_aligned_curve consume. Shared by
+    extract_landmark_aligned_biodex_reps (0-100% movement-cycle alignment) and
+    extract_time_aligned_biodex_conditioning_reps (raw-time alignment at the 10 Nm
+    crossing) so both start from the same detected landmarks."""
     if df.empty or not rep_windows:
-        return pd.DataFrame(), pd.DataFrame(), []
+        return []
 
     detector = landmark_detector or detect_biodex_rep_landmarks
 
@@ -3063,8 +3151,74 @@ def extract_landmark_aligned_biodex_reps(
             "boundary_idx": boundary_idx,
             "landmark_indices": landmark_info["indices"],
             "landmark_kinds": landmark_info["kinds"],
+            "threshold_time": landmark_info.get("threshold_crossing_time"),
         })
 
+    return valid_reps
+
+def extract_landmark_aligned_biodex_reps(
+    df,
+    rep_windows,
+    time_col="Elapsed Seconds",
+    value_col="Torque_Nm",
+    n_points=101,
+    prominence_ratio=0.12,
+    landmark_detector=None,
+):
+    valid_reps = _build_biodex_valid_reps_from_windows(
+        df, rep_windows, time_col=time_col, value_col=value_col,
+        prominence_ratio=prominence_ratio, landmark_detector=landmark_detector,
+    )
+    return build_landmark_aligned_curve(valid_reps, time_col=time_col, value_col=value_col, n_points=n_points)
+
+def extract_time_aligned_biodex_conditioning_reps(
+    df,
+    rep_windows,
+    time_col="Elapsed Seconds",
+    value_col="Torque_Nm",
+    n_points=101,
+    prominence_ratio=0.12,
+):
+    """Same detection as extract_landmark_aligned_biodex_reps, but aligned on a raw-time
+    axis zeroed at each rep's 10 Nm threshold crossing (see build_time_aligned_curve) --
+    for conditioning reps only. This is a display-only alternative: nothing here is
+    persisted (biodex_mean_curves stays movement_pct-based), it's recomputed live
+    wherever it's shown."""
+    valid_reps = _build_biodex_valid_reps_from_windows(
+        df, rep_windows, time_col=time_col, value_col=value_col,
+        prominence_ratio=prominence_ratio,
+        landmark_detector=detect_shoulder_er_ir_conditioning_rep_landmarks,
+    )
+    return build_time_aligned_curve(valid_reps, time_col=time_col, value_col=value_col, n_points=n_points)
+
+def find_biodex_threshold_crossing_time(
+    time_values, torque_values, start_idx, end_idx, threshold=BIODEX_CONDITIONING_ASCENT_THRESHOLD_NM,
+):
+    """Interpolated time within [start_idx, end_idx] where smoothed torque first reaches
+    threshold -- a standalone re-derivation of the same instant
+    detect_shoulder_er_ir_conditioning_rep_landmarks computes inline, for callers (like
+    reconstruct_biodex_rep_curves_from_saved_landmarks) that rebuild a rep from saved
+    data instead of running the detector fresh."""
+    segment = torque_values[start_idx:end_idx + 1]
+    if len(segment) < 5:
+        return None
+    smooth_window = get_valid_savgol_window(11, len(segment), 3)
+    smooth_seg = savgol_filter(segment, window_length=smooth_window, polyorder=3) if smooth_window else segment
+    for i in range(1, len(smooth_seg)):
+        if smooth_seg[i - 1] < threshold <= smooth_seg[i]:
+            v0, v1 = smooth_seg[i - 1], smooth_seg[i]
+            t0, t1 = time_values[start_idx + i - 1], time_values[start_idx + i]
+            frac = (threshold - v0) / (v1 - v0) if v1 != v0 else 0.0
+            return float(t0 + frac * (t1 - t0))
+    return None
+
+def build_biodex_aligned_curve_auto(valid_reps, time_col="Elapsed Seconds", value_col="Torque_Nm", n_points=101):
+    """Picks the alignment scheme by what the reps are landmarked with: conditioning
+    reps (single "ascent" landmark) get build_time_aligned_curve, so every rep's curve
+    actually crosses the 10 Nm threshold at the same point on a real-time axis; every
+    other protocol keeps the original 0-100% movement-cycle stretch."""
+    if valid_reps and valid_reps[0].get("landmark_kinds") == ["ascent"]:
+        return build_time_aligned_curve(valid_reps, time_col=time_col, value_col=value_col, n_points=n_points)
     return build_landmark_aligned_curve(valid_reps, time_col=time_col, value_col=value_col, n_points=n_points)
 
 def reconstruct_biodex_rep_curves_from_saved_landmarks(
@@ -3165,12 +3319,19 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
         if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
             continue
 
+        threshold_time = None
+        if landmark_kinds and landmark_kinds[0] == "ascent":
+            threshold_time = find_biodex_threshold_crossing_time(
+                rep_time_values, rep_torque_values, start_idx, end_idx,
+            )
+
         valid_reps.append({
             "rep_number": rep_number,
             "rep_df": rep_df,
             "boundary_idx": boundary_idx,
             "landmark_indices": landmark_indices,
             "landmark_kinds": landmark_kinds,
+            "threshold_time": threshold_time,
         })
 
     valid_reps.sort(key=lambda item: item["rep_number"])
@@ -20303,6 +20464,8 @@ def render_biodex_test_tab():
                     preview_landmark_reps_long_df = pd.DataFrame()
                     preview_landmark_mean_df = pd.DataFrame()
                     preview_landmark_aligned_rep_metadata = []
+                    preview_time_reps_long_df = pd.DataFrame()
+                    preview_time_mean_df = pd.DataFrame()
                     if is_shoulder_er_ir_speed_preview:
                         preview_rep_windows, preview_position_detection_metadata = detect_shoulder_er_ir_speed_reps(
                             preview_df,
@@ -20382,6 +20545,19 @@ def render_biodex_test_tab():
                         )
                         if is_shoulder_er_ir_conditioning_preview:
                             preview_processing_version = "shoulder_er_ir_conditioning_landmark_v1"
+                            # Display-only alternative to preview_reps_long_df/preview_mean_df
+                            # above (which stay movement_pct-based -- that's what gets saved to
+                            # biodex_mean_curves): aligned on raw time instead, zeroed at each
+                            # rep's own 10 Nm crossing, so the ascent chart below can show reps
+                            # actually converging at that instant rather than at a shared %.
+                            preview_time_reps_long_df, preview_time_mean_df, _ = extract_time_aligned_biodex_conditioning_reps(
+                                preview_df,
+                                preview_rep_windows,
+                                time_col="Elapsed Seconds",
+                                value_col="Torque_Nm",
+                                n_points=int(preview_n_points),
+                                prominence_ratio=float(preview_landmark_prominence),
+                            )
 
                     if is_shoulder_er_ir_speed_preview:
                         with preview_controls_col:
@@ -20565,10 +20741,21 @@ def render_biodex_test_tab():
                             else:
                                 st.warning("No visible reps were detected with the current settings.")
                         else:
+                            # Conditioning reps show a raw-time alignment (zeroed at each
+                            # rep's own 10 Nm crossing) instead of the 0-100% movement-cycle
+                            # axis -- this is what actually makes every rep's curve cross
+                            # 10 Nm at the same point on screen, since nothing here is
+                            # stretched to fit a shared percentage. Display-only: what gets
+                            # saved to biodex_mean_curves is still the movement_pct curve.
+                            use_time_axis = not preview_time_mean_df.empty
+                            plot_reps_df = preview_time_reps_long_df if use_time_axis else preview_reps_long_df
+                            plot_mean_df = preview_time_mean_df if use_time_axis else preview_mean_df
+                            x_col = "rel_time_s" if use_time_axis else "movement_pct"
+
                             preview_avg_fig = go.Figure()
-                            for rep_number, rep_df in preview_reps_long_df.groupby("rep_number"):
+                            for rep_number, rep_df in plot_reps_df.groupby("rep_number"):
                                 preview_avg_fig.add_trace(go.Scatter(
-                                    x=rep_df["movement_pct"],
+                                    x=rep_df[x_col],
                                     y=rep_df["torque_nm"],
                                     mode="lines",
                                     line=dict(width=1),
@@ -20576,51 +20763,65 @@ def render_biodex_test_tab():
                                     name=f"Rep {rep_number}",
                                 ))
                             preview_avg_fig.add_trace(go.Scatter(
-                                x=preview_mean_df["movement_pct"],
-                                y=preview_mean_df["upper_band"],
+                                x=plot_mean_df[x_col],
+                                y=plot_mean_df["upper_band"],
                                 mode="lines",
                                 line=dict(width=0),
                                 showlegend=False,
                                 hoverinfo="skip",
                             ))
                             preview_avg_fig.add_trace(go.Scatter(
-                                x=preview_mean_df["movement_pct"],
-                                y=preview_mean_df["lower_band"],
+                                x=plot_mean_df[x_col],
+                                y=plot_mean_df["lower_band"],
                                 mode="lines",
                                 line=dict(width=0),
                                 fill="tonexty",
                                 name="±1 SD",
                             ))
                             preview_avg_fig.add_trace(go.Scatter(
-                                x=preview_mean_df["movement_pct"],
-                                y=preview_mean_df["mean_torque_nm"],
+                                x=plot_mean_df[x_col],
+                                y=plot_mean_df["mean_torque_nm"],
                                 mode="lines",
                                 line=dict(width=4),
                                 name="Mean Torque",
                             ))
-                            for boundary_pct, label in zip(
-                                preview_mean_df.attrs.get("landmark_boundary_pct", []),
-                                preview_mean_df.attrs.get("landmark_labels", []),
-                            ):
+                            if use_time_axis:
                                 preview_avg_fig.add_vline(
-                                    x=float(boundary_pct),
+                                    x=0.0,
                                     line_width=2,
                                     line_dash="dot",
                                     line_color="rgba(255,255,255,0.45)",
                                 )
                                 preview_avg_fig.add_annotation(
-                                    x=float(boundary_pct),
-                                    y=1.03,
-                                    xref="x",
-                                    yref="paper",
-                                    text=label,
-                                    showarrow=False,
-                                    font=dict(size=11),
+                                    x=0.0, y=1.03, xref="x", yref="paper",
+                                    text="10 Nm", showarrow=False, font=dict(size=11),
                                 )
+                            else:
+                                for boundary_pct, label in zip(
+                                    plot_mean_df.attrs.get("landmark_boundary_pct", []),
+                                    plot_mean_df.attrs.get("landmark_labels", []),
+                                ):
+                                    preview_avg_fig.add_vline(
+                                        x=float(boundary_pct),
+                                        line_width=2,
+                                        line_dash="dot",
+                                        line_color="rgba(255,255,255,0.45)",
+                                    )
+                                    preview_avg_fig.add_annotation(
+                                        x=float(boundary_pct),
+                                        y=1.03,
+                                        xref="x",
+                                        yref="paper",
+                                        text=label,
+                                        showarrow=False,
+                                        font=dict(size=11),
+                                    )
                             preview_avg_fig.update_layout(
                                 hoverlabel=dict(namelength=-1),
-                                title=preview_mean_df.attrs.get("title", "Landmark-Aligned Average Torque Curve Across Detected Reps"),
-                                xaxis_title="Movement Cycle (%)",
+                                title=plot_mean_df.attrs.get("title", "Landmark-Aligned Average Torque Curve Across Detected Reps"),
+                                xaxis_title=(
+                                    "Time Relative to 10 Nm Crossing (s)" if use_time_axis else "Movement Cycle (%)"
+                                ),
                                 yaxis_title="Torque_Nm",
                                 height=500,
                                 legend=dict(
@@ -21105,6 +21306,7 @@ def render_biodex_test_tab():
                         session_bodyweight_by_run[run_id] = info["bodyweight_kg"] if info else None
 
                     if compare_display_mode == "Individual Reps":
+                        compare_used_time_axis = False
                         for run_id in selected_compare_run_ids:
                             session_row = processed_sessions_df[
                                 processed_sessions_df["biodex_processing_run_id"] == run_id
@@ -21126,15 +21328,20 @@ def render_biodex_test_tab():
                             )
                             if not session_valid_reps:
                                 continue
-                            reps_long_df, _, _ = build_landmark_aligned_curve(session_valid_reps)
+                            reps_long_df, _, _ = build_biodex_aligned_curve_auto(session_valid_reps)
                             if reps_long_df.empty:
                                 continue
+
+                            uses_time_axis = "rel_time_s" in reps_long_df.columns
+                            x_col = "rel_time_s" if uses_time_axis else "movement_pct"
+                            compare_used_time_axis = compare_used_time_axis or uses_time_axis
+                            hover_x_fmt = "%{x:.2f}s" if uses_time_axis else "%{x:.0f}%"
 
                             rep_numbers = sorted(reps_long_df["rep_number"].unique())
                             for i, rep_number in enumerate(rep_numbers):
                                 rep_curve = reps_long_df[reps_long_df["rep_number"] == rep_number]
                                 compare_fig.add_trace(go.Scatter(
-                                    x=rep_curve["movement_pct"],
+                                    x=rep_curve[x_col],
                                     y=rep_curve["torque_nm"],
                                     mode="lines",
                                     line=dict(width=1.25, color=color),
@@ -21142,7 +21349,7 @@ def render_biodex_test_tab():
                                     legendgroup=label,
                                     showlegend=(i == 0),
                                     name=label,
-                                    hovertemplate=f"{label} — Rep {rep_number}<br>%{{x:.0f}}%: %{{y:.1f}} Nm<extra></extra>",
+                                    hovertemplate=f"{label} — Rep {rep_number}<br>{hover_x_fmt}: %{{y:.1f}} Nm<extra></extra>",
                                 ))
 
                             for rep_info in session_valid_reps:
@@ -21228,6 +21435,17 @@ def render_biodex_test_tab():
                     if not compare_fig.data:
                         st.warning("Selected sessions do not have data to plot for this display mode.")
                     else:
+                        if compare_display_mode == "Individual Reps" and compare_used_time_axis:
+                            compare_fig.add_vline(
+                                x=0.0,
+                                line_width=2,
+                                line_dash="dot",
+                                line_color="rgba(255,255,255,0.45)",
+                            )
+                            compare_fig.add_annotation(
+                                x=0.0, y=1.03, xref="x", yref="paper",
+                                text="10 Nm", showarrow=False,
+                            )
                         compare_fig.update_layout(
                             hoverlabel=dict(namelength=-1),
                             title=(
@@ -21235,7 +21453,11 @@ def render_biodex_test_tab():
                                 if compare_display_mode == "Individual Reps"
                                 else "Saved Landmark-Aligned Biodex Mean Curves"
                             ),
-                            xaxis_title="Movement Cycle (%)",
+                            xaxis_title=(
+                                "Time Relative to 10 Nm Crossing (s)"
+                                if compare_display_mode == "Individual Reps" and compare_used_time_axis
+                                else "Movement Cycle (%)"
+                            ),
                             yaxis_title="Torque",
                             height=600,
                             legend=dict(
@@ -21694,15 +21916,23 @@ boundary uses whichever channel is more reliable for that specific question. Bec
 this, Internal Duration and External Duration aren't measured with symmetric logic even
 though they look like a matched pair.
 
-The 0-100% movement-cycle axis used for the aligned mean-curve chart (and every table
-built from it) isn't pinned at the crossing, though — it's pinned at an earlier point:
-where the ascent first climbs through 10 Nm, pulled back by a small buffer so the pin
-sits a little before that threshold rather than exactly on it. An earlier version
-pinned the crossing itself, which kept phase *durations* consistent but let the
-ascent's own shape drift between reps that reached the crossing at different rates;
-pinning a point inside the ascent instead tightens registration of the rise itself.
-The crossing is still found independently, purely for splitting internal from external
-when computing AUC/peak-torque values below — it just no longer drives alignment.
+The 0-100% movement-cycle axis used for tables below isn't pinned at the crossing,
+though — it's pinned at an earlier point: where the ascent first climbs through 10 Nm,
+pulled back by a small buffer so the pin sits a little before that threshold rather
+than exactly on it. An earlier version pinned the crossing itself, which kept phase
+*durations* consistent but let the ascent's own shape drift between reps that reached
+the crossing at different rates; pinning a point inside the ascent instead tightens
+registration of the rise itself. The crossing is still found independently, purely for
+splitting internal from external when computing AUC/peak-torque values below — it just
+no longer drives alignment.
+
+The aligned-curve chart itself goes a step further: instead of that 0-100% stretch, it
+plots each rep on a real-time axis zeroed at its own 10 Nm crossing, with no per-rep
+time-warping. That's a meaningfully different guarantee than the % axis gives — every
+rep's curve actually passes through the same point at the same instant, rather than
+merely at the same normalized percentage of its own (possibly different) duration. The
+tradeoff is that reps drift apart again away from that instant, since nothing keeps
+their *durations* in sync once time isn't being stretched to fit a shared 0-100% span.
 
 That torque minimum at rep start is a real, physically meaningful value, not just
 noise around zero: the dynamometer handle's own weight loads the sensor via gravity
