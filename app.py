@@ -3526,6 +3526,16 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     # — that's now an early ascent-threshold point, not this crossing).
     crossing_idx, crossing_time = find_biodex_rep_crossing_idx_and_time(time_values, torque_values, start_idx, end_idx)
 
+    # Per-rep resting baseline (dynamometer handle weight, not noise) — averaged over a
+    # small window at this rep's own start rather than a single sample, then subtracted
+    # from the torque trace before integrating, so AUC reflects the athlete's own
+    # applied torque rather than the handle's constant gravitational contribution.
+    baseline_window_lo = max(0, start_idx - 2)
+    baseline_window_hi = min(len(torque_values), start_idx + 3)
+    baseline_torque_nm = float(np.mean(torque_values[baseline_window_lo:baseline_window_hi]))
+    corrected_torque_values = torque_values - baseline_torque_nm
+    corrected_crossing_torque = 0.0 - baseline_torque_nm
+
     # The external phase's own "true ending" for AUC purposes -- where torque itself
     # settles back near baseline after the negative lobe, mirroring how start_idx
     # already anchors the internal phase's beginning to a torque baseline (not just
@@ -3537,23 +3547,27 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     # over- or under-counts the true external impulse. Searches the full rep window
     # (not capped at end_idx), since the true torque settle point can fall on either
     # side of the position-based end.
+    #
+    # Target the rep's own known resting baseline directly, rather than
+    # detect_biodex_rep_settle_idx's usual trick of inferring "rest" from the median of
+    # the search window's own trailing samples: when a rep's torque hasn't fully
+    # recovered by the end of the window (still mid-recovery, not idle), that trailing
+    # median is itself still well off zero, and can spuriously match torque just a few
+    # samples after the crossing -- cutting the external phase down to almost nothing.
     settle_window = get_valid_savgol_window(11, len(torque_values), 3)
     smooth_torque_for_settle = (
         savgol_filter(torque_values, window_length=settle_window, polyorder=3)
         if settle_window is not None else torque_values
     )
-    external_end_idx = detect_biodex_rep_settle_idx(smooth_torque_for_settle, crossing_idx)
+    external_end_idx = None
+    settle_threshold = max(2.0, float(np.std(torque_values[baseline_window_lo:baseline_window_hi])) * 1.5)
+    for idx in range(crossing_idx, len(smooth_torque_for_settle) - 2):
+        if np.all(np.abs(smooth_torque_for_settle[idx:idx + 3] - baseline_torque_nm) <= settle_threshold):
+            external_end_idx = idx
+            break
+    if external_end_idx is None:
+        external_end_idx = len(torque_values) - 1
     external_end_idx = max(crossing_idx + 1, min(external_end_idx, len(torque_values) - 1))
-
-    # Per-rep resting baseline (dynamometer handle weight, not noise) — averaged over a
-    # small window at this rep's own start rather than a single sample, then subtracted
-    # from the torque trace before integrating, so AUC reflects the athlete's own
-    # applied torque rather than the handle's constant gravitational contribution.
-    baseline_window_lo = max(0, start_idx - 2)
-    baseline_window_hi = min(len(torque_values), start_idx + 3)
-    baseline_torque_nm = float(np.mean(torque_values[baseline_window_lo:baseline_window_hi]))
-    corrected_torque_values = torque_values - baseline_torque_nm
-    corrected_crossing_torque = 0.0 - baseline_torque_nm
 
     internal = _integrate_biodex_rep_phase(
         time_values, corrected_torque_values, start_idx, crossing_idx,
