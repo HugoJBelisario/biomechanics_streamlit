@@ -3322,7 +3322,17 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
                 rep_time_values, smooth_position, velocity, 0, len(rep_time_values) - 1,
                 fs=position_fs or 100.0,
             )
-            if position_bounds is not None and position_bounds["start_idx"] < landmark_indices[0] < position_bounds["end_idx"]:
+            # Sanity-check position_bounds against the internal/external crossing, not
+            # landmark_indices[0] -- that's the ascent-threshold landmark, which sits
+            # deliberately *early* in the rep (often before the position-based ascent
+            # onset even registers), so it can legitimately fall outside
+            # position_bounds even when position_bounds itself is fine. The crossing,
+            # by contrast, always sits safely mid-rep, same as what
+            # detect_shoulder_er_ir_conditioning_rep_landmarks itself checks against.
+            crossing_probe_idx, _crossing_probe_time = find_biodex_rep_crossing_idx_and_time(
+                rep_time_values, rep_torque_values, 0, len(rep_time_values) - 1,
+            )
+            if position_bounds is not None and position_bounds["start_idx"] < crossing_probe_idx < position_bounds["end_idx"]:
                 start_idx = refine_rep_start_to_torque_baseline(rep_torque_values, position_bounds["start_idx"])
                 end_idx = position_bounds["end_idx"]
 
@@ -3476,15 +3486,20 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
 
     Both phases are genuinely zero-to-zero: internal rotation runs from the rep's start
     (start_idx, the torque-baseline trough — see refine_rep_start_to_torque_baseline) to
-    the zero crossing; external rotation picks up at that same crossing point and runs to
-    where torque itself settles back near baseline (external_end_idx, found fresh here
-    via detect_biodex_rep_settle_idx), NOT to the rep's Position_Deg-based end_idx. Those
-    two endpoints usually don't coincide — the arm can keep swinging passively after the
-    athlete has already stopped applying torque, or torque can lag position — so
-    integrating all the way to end_idx would over- or under-count the true external
-    impulse. end_idx is still used for ROM (an arm-motion measurement, not a torque one).
-    The crossing itself is linearly interpolated between samples for a more accurate
-    boundary than snapping to the nearest sample.
+    the zero crossing; external rotation picks up at that same crossing point and runs
+    until torque itself settles back within a fixed 2.0 Nm of the rep's own resting
+    baseline (external_end_idx), searched fresh here rather than reusing end_idx (the
+    rep's Position_Deg-based boundary) directly — the arm can keep swinging passively
+    after the athlete has already stopped applying torque, or torque can lag position,
+    so integrating all the way to end_idx regardless would over- or under-count the true
+    external impulse. That search never looks past end_idx, though: end_idx is still
+    this rep's own outer boundary, so if torque genuinely hasn't settled by then,
+    external_end_idx just becomes end_idx itself rather than chasing the signal into
+    whatever comes after (buffer, or the next rep's lead-in) — see
+    "external_torque_settled" in the return dict for whether a real settle point was
+    found at all. end_idx is still used as-is for ROM (an arm-motion measurement, not a
+    torque one). The crossing itself is linearly interpolated between samples for a more
+    accurate boundary than snapping to the nearest sample.
 
     Peak torque per phase is simply the overall max (internal) / min (external) torque
     sample within that phase, not anchored to a specific sub-peak — reported as a raw
@@ -3540,34 +3555,37 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     # settles back near baseline after the negative lobe, mirroring how start_idx
     # already anchors the internal phase's beginning to a torque baseline (not just
     # a zero crossing on one side and an arbitrary boundary on the other). end_idx is
-    # Position_Deg-based (arm angle returns to its starting value) and stays the rep's
-    # alignment/ROM boundary, but it doesn't necessarily land where torque is actually
-    # back to zero -- the arm can keep swinging passively after the athlete has already
-    # stopped pushing, or torque can lag position, so integrating all the way to end_idx
-    # over- or under-counts the true external impulse. Searches the full rep window
-    # (not capped at end_idx), since the true torque settle point can fall on either
-    # side of the position-based end.
+    # Position_Deg-based (arm angle returns to its starting value); it stays the rep's
+    # alignment/ROM boundary AND the outer bound of this search -- once end_idx is
+    # reached, later samples belong to the buffer/next rep's lead-in, not this rep's
+    # external phase, so there's no reason to chase the signal any further looking for
+    # a settle point past it.
     #
-    # Target the rep's own known resting baseline directly, rather than
-    # detect_biodex_rep_settle_idx's usual trick of inferring "rest" from the median of
-    # the search window's own trailing samples: when a rep's torque hasn't fully
-    # recovered by the end of the window (still mid-recovery, not idle), that trailing
-    # median is itself still well off zero, and can spuriously match torque just a few
-    # samples after the crossing -- cutting the external phase down to almost nothing.
+    # Target the rep's own known resting baseline directly (a fixed 2.0 Nm tolerance,
+    # not scaled by this rep's own noise level, so "settled" means the same thing for
+    # every rep), rather than detect_biodex_rep_settle_idx's usual trick of inferring
+    # "rest" from the median of the search window's own trailing samples: when a rep's
+    # torque hasn't fully recovered by end_idx (still mid-recovery, not idle), that
+    # trailing median is itself still well off zero, and can spuriously match torque
+    # just a few samples after the crossing -- cutting the external phase down to
+    # almost nothing. If a rep genuinely hasn't settled by end_idx, external_end_idx
+    # just becomes end_idx itself -- external_duration_s / AUC then reflect that rep's
+    # own window rather than an arbitrarily extended one.
     settle_window = get_valid_savgol_window(11, len(torque_values), 3)
     smooth_torque_for_settle = (
         savgol_filter(torque_values, window_length=settle_window, polyorder=3)
         if settle_window is not None else torque_values
     )
     external_end_idx = None
-    settle_threshold = max(2.0, float(np.std(torque_values[baseline_window_lo:baseline_window_hi])) * 1.5)
-    for idx in range(crossing_idx, len(smooth_torque_for_settle) - 2):
-        if np.all(np.abs(smooth_torque_for_settle[idx:idx + 3] - baseline_torque_nm) <= settle_threshold):
+    settle_threshold_nm = 2.0
+    for idx in range(crossing_idx, end_idx - 1):
+        if np.all(np.abs(smooth_torque_for_settle[idx:idx + 3] - baseline_torque_nm) <= settle_threshold_nm):
             external_end_idx = idx
             break
+    external_torque_settled = external_end_idx is not None
     if external_end_idx is None:
-        external_end_idx = len(torque_values) - 1
-    external_end_idx = max(crossing_idx + 1, min(external_end_idx, len(torque_values) - 1))
+        external_end_idx = end_idx
+    external_end_idx = max(crossing_idx + 1, min(external_end_idx, end_idx))
 
     internal = _integrate_biodex_rep_phase(
         time_values, corrected_torque_values, start_idx, crossing_idx,
@@ -3672,6 +3690,7 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
         "external_peak_torque_nm": external_peak_torque_nm,
         "external_rtd_nm_s": external_rtd_nm_s,
         "external_rom_deg": external_rom_deg,
+        "external_torque_settled": external_torque_settled,
         "er_ir_ratio": er_ir_ratio,
         "auc_er_ir_ratio": auc_er_ir_ratio,
         "internal_phase_fraction": internal_phase_fraction,
@@ -3749,6 +3768,15 @@ def build_biodex_auc_row(meta, auc_results, bodyweight_kg, phase_view, rep_numbe
     duration shown alone; a rising fraction across a set means the reversal into
     external rotation is happening later, which the two duration columns individually
     don't make obvious.
+
+    External Torque Settled (external phases only) says whether
+    compute_biodex_conditioning_rep_auc actually found torque returning to baseline
+    before the rep's own boundary (end_idx), vs. falling back to end_idx itself because
+    it never did — "n/total" for a mean row, True/False for a single rep. A False (or a
+    fraction well under 1) means that rep's/group's External AUC and Duration reflect
+    whatever torque happened to be doing at end_idx, not a genuine zero-to-zero
+    impulse, so it's worth treating those numbers with the same skepticism Internal
+    Peak Count asks for on the IR Torque side.
     """
     row = dict(meta)
     row["Bodyweight (kg)"] = round(bodyweight_kg, 1) if bodyweight_kg else None
@@ -3768,6 +3796,11 @@ def build_biodex_auc_row(meta, auc_results, bodyweight_kg, phase_view, rep_numbe
         row[f"{prefix}External Duration (s)"] = float(np.mean([r["external_duration_s"] for r in auc_results]))
         if bodyweight_kg:
             row[f"{prefix}External AUC (Nm·s/kg)"] = external_auc / bodyweight_kg
+        settled_flags = [r["external_torque_settled"] for r in auc_results if "external_torque_settled" in r]
+        if settled_flags:
+            row[f"{prefix}External Torque Settled"] = (
+                f"{sum(settled_flags)}/{len(settled_flags)}" if rep_number is None else bool(settled_flags[0])
+            )
     if phase_view == "Full":
         auc_ratio_values = [r["auc_er_ir_ratio"] for r in auc_results if r["auc_er_ir_ratio"] is not None]
         row[f"{prefix}AUC ER/IR Ratio"] = float(np.mean(auc_ratio_values)) if auc_ratio_values else None
@@ -22127,8 +22160,18 @@ above are intentionally left as raw, unadjusted sensor readings. The `(Nm·s/kg)
 variants divide by bodyweight.
 
 **Internal/External Duration (s)** — the elapsed wall-clock time each phase's segment
-spans: crossing time minus start time (Internal), end time minus crossing time
-(External).
+spans: crossing time minus start time (Internal), settle time minus crossing time
+(External) — "settle" meaning where torque returns within 2.0 Nm of this rep's own
+resting baseline, searched only up to the rep's own boundary (never past it). See
+**External Torque Settled** below for whether that settle point was actually found.
+
+**External Torque Settled** — whether torque actually returned within 2.0 Nm of this
+rep's own resting baseline before hitting the rep's own boundary, or the search gave up
+at that boundary without finding it ("n/total" for a Mean row, True/False for a single
+rep). When this is False, or well under 1 for a group, that rep's/group's External AUC
+and Duration reflect whatever torque happened to be doing at the rep's boundary, not a
+genuine zero-to-zero impulse — treat those numbers with the same skepticism Internal
+Peak Count asks for on the IR Torque side.
 
 **Internal Phase Fraction** — Internal Duration as a share of the whole rep's duration
 (Internal ÷ [Internal + External]). The balance between the two phases, which the two
