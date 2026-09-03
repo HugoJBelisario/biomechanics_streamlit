@@ -2733,26 +2733,32 @@ def detect_biodex_rep_settle_idx(values, search_start_idx, baseline_window=15, m
 
     return n - 1
 
+BIODEX_CONDITIONING_ASCENT_THRESHOLD_NM = 10.0
+BIODEX_CONDITIONING_ASCENT_LEAD_IN_SAMPLES = 15
+
 def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_Nm", prominence_ratio=0.12):
-    """Find the internal/external zero crossing for a conditioning rep.
+    """Find a conditioning rep's alignment landmark: where the internal-rotation ascent
+    first climbs through BIODEX_CONDITIONING_ASCENT_THRESHOLD_NM, pulled back by
+    BIODEX_CONDITIONING_ASCENT_LEAD_IN_SAMPLES so alignment doesn't pin the exact
+    threshold-crossing sample but leaves a little of the rise visible before it.
 
-    Conditioning reps only need one landmark for alignment: the point where torque
-    crosses from positive (internal rotation) to negative (external rotation). Older
-    versions of this detector pinned three peak-based landmarks (POS1, POS2, NEG1) for
-    alignment, but the second internal-rotation peak is often too subtle for reliable
-    peak-finding (see compute_biodex_conditioning_rep_auc for the history there), and
-    peak torque values for the tables don't actually need to be pinned to specific
-    sub-peaks — the overall max/min within each phase (computed separately in
-    compute_biodex_conditioning_rep_auc) is what's reported. So alignment now only
-    needs this one robust, purely sign-based crossing, with no peak-finding at all.
+    This landmark is for *alignment* only — pinning it keeps the ascent's shape
+    consistently registered across reps the same way the crossing-based landmark used
+    to (see compute_biodex_conditioning_rep_auc, which independently re-derives the
+    real internal/external zero crossing for AUC/peak-torque phase splitting; that
+    computation no longer depends on what's pinned here). A fixed low threshold well
+    above the noise floor but well below typical peak torque was chosen over the
+    zero-crossing itself specifically so the pinned point sits early in the rep,
+    tightening registration of the ascent's shape rather than only its total duration.
 
-    The crossing search starts at the window's overall peak-torque sample and scans
-    forward from there (not from the window's raw edge), so it can't latch onto a
-    spurious near-zero sign flip in the idle/buffer time before the subject's
-    contraction actually begins.
+    Older versions of this detector pinned three peak-based landmarks (POS1, POS2,
+    NEG1), but the second internal-rotation peak is often too subtle for reliable
+    peak-finding — see compute_biodex_conditioning_rep_auc for that history. Peak
+    torque values for the tables don't need to be pinned to specific sub-peaks either;
+    the overall max/min within each phase is what's reported.
 
     `prominence_ratio` is accepted for call-signature compatibility with other
-    landmark detectors but unused here — sign-crossing detection needs no prominence.
+    landmark detectors but unused here.
     """
     if rep_df.empty or value_col not in rep_df.columns:
         return None
@@ -2828,9 +2834,23 @@ def detect_shoulder_er_ir_conditioning_rep_landmarks(rep_df, value_col="Torque_N
         if not (start_idx < crossing_idx < end_idx):
             return None
 
+    # The alignment landmark: first sample (searching forward from start) where the
+    # ascent climbs through the threshold, then pulled back by the lead-in so the
+    # pinned point sits a little before the crossing itself.
+    ascent_idx = None
+    for idx in range(start_idx, crossing_idx):
+        if smooth_values[idx] >= BIODEX_CONDITIONING_ASCENT_THRESHOLD_NM:
+            ascent_idx = idx
+            break
+    if ascent_idx is None:
+        return None
+    ascent_idx = max(start_idx + 1, ascent_idx - BIODEX_CONDITIONING_ASCENT_LEAD_IN_SAMPLES)
+    if not (start_idx < ascent_idx < end_idx):
+        return None
+
     return {
-        "indices": [crossing_idx],
-        "kinds": ["crossing"],
+        "indices": [ascent_idx],
+        "kinds": ["ascent"],
         "smooth_values": smooth_values,
         "start_idx": start_idx,
         "end_idx": end_idx,
@@ -3116,7 +3136,7 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
         end_idx = None
         if (
             landmark_kinds
-            and landmark_kinds[0] == "crossing"
+            and landmark_kinds[0] == "ascent"
             and rep_position_values is not None
             and np.isfinite(rep_position_values).any()
         ):
@@ -3134,13 +3154,13 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
 
         if start_idx is None or end_idx is None:
             start_idx = 0
-            if landmark_kinds and landmark_kinds[0] in ("pos", "crossing"):
+            if landmark_kinds and landmark_kinds[0] in ("pos", "crossing", "ascent"):
                 start_idx = detect_biodex_rep_onset_idx(rep_torque_values, landmark_indices[0])
             end_idx = detect_biodex_rep_settle_idx(rep_torque_values, landmark_indices[-1])
 
-        # The internal/external crossing is pinned as an interior alignment landmark
-        # (see extract_landmark_aligned_biodex_reps) so reconstructed reps align the
-        # same way live-detected ones do.
+        # The ascent-threshold point is pinned as the interior alignment landmark (see
+        # detect_shoulder_er_ir_conditioning_rep_landmarks / extract_landmark_aligned_biodex_reps)
+        # so reconstructed reps align the same way live-detected ones do.
         boundary_idx = [start_idx] + landmark_indices + [end_idx]
         if any(b <= a for a, b in zip(boundary_idx, boundary_idx[1:])):
             continue
@@ -3272,13 +3292,13 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     peak torque and RTD) is subtracted from that rep's torque before integrating.
 
     Expects rep_info in the shape build_landmark_aligned_curve consumes, with the
-    conditioning zero-crossing landmark pattern. Returns None if the rep doesn't match
-    that pattern.
+    conditioning ascent-threshold landmark pattern. Returns None if the rep doesn't
+    match that pattern.
     """
-    if rep_info.get("landmark_kinds") != ["crossing"]:
+    if rep_info.get("landmark_kinds") != ["ascent"]:
         return None
 
-    start_idx, landmark_crossing_idx, end_idx = rep_info["boundary_idx"]
+    start_idx, _ascent_landmark_idx, end_idx = rep_info["boundary_idx"]
 
     rep_df = rep_info["rep_df"]
     time_values = rep_df[time_col].to_numpy(dtype=float)
@@ -3287,18 +3307,19 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
         rep_df["Position_Deg"].to_numpy(dtype=float) if "Position_Deg" in rep_df.columns else None
     )
 
-    # Refine the already-known-good smoothed-signal crossing (landmark_crossing_idx) to
-    # an exact raw-signal sign flip nearby, rather than scanning the whole
-    # [start_idx, end_idx] range from scratch. start_idx can come from Position_Deg-based
-    # boundary detection now (see detect_shoulder_er_ir_conditioning_rep_landmarks), which
-    # may sit earlier than torque's own onset — inside torque's pre-contraction noise,
-    # where the raw signal flips sign spuriously. Scanning from there instead of near the
-    # landmark picked up that early noise crossing instead of the real one, collapsing the
-    # internal-rotation phase to a sliver and wrecking its peak/AUC values.
-    crossing_search_start_idx = max(start_idx, landmark_crossing_idx - 150)
+    # The internal/external zero crossing is found fresh here, independent of whatever
+    # landmark is pinned for alignment (see detect_shoulder_er_ir_conditioning_rep_landmarks
+    # — that's now an early ascent-threshold point, not this crossing). The quiet
+    # baseline is still jittery for a stretch AFTER start_idx too (the athlete hasn't
+    # begun pushing yet), so searching from start_idx directly can false-trigger on an
+    # early noise sign-flip well before the real ascent. Anchoring the search to the
+    # rep's own peak torque sample instead is safe — nothing before the peak matters for
+    # finding the post-peak crossing — matching the same pattern
+    # detect_shoulder_er_ir_conditioning_rep_landmarks uses for its own crossing search.
+    peak_search_idx = start_idx + int(np.argmax(torque_values[start_idx:end_idx + 1]))
     crossing_idx = None
     crossing_time = None
-    for idx in range(crossing_search_start_idx, end_idx):
+    for idx in range(peak_search_idx, end_idx):
         if torque_values[idx] > 0 and torque_values[idx + 1] <= 0:
             v0, v1 = torque_values[idx], torque_values[idx + 1]
             t0, t1 = time_values[idx], time_values[idx + 1]
@@ -3309,8 +3330,8 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
 
     if crossing_idx is None:
         # No exact sign flip found on the raw signal (e.g. torque only touches zero);
-        # fall back to the crossing already found on the smoothed signal.
-        crossing_idx = landmark_crossing_idx
+        # fall back to the sample closest to zero after the peak.
+        crossing_idx = peak_search_idx + int(np.argmin(np.abs(torque_values[peak_search_idx:end_idx + 1])))
 
     # Per-rep resting baseline (dynamometer handle weight, not noise) — averaged over a
     # small window at this rep's own start rather than a single sample, then subtracted
@@ -20245,16 +20266,19 @@ def render_biodex_test_tab():
                             )
                         if is_shoulder_er_ir_conditioning_preview:
                             st.caption(
-                                "Conditioning reps are aligned on Position_Deg-based start/end plus the "
-                                "internal/external zero crossing as a pinned interior landmark, instead of "
-                                "the standard two-cycle POS1/NEG1/POS2/NEG2 pattern. Pinning the crossing "
-                                "keeps the internal-to-external transition at a consistent movement-cycle "
-                                "percent across reps — without it, reps whose ascent took a different share "
-                                "of their total duration than others fanned out during that phase even "
-                                "though both endpoints lined up. Peak torque values for the tables are still "
-                                "found separately, as the overall max/min within each phase (no peak "
-                                "detection for alignment itself), so the landmark prominence ratio below "
-                                "doesn't affect conditioning reps."
+                                "Conditioning reps are aligned on Position_Deg-based start/end plus one "
+                                "interior landmark — where the internal-rotation ascent climbs through "
+                                f"{BIODEX_CONDITIONING_ASCENT_THRESHOLD_NM:.0f} Nm, pulled back by a small "
+                                "lead-in so the pin sits a little before that threshold rather than exactly "
+                                "on it — instead of the standard two-cycle POS1/NEG1/POS2/NEG2 pattern or "
+                                "the internal/external zero crossing used previously. Pinning an early point "
+                                "in the ascent (rather than the crossing, which sits roughly mid-rep) tightens "
+                                "registration of the rise itself; the actual internal/external zero crossing "
+                                "is still found independently for the AUC/peak-torque phase split, it just no "
+                                "longer drives alignment. Peak torque values for the tables are found "
+                                "separately, as the overall max/min within each phase (no peak detection for "
+                                "alignment itself), so the landmark prominence ratio below doesn't affect "
+                                "conditioning reps."
                             )
                         if (
                             preview_movement == "d2_shoulder_pattern"
@@ -21449,15 +21473,24 @@ def render_biodex_test_tab():
                                     boundary_pct = group_mean_df.attrs.get("landmark_boundary_pct", [])
                                     landmark_kinds = group_metadata[0]["landmark_kinds"]
                                     crossing_pct = None
-                                    if landmark_kinds == ["crossing"] and len(boundary_pct) == 1:
-                                        # Old crossing-pinned-alignment scheme: the crossing
-                                        # was itself a pinned interior landmark, already on
-                                        # the shared axis.
+                                    if landmark_kinds == ["ascent"]:
+                                        # Current scheme: the pinned landmark is an early
+                                        # ascent-threshold point, not the crossing itself, so
+                                        # there's no shared-axis boundary to read directly —
+                                        # search the mean curve for the crossing instead.
+                                        crossing_pct = find_biodex_internal_external_crossing_pct(
+                                            group_mean_df["movement_pct"].to_numpy(),
+                                            group_mean_df["mean_torque_nm"].to_numpy(),
+                                            0.0, 100.0,
+                                        )
+                                    elif landmark_kinds == ["crossing"] and len(boundary_pct) == 1:
+                                        # Runs saved when the crossing itself was the pinned
+                                        # interior landmark: already on the shared axis.
                                         crossing_pct = boundary_pct[0]
                                     elif landmark_kinds == ["crossing"]:
-                                        # Current scheme: alignment only pins start/end, not
-                                        # the crossing, so there's no shared-axis boundary to
-                                        # read — search the mean curve directly instead.
+                                        # Runs saved during the brief start/end-only alignment
+                                        # scheme (crossing detected but not pinned): search the
+                                        # mean curve directly instead.
                                         crossing_pct = find_biodex_internal_external_crossing_pct(
                                             group_mean_df["movement_pct"].to_numpy(),
                                             group_mean_df["mean_torque_nm"].to_numpy(),
@@ -21660,6 +21693,16 @@ position is the cleaner signal for "did the arm actually come back to rest," so 
 boundary uses whichever channel is more reliable for that specific question. Because of
 this, Internal Duration and External Duration aren't measured with symmetric logic even
 though they look like a matched pair.
+
+The 0-100% movement-cycle axis used for the aligned mean-curve chart (and every table
+built from it) isn't pinned at the crossing, though — it's pinned at an earlier point:
+where the ascent first climbs through 10 Nm, pulled back by a small buffer so the pin
+sits a little before that threshold rather than exactly on it. An earlier version
+pinned the crossing itself, which kept phase *durations* consistent but let the
+ascent's own shape drift between reps that reached the crossing at different rates;
+pinning a point inside the ascent instead tightens registration of the rise itself.
+The crossing is still found independently, purely for splitting internal from external
+when computing AUC/peak-torque values below — it just no longer drives alignment.
 
 That torque minimum at rep start is a real, physically meaningful value, not just
 noise around zero: the dynamometer handle's own weight loads the sensor via gravity
