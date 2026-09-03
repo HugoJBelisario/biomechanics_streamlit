@@ -3023,21 +3023,31 @@ def build_landmark_aligned_curve(valid_reps, time_col="Elapsed Seconds", value_c
 
     return reps_long_df, mean_df, aligned_rep_metadata
 
-def build_time_aligned_curve(valid_reps, time_col="Elapsed Seconds", value_col="Torque_Nm", n_points=101):
+def build_time_aligned_curve(
+    valid_reps, time_col="Elapsed Seconds", value_col="Torque_Nm", n_points=101, zero_time_key="threshold_time",
+):
     """Average a set of reps onto a common raw-time axis, zeroed at each rep's own
-    threshold-crossing instant ("threshold_time" in each rep_info dict) -- unlike
+    instant recorded under `zero_time_key` in its rep_info dict -- unlike
     build_landmark_aligned_curve's 0-100% movement-cycle axis, this does NOT stretch
     each rep's phases to a shared percentage; a rep's own clock keeps running, so reps
-    that take longer to reach the threshold, or longer to finish afterward, simply
-    have less overlap with the others at the edges of the window instead of being
-    time-warped to fit. This is what makes every rep's curve actually cross 10 Nm at
-    the same point on the x-axis, not just at the same normalized percentage.
+    that take longer to reach that instant, or longer to finish afterward, simply have
+    less overlap with the others at the edges of the window instead of being
+    time-warped to fit. This is what makes every rep's curve actually pass through the
+    same point at the same point on the x-axis, not just at the same normalized
+    percentage.
 
-    Each item in valid_reps needs "rep_number", "rep_df", and "threshold_time" (the
-    rep's own elapsed-seconds instant the threshold was crossed at). Reps missing a
-    threshold_time are skipped.
+    Default `zero_time_key="threshold_time"` zeroes at the 10 Nm ascent-threshold
+    crossing (see detect_shoulder_er_ir_conditioning_rep_landmarks) -- the scheme used
+    for the Full-phase aligned-curve charts. Pass `zero_time_key="crossing_time"` to
+    zero at the internal/external zero crossing instead (see
+    find_biodex_rep_crossing_idx_and_time) -- used for the External Phase View, where
+    what should visually line up across reps is the moment external rotation begins,
+    not the unrelated 10 Nm point from earlier in the same rep.
+
+    Each item in valid_reps needs "rep_number", "rep_df", and `zero_time_key`. Reps
+    missing that key are skipped.
     """
-    usable_reps = [r for r in valid_reps if r.get("threshold_time") is not None]
+    usable_reps = [r for r in valid_reps if r.get(zero_time_key) is not None]
     if not usable_reps:
         return pd.DataFrame(), pd.DataFrame(), []
 
@@ -3045,7 +3055,7 @@ def build_time_aligned_curve(valid_reps, time_col="Elapsed Seconds", value_col="
     for rep_info in usable_reps:
         rep_df = rep_info["rep_df"]
         time_values = rep_df[time_col].to_numpy(dtype=float)
-        rel_time_rows.append(time_values - rep_info["threshold_time"])
+        rel_time_rows.append(time_values - rep_info[zero_time_key])
 
     window_lo = float(np.median([rt.min() for rt in rel_time_rows]))
     window_hi = float(np.median([rt.max() for rt in rel_time_rows]))
@@ -3072,7 +3082,8 @@ def build_time_aligned_curve(valid_reps, time_col="Elapsed Seconds", value_col="
         aligned_rep_metadata.append({
             "rep_number": rep_info["rep_number"],
             "landmark_kinds": rep_info.get("landmark_kinds", ["ascent"]),
-            "threshold_time": rep_info["threshold_time"],
+            "threshold_time": rep_info.get("threshold_time"),
+            "crossing_time": rep_info.get("crossing_time"),
             "start_time": float(rel_time.min()),
             "end_time": float(rel_time.max()),
         })
@@ -3146,6 +3157,13 @@ def _build_biodex_valid_reps_from_windows(
         if np.any(phase_lengths <= 0):
             continue
 
+        crossing_time = None
+        if landmark_info["kinds"] == ["ascent"]:
+            _crossing_idx, crossing_time = find_biodex_rep_crossing_idx_and_time(
+                rep_df[time_col].to_numpy(dtype=float), rep_df[value_col].to_numpy(dtype=float),
+                start_idx, end_idx,
+            )
+
         valid_reps.append({
             "rep_number": rep_number,
             "rep_df": rep_df,
@@ -3153,6 +3171,7 @@ def _build_biodex_valid_reps_from_windows(
             "landmark_indices": landmark_info["indices"],
             "landmark_kinds": landmark_info["kinds"],
             "threshold_time": landmark_info.get("threshold_crossing_time"),
+            "crossing_time": crossing_time,
         })
 
     return valid_reps
@@ -3321,8 +3340,12 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
             continue
 
         threshold_time = None
+        crossing_time = None
         if landmark_kinds and landmark_kinds[0] == "ascent":
             threshold_time = find_biodex_threshold_crossing_time(
+                rep_time_values, rep_torque_values, start_idx, end_idx,
+            )
+            _crossing_idx, crossing_time = find_biodex_rep_crossing_idx_and_time(
                 rep_time_values, rep_torque_values, start_idx, end_idx,
             )
 
@@ -3333,6 +3356,7 @@ def reconstruct_biodex_rep_curves_from_saved_landmarks(
             "landmark_indices": landmark_indices,
             "landmark_kinds": landmark_kinds,
             "threshold_time": threshold_time,
+            "crossing_time": crossing_time,
         })
 
     valid_reps.sort(key=lambda item: item["rep_number"])
@@ -3424,6 +3448,28 @@ def _diagnose_biodex_internal_peak_structure(segment_time, segment_torque):
         gap_s = float(segment_time[top2[1]] - segment_time[top2[0]])
     return len(peaks), gap_s
 
+def find_biodex_rep_crossing_idx_and_time(time_values, torque_values, start_idx, end_idx):
+    """The internal/external zero crossing within [start_idx, end_idx] on the raw
+    signal, interpolated for precision. Anchored to the rep's own peak torque sample
+    rather than start_idx directly -- the quiet baseline is still jittery for a stretch
+    after start_idx (the athlete hasn't begun pushing yet), so searching from start_idx
+    can false-trigger on an early noise sign-flip well before the real ascent; nothing
+    before the peak matters for finding the post-peak crossing.
+
+    Returns (crossing_idx, crossing_time). Falls back to the sample closest to zero
+    after the peak if no exact sign flip is found (e.g. torque only touches zero).
+    """
+    peak_search_idx = start_idx + int(np.argmax(torque_values[start_idx:end_idx + 1]))
+    for idx in range(peak_search_idx, end_idx):
+        if torque_values[idx] > 0 and torque_values[idx + 1] <= 0:
+            v0, v1 = torque_values[idx], torque_values[idx + 1]
+            t0, t1 = time_values[idx], time_values[idx + 1]
+            frac = v0 / (v0 - v1) if (v0 - v1) != 0 else 0.0
+            return idx, float(t0 + frac * (t1 - t0))
+
+    fallback_idx = peak_search_idx + int(np.argmin(np.abs(torque_values[peak_search_idx:end_idx + 1])))
+    return fallback_idx, float(time_values[fallback_idx])
+
 def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", value_col="Torque_Nm"):
     """Torque-time integral (Nm·s) and peak torque of a conditioning rep's internal- and
     external-rotation phases, split at the internal/external zero crossing.
@@ -3477,29 +3523,8 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
 
     # The internal/external zero crossing is found fresh here, independent of whatever
     # landmark is pinned for alignment (see detect_shoulder_er_ir_conditioning_rep_landmarks
-    # — that's now an early ascent-threshold point, not this crossing). The quiet
-    # baseline is still jittery for a stretch AFTER start_idx too (the athlete hasn't
-    # begun pushing yet), so searching from start_idx directly can false-trigger on an
-    # early noise sign-flip well before the real ascent. Anchoring the search to the
-    # rep's own peak torque sample instead is safe — nothing before the peak matters for
-    # finding the post-peak crossing — matching the same pattern
-    # detect_shoulder_er_ir_conditioning_rep_landmarks uses for its own crossing search.
-    peak_search_idx = start_idx + int(np.argmax(torque_values[start_idx:end_idx + 1]))
-    crossing_idx = None
-    crossing_time = None
-    for idx in range(peak_search_idx, end_idx):
-        if torque_values[idx] > 0 and torque_values[idx + 1] <= 0:
-            v0, v1 = torque_values[idx], torque_values[idx + 1]
-            t0, t1 = time_values[idx], time_values[idx + 1]
-            frac = v0 / (v0 - v1) if (v0 - v1) != 0 else 0.0
-            crossing_time = float(t0 + frac * (t1 - t0))
-            crossing_idx = idx
-            break
-
-    if crossing_idx is None:
-        # No exact sign flip found on the raw signal (e.g. torque only touches zero);
-        # fall back to the sample closest to zero after the peak.
-        crossing_idx = peak_search_idx + int(np.argmin(np.abs(torque_values[peak_search_idx:end_idx + 1])))
+    # — that's now an early ascent-threshold point, not this crossing).
+    crossing_idx, crossing_time = find_biodex_rep_crossing_idx_and_time(time_values, torque_values, start_idx, end_idx)
 
     # The external phase's own "true ending" for AUC purposes -- where torque itself
     # settles back near baseline after the negative lobe, mirroring how start_idx
@@ -21694,6 +21719,27 @@ def render_biodex_test_tab():
                                     continue
 
                                 group_uses_time_axis = "rel_time_s" in group_mean_df.columns
+
+                                # External Phase View gets re-zeroed at each rep's own
+                                # internal/external crossing instead of the 10 Nm ascent
+                                # threshold -- the two points come from different, unrelated
+                                # moments in the rep, so lining reps up on the threshold and
+                                # then just trimming to the external half leaves that trimmed
+                                # curve starting at whatever offset each rep happened to reach
+                                # the crossing at, not at a shared 0. Re-aligning at the
+                                # crossing itself is what actually makes every rep's external
+                                # phase start together on screen.
+                                if (
+                                    rep_phase_view == "External"
+                                    and group_uses_time_axis
+                                    and any(r.get("crossing_time") is not None for r in group_reps)
+                                ):
+                                    group_reps_long_df, group_mean_df, group_metadata = build_time_aligned_curve(
+                                        group_reps, zero_time_key="crossing_time",
+                                    )
+                                    if group_mean_df.empty:
+                                        continue
+
                                 group_x_col = "rel_time_s" if group_uses_time_axis else "movement_pct"
                                 group_fig_used_time_axis = group_fig_used_time_axis or group_uses_time_axis
 
