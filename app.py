@@ -21575,12 +21575,6 @@ def render_biodex_test_tab():
                         )
                         if fatigue_df is not None:
                             st.markdown("#### Fatigue Trend by Rep")
-                            st.caption(
-                                "Per-rep metrics plotted against rep number instead of the landmark-aligned "
-                                "0-100% axis, so a fatigue-driven trend (declining peak torque, lengthening "
-                                "duration, slowing time to peak) shows up as a slope across reps rather than "
-                                "being time-normalized away."
-                            )
                             fatigue_metric = st.selectbox(
                                 "Metric",
                                 options=fatigue_metric_cols,
@@ -21998,12 +21992,6 @@ def render_biodex_test_tab():
                         )
                         if fatigue_df is not None:
                             st.markdown("#### Fatigue Trend by Rep")
-                            st.caption(
-                                "Per-rep metrics plotted against rep number instead of the landmark-aligned "
-                                "0-100% axis, so a fatigue-driven trend (declining peak torque, lengthening "
-                                "duration, slowing time to peak) shows up as a slope across reps rather than "
-                                "being time-normalized away."
-                            )
                             fatigue_metric = st.selectbox(
                                 "Metric",
                                 options=fatigue_metric_cols,
