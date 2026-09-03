@@ -3270,21 +3270,46 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
 
     internal_peak_torque_nm = float(internal_segment[internal_peak_local_idx])
     external_peak_torque_nm = float(external_segment[external_peak_local_idx])
+    internal_time_to_peak_s = float(time_values[internal_peak_idx] - time_values[start_idx])
+    external_time_to_peak_s = float(time_values[external_peak_idx] - external_phase_start_time)
+
     # ER/IR ratio: external (ER) strength as a fraction of internal (IR) strength — the
-    # standard clinical convention for rotator-cuff strength ratios.
+    # standard clinical convention for rotator-cuff strength ratios. Peak-torque-based,
+    # so it's a single-instant snapshot — see the AUC-based ratio below for a
+    # whole-phase-impulse version that's less sensitive to one noisy sample.
     er_ir_ratio = abs(external_peak_torque_nm) / internal_peak_torque_nm if internal_peak_torque_nm > 0 else None
+    # Same ratio, but built from total impulse (AUC) across each phase instead of its
+    # single peak sample — more robust than the peak-based ratio, and can genuinely
+    # diverge from it (e.g. a rep with a sharp but brief internal spike vs. one with a
+    # lower but sustained contraction can have similar peaks but different AUC ratios).
+    auc_er_ir_ratio = (
+        abs(external["auc_nm_s"]) / internal["auc_nm_s"] if internal["auc_nm_s"] > 0 else None
+    )
+    # Rate of Torque Development: peak torque divided by the time it took to get there.
+    # A common strength/power-assessment metric, and often more sensitive to fatigue or
+    # neuromuscular readiness than peak torque alone — two reps can reach the same peak
+    # at very different speeds, and RTD is what captures that difference.
+    internal_rtd_nm_s = (
+        internal_peak_torque_nm / internal_time_to_peak_s if internal_time_to_peak_s > 0 else None
+    )
+    external_rtd_nm_s = (
+        abs(external_peak_torque_nm) / external_time_to_peak_s if external_time_to_peak_s > 0 else None
+    )
 
     return {
         "rep_number": rep_info["rep_number"],
         "internal_auc_nm_s": internal["auc_nm_s"],
         "internal_duration_s": internal["phase_duration_s"],
-        "internal_time_to_peak_s": float(time_values[internal_peak_idx] - time_values[start_idx]),
+        "internal_time_to_peak_s": internal_time_to_peak_s,
         "internal_peak_torque_nm": internal_peak_torque_nm,
+        "internal_rtd_nm_s": internal_rtd_nm_s,
         "external_auc_nm_s": external["auc_nm_s"],
         "external_duration_s": external["phase_duration_s"],
-        "external_time_to_peak_s": float(time_values[external_peak_idx] - external_phase_start_time),
+        "external_time_to_peak_s": external_time_to_peak_s,
         "external_peak_torque_nm": external_peak_torque_nm,
+        "external_rtd_nm_s": external_rtd_nm_s,
         "er_ir_ratio": er_ir_ratio,
+        "auc_er_ir_ratio": auc_er_ir_ratio,
     }
 
 def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, rep_number=None):
@@ -3297,7 +3322,9 @@ def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, r
 
     IR/ER Torque are each the single overall peak within their phase (see
     compute_biodex_conditioning_rep_auc) rather than two separate internal-rotation
-    sub-peaks — reporting one number per phase.
+    sub-peaks — reporting one number per phase. RTD (Rate of Torque Development) is
+    that peak divided by its own time to peak — how fast torque developed, not just how
+    high it got, which is often more sensitive to fatigue than peak torque alone.
     """
     row = dict(meta)
     row["Bodyweight (kg)"] = round(bodyweight_kg, 1) if bodyweight_kg else None
@@ -3312,12 +3339,16 @@ def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, r
         if bodyweight_kg:
             row[f"{prefix}IR Torque (Nm/kg)"] = ir / bodyweight_kg
         row[f"{prefix}Internal Time to Peak (s)"] = float(np.mean([r["internal_time_to_peak_s"] for r in auc_results]))
+        internal_rtd_values = [r["internal_rtd_nm_s"] for r in auc_results if r["internal_rtd_nm_s"] is not None]
+        row[f"{prefix}Internal RTD (Nm/s)"] = float(np.mean(internal_rtd_values)) if internal_rtd_values else None
     if phase_view in ("Full", "External"):
         er = float(np.mean([r["external_peak_torque_nm"] for r in auc_results]))
         row[f"{prefix}ER Torque{unit_suffix}"] = er
         if bodyweight_kg:
             row[f"{prefix}ER Torque (Nm/kg)"] = er / bodyweight_kg
         row[f"{prefix}External Time to Peak (s)"] = float(np.mean([r["external_time_to_peak_s"] for r in auc_results]))
+        external_rtd_values = [r["external_rtd_nm_s"] for r in auc_results if r["external_rtd_nm_s"] is not None]
+        row[f"{prefix}External RTD (Nm/s)"] = float(np.mean(external_rtd_values)) if external_rtd_values else None
     if phase_view == "Full":
         ratio_values = [r["er_ir_ratio"] for r in auc_results if r["er_ir_ratio"] is not None]
         row[f"{prefix}ER/IR Ratio"] = float(np.mean(ratio_values)) if ratio_values else None
@@ -3327,7 +3358,10 @@ def build_biodex_auc_row(meta, auc_results, bodyweight_kg, phase_view, rep_numbe
     """One AUC table row, averaged across `auc_results` (or a single rep's values when
     `rep_number` is given). Only includes internal-phase columns when phase_view is "Full"
     or "Internal", external-phase columns when "Full" or "External". Time to peak and the
-    ER/IR ratio live on the Peak Torque table instead, so they aren't repeated here.
+    peak-torque-based ER/IR ratio live on the Peak Torque table instead, so they aren't
+    repeated here — but an AUC-based ER/IR Ratio is included for "Full", since it's a
+    whole-phase-impulse variant of that ratio (less sensitive to one noisy sample than
+    the peak-based version) rather than a peak-torque statistic.
     """
     row = dict(meta)
     row["Bodyweight (kg)"] = round(bodyweight_kg, 1) if bodyweight_kg else None
@@ -3347,6 +3381,9 @@ def build_biodex_auc_row(meta, auc_results, bodyweight_kg, phase_view, rep_numbe
         row[f"{prefix}External Duration (s)"] = float(np.mean([r["external_duration_s"] for r in auc_results]))
         if bodyweight_kg:
             row[f"{prefix}External AUC (Nm·s/kg)"] = external_auc / bodyweight_kg
+    if phase_view == "Full":
+        auc_ratio_values = [r["auc_er_ir_ratio"] for r in auc_results if r["auc_er_ir_ratio"] is not None]
+        row[f"{prefix}AUC ER/IR Ratio"] = float(np.mean(auc_ratio_values)) if auc_ratio_values else None
     return row
 
 def prepare_biodex_fatigue_trend_data(peak_torque_rows, auc_rows, series_col="Athlete"):
@@ -3392,8 +3429,9 @@ def prepare_biodex_fatigue_trend_data(peak_torque_rows, auc_rows, series_col="At
 
     meta_cols = {"Athlete", "Session Date", "Group", "Bodyweight (kg)", "Rep"}
     metric_priority = [
-        "IR Torque (Nm)", "ER Torque (Nm)", "ER/IR Ratio",
+        "IR Torque (Nm)", "ER Torque (Nm)", "ER/IR Ratio", "AUC ER/IR Ratio",
         "Internal Time to Peak (s)", "External Time to Peak (s)",
+        "Internal RTD (Nm/s)", "External RTD (Nm/s)",
         "Internal AUC (Nm·s)", "External AUC (Nm·s)",
         "Internal Duration (s)", "External Duration (s)",
     ]
