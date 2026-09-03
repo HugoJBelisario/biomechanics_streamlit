@@ -3349,6 +3349,102 @@ def build_biodex_auc_row(meta, auc_results, bodyweight_kg, phase_view, rep_numbe
             row[f"{prefix}External AUC (Nm·s/kg)"] = external_auc / bodyweight_kg
     return row
 
+def build_biodex_fatigue_trend_figure(peak_torque_rows, auc_rows, series_color_map=None):
+    """Per-rep metric trend chart (rep number on x) for spotting fatigue within a session.
+
+    The landmark-aligned mean-curve overlay (torque vs. movement-cycle %) is built for
+    shape/quality comparison — it warps every rep onto the same 0-100% axis, which is
+    exactly the wrong tool for fatigue: if a rep's ascent slows or its cycle lengthens
+    as a set goes on, the warp stretches that away instead of showing it. This chart
+    plots the underlying per-rep scalars (already computed for the Peak Torque/AUC
+    tables) directly against rep number instead, so a fatigue-driven trend shows up as
+    a slope across reps rather than being normalized out of the picture.
+
+    `peak_torque_rows`/`auc_rows` are the same per-rep dict lists build_biodex_peak_torque_row/
+    build_biodex_auc_row produce (rep_number given), keyed by whatever columns the current
+    Phase View leaves in — only columns actually present are plotted, so this adapts to
+    Full/Internal/External automatically. One subplot per metric; one line per
+    (Athlete, Session Date) series, colored via `series_color_map` when given.
+
+    Returns None if there's nothing to plot (fewer than 2 reps for every series, or no
+    recognized metric columns).
+    """
+    combined_rows = []
+    peak_by_key = {}
+    for row in peak_torque_rows or []:
+        key = (row.get("Athlete"), row.get("Session Date"), row.get("Rep"))
+        peak_by_key[key] = row
+    for row in auc_rows or []:
+        key = (row.get("Athlete"), row.get("Session Date"), row.get("Rep"))
+        merged = dict(peak_by_key.get(key, {}))
+        merged.update(row)
+        combined_rows.append(merged)
+    if not combined_rows:
+        combined_rows = list(peak_by_key.values())
+    if not combined_rows:
+        return None
+
+    df = pd.DataFrame(combined_rows)
+    if "Rep" not in df.columns:
+        return None
+
+    meta_cols = {"Athlete", "Session Date", "Bodyweight (kg)", "Rep"}
+    metric_priority = [
+        "IR Torque (Nm)", "ER Torque (Nm)", "ER/IR Ratio",
+        "Internal Time to Peak (s)", "External Time to Peak (s)",
+        "Internal AUC (Nm·s)", "External AUC (Nm·s)",
+        "Internal Duration (s)", "External Duration (s)",
+    ]
+    metric_cols = [col for col in metric_priority if col in df.columns]
+    metric_cols += [
+        col for col in df.columns
+        if col not in meta_cols and col not in metric_cols and not col.endswith("(Nm/kg)")
+        and not col.endswith("(Nm·s/kg)")
+    ]
+    if not metric_cols:
+        return None
+
+    df["__series__"] = df["Athlete"].astype(str) + " - " + df["Session Date"].astype(str)
+    series_names = sorted(df["__series__"].unique())
+    if df.groupby("__series__")["Rep"].nunique().max() < 2:
+        return None
+
+    n_cols = 2
+    n_rows = int(np.ceil(len(metric_cols) / n_cols))
+    fig = make_subplots(
+        rows=n_rows, cols=n_cols,
+        subplot_titles=metric_cols,
+        horizontal_spacing=0.08, vertical_spacing=0.12,
+    )
+    for metric_idx, metric_col in enumerate(metric_cols):
+        row_pos = metric_idx // n_cols + 1
+        col_pos = metric_idx % n_cols + 1
+        for series_name in series_names:
+            series_df = df[df["__series__"] == series_name].sort_values("Rep")
+            color = (series_color_map or {}).get(series_name)
+            fig.add_trace(
+                go.Scatter(
+                    x=series_df["Rep"],
+                    y=series_df[metric_col],
+                    mode="lines+markers",
+                    name=series_name,
+                    legendgroup=series_name,
+                    showlegend=(metric_idx == 0),
+                    line=dict(color=color) if color else {},
+                    hovertemplate=f"{series_name}<br>Rep %{{x}}: %{{y:.2f}}<extra></extra>",
+                ),
+                row=row_pos, col=col_pos,
+            )
+        fig.update_xaxes(title_text="Rep", row=row_pos, col=col_pos, dtick=1)
+
+    fig.update_layout(
+        hoverlabel=dict(namelength=-1),
+        height=320 * n_rows,
+        legend=dict(orientation="h", yanchor="top", y=-0.08, xanchor="center", x=0.5),
+        margin=dict(t=60),
+    )
+    return fig
+
 def auto_distribute_biodex_rep_numbers(rep_numbers, num_groups, group_size):
     """Evenly space `num_groups` windows of `group_size` reps across an ordered rep-number list.
 
@@ -20969,6 +21065,16 @@ def render_biodex_test_tab():
                                 use_container_width=True,
                                 hide_index=True,
                             )
+                        fatigue_fig = build_biodex_fatigue_trend_figure(session_peak_torque_rows, session_auc_rows)
+                        if fatigue_fig is not None:
+                            st.markdown("#### Fatigue Trend by Rep")
+                            st.caption(
+                                "Per-rep metrics plotted against rep number instead of the landmark-aligned "
+                                "0-100% axis, so a fatigue-driven trend (declining peak torque, lengthening "
+                                "duration, slowing time to peak) shows up as a slope across reps rather than "
+                                "being time-normalized away."
+                            )
+                            st.plotly_chart(fatigue_fig, use_container_width=True)
                     else:
                         if session_peak_torque_rows:
                             st.markdown("#### Peak Torque by Session")
