@@ -3071,6 +3071,7 @@ def build_time_aligned_curve(valid_reps, time_col="Elapsed Seconds", value_col="
         }))
         aligned_rep_metadata.append({
             "rep_number": rep_info["rep_number"],
+            "landmark_kinds": rep_info.get("landmark_kinds", ["ascent"]),
             "threshold_time": rep_info["threshold_time"],
             "start_time": float(rel_time.min()),
             "end_time": float(rel_time.max()),
@@ -20816,18 +20817,7 @@ def render_biodex_test_tab():
                                 line=dict(width=4),
                                 name="Mean Torque",
                             ))
-                            if use_time_axis:
-                                preview_avg_fig.add_vline(
-                                    x=0.0,
-                                    line_width=2,
-                                    line_dash="dot",
-                                    line_color="rgba(255,255,255,0.45)",
-                                )
-                                preview_avg_fig.add_annotation(
-                                    x=0.0, y=1.03, xref="x", yref="paper",
-                                    text="10 Nm", showarrow=False, font=dict(size=11),
-                                )
-                            else:
+                            if not use_time_axis:
                                 for boundary_pct, label in zip(
                                     plot_mean_df.attrs.get("landmark_boundary_pct", []),
                                     plot_mean_df.attrs.get("landmark_labels", []),
@@ -20850,9 +20840,7 @@ def render_biodex_test_tab():
                             preview_avg_fig.update_layout(
                                 hoverlabel=dict(namelength=-1),
                                 title=plot_mean_df.attrs.get("title", "Landmark-Aligned Average Torque Curve Across Detected Reps"),
-                                xaxis_title=(
-                                    "Time Relative to 10 Nm Crossing (s)" if use_time_axis else "Movement Cycle (%)"
-                                ),
+                                xaxis_title="Time (s)" if use_time_axis else "Movement Cycle (%)",
                                 yaxis_title="Torque_Nm",
                                 height=500,
                                 legend=dict(
@@ -21466,17 +21454,6 @@ def render_biodex_test_tab():
                     if not compare_fig.data:
                         st.warning("Selected sessions do not have data to plot for this display mode.")
                     else:
-                        if compare_display_mode == "Individual Reps" and compare_used_time_axis:
-                            compare_fig.add_vline(
-                                x=0.0,
-                                line_width=2,
-                                line_dash="dot",
-                                line_color="rgba(255,255,255,0.45)",
-                            )
-                            compare_fig.add_annotation(
-                                x=0.0, y=1.03, xref="x", yref="paper",
-                                text="10 Nm", showarrow=False,
-                            )
                         compare_fig.update_layout(
                             hoverlabel=dict(namelength=-1),
                             title=(
@@ -21485,7 +21462,7 @@ def render_biodex_test_tab():
                                 else "Saved Landmark-Aligned Biodex Mean Curves"
                             ),
                             xaxis_title=(
-                                "Time Relative to 10 Nm Crossing (s)"
+                                "Time (s)"
                                 if compare_display_mode == "Individual Reps" and compare_used_time_axis
                                 else "Movement Cycle (%)"
                             ),
@@ -21655,6 +21632,7 @@ def render_biodex_test_tab():
                         group_fig = go.Figure()
                         group_peak_torque_rows = []
                         group_auc_rows = []
+                        group_fig_used_time_axis = False
                         rep_peak_torque_rows = []
                         rep_auc_rows = []
 
@@ -21711,64 +21689,72 @@ def render_biodex_test_tab():
                                 if len(group_reps) < 1:
                                     continue
 
-                                group_reps_long_df, group_mean_df, group_metadata = build_landmark_aligned_curve(group_reps)
+                                group_reps_long_df, group_mean_df, group_metadata = build_biodex_aligned_curve_auto(group_reps)
                                 if group_mean_df.empty:
                                     continue
+
+                                group_uses_time_axis = "rel_time_s" in group_mean_df.columns
+                                group_x_col = "rel_time_s" if group_uses_time_axis else "movement_pct"
+                                group_fig_used_time_axis = group_fig_used_time_axis or group_uses_time_axis
 
                                 # Phase View: trim what's plotted to the internal-rotation
                                 # (positive) or external-rotation (negative) portion of the
                                 # cycle, split at the same positive-to-negative crossing the
-                                # AUC tables use — computed here on the group mean curve
-                                # since that's already on the shared 0-100% axis being plotted.
+                                # AUC tables use — computed here on the group mean curve, on
+                                # whichever axis (time or movement-cycle %) it's already on.
                                 plot_group_mean_df = group_mean_df
                                 plot_group_reps_long_df = group_reps_long_df
                                 if rep_phase_view != "Full" and group_metadata:
                                     boundary_pct = group_mean_df.attrs.get("landmark_boundary_pct", [])
                                     landmark_kinds = group_metadata[0]["landmark_kinds"]
-                                    crossing_pct = None
-                                    if landmark_kinds == ["ascent"]:
-                                        # Current scheme: the pinned landmark is an early
+                                    x_values = group_mean_df[group_x_col].to_numpy()
+                                    crossing_x = None
+                                    if group_uses_time_axis:
+                                        # Time-aligned reps (current conditioning scheme):
+                                        # find the crossing directly on the group's own
+                                        # real-time axis.
+                                        crossing_x = find_biodex_internal_external_crossing_pct(
+                                            x_values,
+                                            group_mean_df["mean_torque_nm"].to_numpy(),
+                                            float(x_values.min()), float(x_values.max()),
+                                        )
+                                    elif landmark_kinds == ["ascent"]:
+                                        # Movement_pct scheme: the pinned landmark is an early
                                         # ascent-threshold point, not the crossing itself, so
                                         # there's no shared-axis boundary to read directly —
                                         # search the mean curve for the crossing instead.
-                                        crossing_pct = find_biodex_internal_external_crossing_pct(
-                                            group_mean_df["movement_pct"].to_numpy(),
-                                            group_mean_df["mean_torque_nm"].to_numpy(),
-                                            0.0, 100.0,
+                                        crossing_x = find_biodex_internal_external_crossing_pct(
+                                            x_values, group_mean_df["mean_torque_nm"].to_numpy(), 0.0, 100.0,
                                         )
                                     elif landmark_kinds == ["crossing"] and len(boundary_pct) == 1:
                                         # Runs saved when the crossing itself was the pinned
                                         # interior landmark: already on the shared axis.
-                                        crossing_pct = boundary_pct[0]
+                                        crossing_x = boundary_pct[0]
                                     elif landmark_kinds == ["crossing"]:
                                         # Runs saved during the brief start/end-only alignment
                                         # scheme (crossing detected but not pinned): search the
                                         # mean curve directly instead.
-                                        crossing_pct = find_biodex_internal_external_crossing_pct(
-                                            group_mean_df["movement_pct"].to_numpy(),
-                                            group_mean_df["mean_torque_nm"].to_numpy(),
-                                            0.0, 100.0,
+                                        crossing_x = find_biodex_internal_external_crossing_pct(
+                                            x_values, group_mean_df["mean_torque_nm"].to_numpy(), 0.0, 100.0,
                                         )
                                     elif landmark_kinds == ["pos", "pos", "neg"] and len(boundary_pct) == 3:
                                         # Runs saved before the crossing-only alignment change
                                         # still carry the old three-landmark scheme; fall back
                                         # to searching for the crossing on the mean curve.
-                                        crossing_pct = find_biodex_internal_external_crossing_pct(
-                                            group_mean_df["movement_pct"].to_numpy(),
-                                            group_mean_df["mean_torque_nm"].to_numpy(),
-                                            boundary_pct[1],
-                                            boundary_pct[2],
+                                        crossing_x = find_biodex_internal_external_crossing_pct(
+                                            x_values, group_mean_df["mean_torque_nm"].to_numpy(),
+                                            boundary_pct[1], boundary_pct[2],
                                         )
-                                    if crossing_pct is not None:
+                                    if crossing_x is not None:
                                         if rep_phase_view == "Internal":
-                                            plot_group_mean_df = group_mean_df[group_mean_df["movement_pct"] <= crossing_pct]
+                                            plot_group_mean_df = group_mean_df[group_mean_df[group_x_col] <= crossing_x]
                                             plot_group_reps_long_df = group_reps_long_df[
-                                                group_reps_long_df["movement_pct"] <= crossing_pct
+                                                group_reps_long_df[group_x_col] <= crossing_x
                                             ]
                                         else:
-                                            plot_group_mean_df = group_mean_df[group_mean_df["movement_pct"] >= crossing_pct]
+                                            plot_group_mean_df = group_mean_df[group_mean_df[group_x_col] >= crossing_x]
                                             plot_group_reps_long_df = group_reps_long_df[
-                                                group_reps_long_df["movement_pct"] >= crossing_pct
+                                                group_reps_long_df[group_x_col] >= crossing_x
                                             ]
                                 if plot_group_mean_df.empty:
                                     continue
@@ -21783,12 +21769,14 @@ def render_biodex_test_tab():
                                     trace_color = player_color
                                     dash = group_dash_sequence[position % len(group_dash_sequence)]
 
+                                group_hover_x_fmt = "%{x:.2f}s" if group_uses_time_axis else "%{x:.0f}%"
+
                                 if rep_group_display_mode == "Individual Reps":
                                     group_rep_numbers = sorted(plot_group_reps_long_df["rep_number"].unique())
                                     for i, rep_number in enumerate(group_rep_numbers):
                                         rep_curve = plot_group_reps_long_df[plot_group_reps_long_df["rep_number"] == rep_number]
                                         group_fig.add_trace(go.Scatter(
-                                            x=rep_curve["movement_pct"],
+                                            x=rep_curve[group_x_col],
                                             y=rep_curve["torque_nm"],
                                             mode="lines",
                                             line=dict(width=1.25, color=trace_color, dash=dash),
@@ -21798,12 +21786,12 @@ def render_biodex_test_tab():
                                             name=trace_name,
                                             hovertemplate=(
                                                 f"{trace_name} — Rep {rep_number}"
-                                                "<br>%{x:.0f}%: %{y:.1f} Nm<extra></extra>"
+                                                f"<br>{group_hover_x_fmt}: %{{y:.1f}} Nm<extra></extra>"
                                             ),
                                         ))
                                 else:
                                     group_fig.add_trace(go.Scatter(
-                                        x=plot_group_mean_df["movement_pct"],
+                                        x=plot_group_mean_df[group_x_col],
                                         y=plot_group_mean_df["mean_torque_nm"],
                                         mode="lines",
                                         line=dict(width=4, color=trace_color, dash=dash),
@@ -21811,7 +21799,7 @@ def render_biodex_test_tab():
                                         legendgroup=trace_legendgroup,
                                     ))
                                     group_fig.add_trace(go.Scatter(
-                                        x=plot_group_mean_df["movement_pct"],
+                                        x=plot_group_mean_df[group_x_col],
                                         y=plot_group_mean_df["upper_band"],
                                         mode="lines",
                                         line=dict(width=0),
@@ -21820,7 +21808,7 @@ def render_biodex_test_tab():
                                         hoverinfo="skip",
                                     ))
                                     group_fig.add_trace(go.Scatter(
-                                        x=plot_group_mean_df["movement_pct"],
+                                        x=plot_group_mean_df[group_x_col],
                                         y=plot_group_mean_df["lower_band"],
                                         mode="lines",
                                         line=dict(width=0, color=trace_color),
@@ -21867,7 +21855,7 @@ def render_biodex_test_tab():
                                     if rep_group_display_mode == "Individual Reps"
                                     else f"Rep Group Comparison — {session_titles}{phase_title_suffix}"
                                 ),
-                                xaxis_title="Movement Cycle (%)",
+                                xaxis_title="Time (s)" if group_fig_used_time_axis else "Movement Cycle (%)",
                                 yaxis_title="Torque",
                                 height=550,
                                 legend=dict(
@@ -21957,13 +21945,19 @@ registration of the rise itself. The crossing is still found independently, pure
 splitting internal from external when computing AUC/peak-torque values below — it just
 no longer drives alignment.
 
-The aligned-curve chart itself goes a step further: instead of that 0-100% stretch, it
-plots each rep on a real-time axis zeroed at its own 10 Nm crossing, with no per-rep
-time-warping. That's a meaningfully different guarantee than the % axis gives — every
-rep's curve actually passes through the same point at the same instant, rather than
-merely at the same normalized percentage of its own (possibly different) duration. The
-tradeoff is that reps drift apart again away from that instant, since nothing keeps
-their *durations* in sync once time isn't being stretched to fit a shared 0-100% span.
+The aligned-curve charts (Upload & Process preview, Session Comparison, and Custom
+Groups) go a step further: instead of that 0-100% stretch, they plot each rep on a
+real-time axis zeroed at its own 10 Nm crossing, with no per-rep time-warping. Whenever
+you see a chart labeled **Time (s)** rather than **Movement Cycle (%)**, that's this
+scheme — 0 on the x-axis is the 10 Nm crossing, not the rep's start. That's a
+meaningfully different guarantee than the % axis gives — every rep's curve actually
+passes through the same point at the same instant, rather than merely at the same
+normalized percentage of its own (possibly different) duration. The tradeoff is that
+reps drift apart again away from that instant, since nothing keeps their *durations* in
+sync once time isn't being stretched to fit a shared 0-100% span. The Internal/External
+Phase View split still works the same way on this axis — it finds the same
+internal/external crossing on the plotted curve, just expressed in seconds instead of a
+percentage.
 
 That torque minimum at rep start is a real, physically meaningful value, not just
 noise around zero: the dynamometer handle's own weight loads the sensor via gravity
