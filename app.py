@@ -21472,26 +21472,6 @@ def render_biodex_test_tab():
                                     use_container_width=True,
                                     hide_index=True,
                                 )
-                            fatigue_df, fatigue_metric_cols = prepare_biodex_fatigue_trend_data(
-                                rep_peak_torque_rows, rep_auc_rows, series_col=["Athlete", "Session Date", "Group"],
-                            )
-                            if fatigue_df is not None:
-                                st.markdown("#### Fatigue Trend by Rep")
-                                st.caption(
-                                    "Per-rep metrics plotted against rep number instead of the landmark-aligned "
-                                    "0-100% axis, so a fatigue-driven trend (declining peak torque, lengthening "
-                                    "duration, slowing time to peak) shows up as a slope across reps rather than "
-                                    "being time-normalized away."
-                                )
-                                fatigue_metric = st.selectbox(
-                                    "Metric",
-                                    options=fatigue_metric_cols,
-                                    key="group_fatigue_metric",
-                                )
-                                st.plotly_chart(
-                                    build_biodex_fatigue_trend_figure(fatigue_df, fatigue_metric),
-                                    use_container_width=True,
-                                )
                         else:
                             if group_peak_torque_rows:
                                 st.markdown("#### Peak Torque by Group")
@@ -21499,6 +21479,88 @@ def render_biodex_test_tab():
                             if group_auc_rows:
                                 st.markdown("#### AUC by Group")
                                 st.dataframe(pd.DataFrame(group_auc_rows), use_container_width=True, hide_index=True)
+
+                        # Built from the per-rep rows regardless of Grouped/Individual Reps
+                        # display mode — grouping only changes what the tables/curve above
+                        # show, but every rep's own metrics are always computed, so the
+                        # fatigue trend is available either way.
+                        fatigue_df, fatigue_metric_cols = prepare_biodex_fatigue_trend_data(
+                            rep_peak_torque_rows, rep_auc_rows, series_col=["Athlete", "Session Date", "Group"],
+                        )
+                        if fatigue_df is not None:
+                            st.markdown("#### Fatigue Trend by Rep")
+                            st.caption(
+                                "Per-rep metrics plotted against rep number instead of the landmark-aligned "
+                                "0-100% axis, so a fatigue-driven trend (declining peak torque, lengthening "
+                                "duration, slowing time to peak) shows up as a slope across reps rather than "
+                                "being time-normalized away."
+                            )
+                            fatigue_metric = st.selectbox(
+                                "Metric",
+                                options=fatigue_metric_cols,
+                                key="group_fatigue_metric",
+                            )
+                            st.plotly_chart(
+                                build_biodex_fatigue_trend_figure(fatigue_df, fatigue_metric),
+                                use_container_width=True,
+                            )
+
+        # Below every Comparison Mode / Display Mode / Phase View combination, not
+        # inside any of the branches above, so it's always visible regardless of
+        # which filters or modes are currently selected.
+        with st.expander("Metric Glossary"):
+            st.markdown(
+                """
+Every rep is split into two phases at the internal/external zero crossing — the point
+where torque flips from positive (internal rotation) to negative (external rotation).
+**Rep start** is the local minimum of raw torque just before the contraction begins
+(the true quiescent baseline, not just where torque departs from noise); **rep end** is
+where Position_Deg returns to that same starting value after the external-rotation
+descent. All of the metrics below are computed per rep from those three points, then
+averaged across reps for a "Mean" row.
+
+**IR Torque / ER Torque (Nm)** — the single highest torque sample in the internal phase
+(IR) and the single lowest (most negative) torque sample in the external phase (ER).
+Raw peak readings, not smoothed or averaged within the rep.
+
+**IR Torque / ER Torque (Nm/kg)** — the above divided by the athlete's bodyweight in kg
+(looked up from the `takes` table, nearest date to the session), for cross-athlete
+comparison.
+
+**ER/IR Ratio** — `|ER Torque| / IR Torque`, the standard clinical convention for
+rotator-cuff strength ratios. A single-instant snapshot, since it's built from each
+phase's peak sample.
+
+**AUC ER/IR Ratio** — the same ratio, but built from `|External AUC| / Internal AUC`
+(each phase's total impulse) instead of peak torque. Less sensitive to one noisy
+sample than the peak-based ratio, and can genuinely diverge from it — a sharp-but-brief
+contraction and a lower-but-sustained one can share a peak while differing in AUC.
+
+**Internal/External AUC (Nm·s)** — the trapezoidal integral of torque over time across
+each phase (angular impulse: how much torque was applied, sustained over how long — not
+just its peak height). Internal AUC comes out positive, External AUC negative, matching
+the sign of torque in each phase. The `(Nm·s/kg)` variants divide by bodyweight.
+
+**Internal/External Duration (s)** — the elapsed wall-clock time each phase's segment
+spans: crossing time minus start time (Internal), end time minus crossing time
+(External).
+
+**Internal/External Time to Peak (s)** — elapsed time from the phase's start (rep start
+for Internal, the crossing for External) to wherever that phase's peak torque sample
+actually occurred.
+
+**Internal/External RTD — Rate of Torque Development (Nm/s)** — peak torque divided by
+its own time to peak. A standard strength/power metric, and often more sensitive to
+fatigue or neuromuscular readiness than peak torque alone: two reps can reach the same
+peak at very different speeds, and RTD is what captures that difference.
+
+**Fatigue Trend by Rep** — the metrics above plotted against rep number instead of the
+landmark-aligned 0-100% movement-cycle axis used elsewhere on this page. The aligned
+curve overlay is built for shape/quality comparison and warps every rep onto the same
+axis, which hides exactly the kind of change (slower ascent, longer duration) that
+fatigue produces — this chart shows it directly as a slope across reps instead.
+                """
+            )
 
     with biodex_test_tab3:
         st.markdown("### Review Reps")
