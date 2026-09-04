@@ -21414,17 +21414,35 @@ def render_biodex_test_tab():
                             )
                             row_meta = {"Athlete": session_row["athlete_name"], "Session Date": session_date_str}
 
+                            # Phase View trims this saved mean curve the same way Custom
+                            # Groups and Individual Reps do -- the persisted curve is
+                            # always movement_pct-based (biodex_mean_curves has no
+                            # raw-time variant), so this always searches/trims on that
+                            # axis regardless of what the live-detection charts use.
+                            plot_curve_df = curve_df
+                            if session_phase_view != "Full":
+                                crossing_pct = find_biodex_internal_external_crossing_pct(
+                                    curve_df["movement_pct"].to_numpy(), curve_df["mean_torque_nm"].to_numpy(),
+                                    0.0, 100.0,
+                                )
+                                if session_phase_view == "Internal":
+                                    plot_curve_df = curve_df[curve_df["movement_pct"] <= crossing_pct]
+                                else:
+                                    plot_curve_df = curve_df[curve_df["movement_pct"] >= crossing_pct]
+                            if plot_curve_df.empty:
+                                continue
+
                             compare_fig.add_trace(go.Scatter(
-                                x=curve_df["movement_pct"],
-                                y=curve_df["mean_torque_nm"],
+                                x=plot_curve_df["movement_pct"],
+                                y=plot_curve_df["mean_torque_nm"],
                                 mode="lines",
                                 line=dict(width=4, color=color),
                                 name=label,
                                 legendgroup=label,
                             ))
                             compare_fig.add_trace(go.Scatter(
-                                x=curve_df["movement_pct"],
-                                y=curve_df["upper_band"],
+                                x=plot_curve_df["movement_pct"],
+                                y=plot_curve_df["upper_band"],
                                 mode="lines",
                                 line=dict(width=0),
                                 legendgroup=label,
@@ -21432,8 +21450,8 @@ def render_biodex_test_tab():
                                 hoverinfo="skip",
                             ))
                             compare_fig.add_trace(go.Scatter(
-                                x=curve_df["movement_pct"],
-                                y=curve_df["lower_band"],
+                                x=plot_curve_df["movement_pct"],
+                                y=plot_curve_df["lower_band"],
                                 mode="lines",
                                 line=dict(width=0, color=color),
                                 fill="tonexty",
@@ -21474,7 +21492,10 @@ def render_biodex_test_tab():
                                     + ("" if session_phase_view == "Full" else f" ({session_phase_view})")
                                 )
                                 if compare_display_mode == "Individual Reps"
-                                else "Saved Landmark-Aligned Biodex Mean Curves"
+                                else (
+                                    "Saved Landmark-Aligned Biodex Mean Curves"
+                                    + ("" if session_phase_view == "Full" else f" ({session_phase_view})")
+                                )
                             ),
                             xaxis_title=(
                                 "Time (s)"
