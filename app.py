@@ -21965,132 +21965,90 @@ def render_biodex_test_tab():
         # Below every Comparison Mode / Display Mode / Phase View combination, not
         # inside any of the branches above, so it's always visible regardless of
         # which filters or modes are currently selected.
-        with st.expander("Metric Glossary"):
+        biodex_metric_definitions = {
+            "Internal / External Crossing": (
+                "The point in a rep where torque flips from positive (internal rotation) "
+                "to negative (external rotation) — every rep is split into these two "
+                "phases at this crossing."
+            ),
+            "Rep Start / Rep End": (
+                "Start is found on torque (the resting dip just before the contraction "
+                "begins); end is found on Position_Deg (where the arm returns to its "
+                "starting angle) — each boundary uses whichever signal is more reliable "
+                "for that question."
+            ),
+            "Movement Cycle (%)": (
+                "The 0-100% axis some charts use, pinned at rep start, an early point in "
+                "the ascent, and rep end — not the crossing itself, which keeps the "
+                "ascent's shape tightly registered across reps."
+            ),
+            "Time (s)": (
+                "The real-time axis some charts use instead, zeroed at each rep's own "
+                "10 Nm crossing with no per-rep stretching, so every rep's curve passes "
+                "through that same instant together."
+            ),
+            "IR Torque / ER Torque (Nm)": (
+                "The single highest torque sample in the internal phase (IR) and the "
+                "lowest (most negative) in the external phase (ER) — raw peak readings. "
+                "IR Torque can be fragile on reps with two comparable-height peaks."
+            ),
+            "IR Torque / ER Torque (Nm/kg)": (
+                "The above divided by the athlete's bodyweight, looked up from their "
+                "nearest recorded weight to the session date."
+            ),
+            "ER/IR Ratio": (
+                "|ER Torque| ÷ IR Torque — the standard clinical rotator-cuff strength "
+                "ratio, built from each phase's peak sample."
+            ),
+            "AUC ER/IR Ratio": (
+                "The same ratio built from |External AUC| ÷ Internal AUC (each phase's "
+                "total impulse) instead of peak torque — less sensitive to one noisy "
+                "sample."
+            ),
+            "Internal / External AUC (Nm·s)": (
+                "The torque-time integral across each phase — total impulse, not just "
+                "peak height. Baseline-corrected so it reflects the athlete's own "
+                "applied torque, not the dynamometer handle's resting weight."
+            ),
+            "Internal / External Duration (s)": (
+                "The elapsed time each phase spans: crossing minus start time "
+                "(Internal), rep end minus crossing time (External)."
+            ),
+            "Internal Phase Fraction": (
+                "Internal Duration as a share of the whole rep (Internal ÷ [Internal + "
+                "External]) — a rising fraction means the reversal into external "
+                "rotation is happening later in the rep."
+            ),
+            "Internal / External Time to Peak (s)": (
+                "Elapsed time from the phase's start to wherever that phase's peak "
+                "torque sample actually occurred."
+            ),
+            "Internal / External RTD (Nm/s)": (
+                "Rate of Torque Development — peak torque divided by its own time to "
+                "peak. Often more sensitive to fatigue than peak torque alone, but "
+                "inherits IR Torque's fragility."
+            ),
+            "Baseline Torque (Nm)": (
+                "The per-rep resting torque subtracted before AUC integration — the "
+                "dynamometer handle's own weight, not noise. Should stay in a similar, "
+                "small negative range across a session."
+            ),
+            "Fatigue Trend by Rep": (
+                "Any metric above plotted against rep number instead of the aligned "
+                "axis, so a fatigue-driven trend (declining torque, lengthening "
+                "duration) shows as a slope across reps rather than being normalized "
+                "away."
+            ),
+        }
+        st.markdown("### Metric Glossary")
+        for term, definition in biodex_metric_definitions.items():
             st.markdown(
-                """
-Every rep is split into two phases at the internal/external zero crossing — the point
-where torque flips from positive (internal rotation) to negative (external rotation).
-**Rep start** and **rep end** are deliberately detected from two *different* signals,
-not the same one: start is found on **torque** (the local minimum right before the
-contraction begins), end is found on **Position_Deg** (where the arm's angle returns to
-that same starting value after the external-rotation descent). This isn't an
-inconsistency — torque is the cleaner signal for "did a contraction begin," while
-position is the cleaner signal for "did the arm actually come back to rest," so each
-boundary uses whichever channel is more reliable for that specific question. Because of
-this, Internal Duration and External Duration aren't measured with symmetric logic even
-though they look like a matched pair.
-
-The 0-100% movement-cycle axis used for tables below isn't pinned at the crossing,
-though — it's pinned at an earlier point: where the ascent first climbs through 10 Nm,
-pulled back by a small buffer so the pin sits a little before that threshold rather
-than exactly on it. An earlier version pinned the crossing itself, which kept phase
-*durations* consistent but let the ascent's own shape drift between reps that reached
-the crossing at different rates; pinning a point inside the ascent instead tightens
-registration of the rise itself. The crossing is still found independently, purely for
-splitting internal from external when computing AUC/peak-torque values below — it just
-no longer drives alignment.
-
-The aligned-curve charts (Upload & Process preview, Session Comparison, and Custom
-Groups) go a step further: instead of that 0-100% stretch, they plot each rep on a
-real-time axis zeroed at its own 10 Nm crossing, with no per-rep time-warping. Whenever
-you see a chart labeled **Time (s)** rather than **Movement Cycle (%)**, that's this
-scheme — 0 on the x-axis is the 10 Nm crossing, not the rep's start. That's a
-meaningfully different guarantee than the % axis gives — every rep's curve actually
-passes through the same point at the same instant, rather than merely at the same
-normalized percentage of its own (possibly different) duration. The tradeoff is that
-reps drift apart again away from that instant, since nothing keeps their *durations* in
-sync once time isn't being stretched to fit a shared 0-100% span. The Internal/External
-Phase View split still works the same way on this axis — it finds the same
-internal/external crossing on the plotted curve, just expressed in seconds instead of a
-percentage.
-
-That torque minimum at rep start is a real, physically meaningful value, not just
-noise around zero: the dynamometer handle's own weight loads the sensor via gravity
-whenever the athlete isn't actively pushing, so a small negative resting reading (a few
-Nm, not zero) is expected. To avoid one noisy single sample being mistaken for that
-resting level, the start index itself is chosen as the minimum of a short
-rolling-smoothed window rather than a single raw sample.
-
-All of the metrics below are computed per rep from the start/crossing/end points, then
-averaged across reps for a "Mean" row.
-
-**IR Torque / ER Torque (Nm)** — the single highest torque sample in the internal phase
-(IR) and the single lowest (most negative) torque sample in the external phase (ER).
-Raw peak readings, not smoothed or averaged within the rep. ⚠️ **IR Torque is landmark-
-fragile**: when a rep has two comparable-height internal peaks (a double contraction or
-a broad plateau), sample-level noise can flip which one `argmax` picks, moving this
-value by a large amount even though the underlying contraction barely changed. Treat an
-isolated jump in IR Torque with more skepticism than the equivalent ER Torque jump — ER
-Torque doesn't have this problem since the external phase only ever has one candidate
-trough.
-
-**IR Torque / ER Torque (Nm/kg)** — the above divided by the athlete's bodyweight in kg
-(looked up from the `takes` table, nearest date to the session — if the nearest record
-on file is a long way from the test date, e.g. months, these `/kg` columns are being
-normalized against a possibly-stale weight with no warning shown; treat them with more
-caution for older or infrequently-weighed athletes).
-
-**ER/IR Ratio** — `|ER Torque| / IR Torque`, the standard clinical convention for
-rotator-cuff strength ratios. A single-instant snapshot, since it's built from each
-phase's peak sample — inherits IR Torque's fragility above.
-
-**AUC ER/IR Ratio** — the same ratio, but built from `|External AUC| / Internal AUC`
-(each phase's total impulse) instead of peak torque. Less sensitive to one noisy
-sample than the peak-based ratio, and can genuinely diverge from it — a sharp-but-brief
-contraction and a lower-but-sustained one can share a peak while differing in AUC.
-
-**Internal/External AUC (Nm·s)** — the trapezoidal integral of torque over time across
-each phase (angular impulse: how much torque was applied, sustained over how long — not
-just its peak height). Internal AUC comes out positive, External AUC negative, matching
-the sign of torque in each phase. **Baseline-corrected**: each rep's own resting torque
-(averaged over a small window at that rep's start, not just one sample — see
-**Baseline Torque** below) is subtracted before integrating, so this measures the
-athlete's own applied torque rather than including the handle's constant gravitational
-contribution. Left uncorrected, that offset would get integrated across the whole phase
-duration and could look like a fake fatigue trend on the Fatigue Trend chart if it isn't
-perfectly constant across a session — this is why it's corrected here but IR/ER Torque
-above are intentionally left as raw, unadjusted sensor readings. The `(Nm·s/kg)`
-variants divide by bodyweight.
-
-**Internal/External Duration (s)** — the elapsed wall-clock time each phase's segment
-spans: crossing time minus start time (Internal), end time minus crossing time
-(External). External's end is the same Position_Deg-based rep boundary used for ROM
-and alignment (end_idx) — not a separate torque-based "settle" point. Two earlier
-attempts at a bespoke torque-only settle search each turned out fragile in their own
-way, so this now just uses the one boundary in the pipeline that's already validated:
-torque marks where the phase starts (the crossing), position marks where it ends.
-
-**Internal Phase Fraction** — Internal Duration as a share of the whole rep's duration
-(Internal ÷ [Internal + External]). The balance between the two phases, which the two
-duration columns shown separately don't make obvious — a rising fraction across a set
-means the reversal into external rotation is happening progressively later.
-
-**Internal/External Time to Peak (s)** — elapsed time from the phase's start (rep start
-for Internal, the crossing for External) to wherever that phase's peak torque sample
-actually occurred.
-
-**Internal/External RTD — Rate of Torque Development (Nm/s)** — peak torque divided by
-its own time to peak. A standard strength/power metric, and often more sensitive to
-fatigue or neuromuscular readiness than peak torque alone: two reps can reach the same
-peak at very different speeds, and RTD is what captures that difference. ⚠️ **Inherits
-IR Torque's fragility, worse**: if peak selection flips between two candidate peaks,
-both the numerator (torque) and denominator (time to reach it) shift at once, which can
-swing RTD by a large factor even when the contraction was nearly identical. This is the
-most fatigue-sensitive metric here by design, which is exactly why it's the one you can
-least afford to misread as physiology when it's actually landmark noise.
-
-**Baseline Torque (Nm)** — the per-rep resting torque value subtracted before AUC
-integration (see above), shown directly so it can be checked: it should sit in a
-similar (small, negative) range across every rep in a session. If it visibly drifts in
-one direction across the Fatigue Trend chart, that points at thermal or mechanical
-drift in the equipment rather than the athlete.
-
-**Fatigue Trend by Rep** — any of the metrics above plotted against rep number instead
-of the landmark-aligned 0-100% movement-cycle axis used elsewhere on this page. The
-aligned curve overlay is built for shape/quality comparison and warps every rep onto
-the same axis, which hides exactly the kind of change (slower ascent, longer duration)
-that fatigue produces — this chart shows it directly as a slope across reps instead.
-                """
+                (
+                    f"<div style='font-size:1.15rem; line-height:1.6; margin:0.35rem 0 0.9rem 0;'>"
+                    f"<strong>{term}:</strong> {definition}"
+                    f"</div>"
+                ),
+                unsafe_allow_html=True,
             )
 
     with biodex_test_tab3:
