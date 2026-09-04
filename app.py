@@ -18364,12 +18364,27 @@ def render_biodex_test_tab():
                 detected_df, _detected_numeric_columns = prepare_biodex_dataframe(biodex_upload_files_state[0])
                 if not detected_df.empty:
                     detected_biodex_start_datetime = pd.to_datetime(detected_df["Time"].iloc[0], errors="coerce")
+                    # A "Time" column that isn't actually a timestamp (e.g. plain
+                    # elapsed seconds from file start) can still parse "successfully"
+                    # here -- pd.to_datetime treats a bare number as a Unix offset, so
+                    # a small value silently becomes a bogus 1970-01-01 datetime
+                    # instead of NaT. st.date_input only accepts 1990-01-01 through
+                    # 2100-12-31, so trusting that value crashes the widget outright.
+                    # Validate the range and treat anything outside it the same as a
+                    # failed parse (NaT) -- fall through to the manual date/time
+                    # inputs instead of pre-filling garbage.
+                    if pd.notna(detected_biodex_start_datetime) and not (
+                        datetime(1990, 1, 1) <= detected_biodex_start_datetime <= datetime(2100, 12, 31)
+                    ):
+                        detected_biodex_start_datetime = pd.NaT
                     if pd.notna(detected_biodex_start_datetime):
                         detected_biodex_start_datetime = detected_biodex_start_datetime.to_pydatetime()
                         st.session_state["biodex_test_upload_date"] = detected_biodex_start_datetime.date()
                         st.session_state["biodex_test_upload_time"] = detected_biodex_start_datetime.time().replace(microsecond=0)
                         st.session_state["biodex_test_detected_datetime"] = detected_biodex_start_datetime.isoformat()
                         st.session_state["biodex_test_use_file_datetime"] = True
+                    else:
+                        detected_biodex_start_datetime = None
             except Exception:
                 st.session_state.pop("biodex_test_detected_datetime", None)
             finally:
@@ -18444,6 +18459,19 @@ def render_biodex_test_tab():
                     or selected_biodex_test_protocol == "reactive_eccentric"
                 ),
             )
+            # A stale out-of-range value can already be sitting in session_state from
+            # before the detection guard above existed (or from any other path that
+            # wrote to this key) -- st.date_input reads that value before this line
+            # even runs, so it would still crash without clamping it here too.
+            _stale_upload_date = st.session_state.get("biodex_test_upload_date")
+            if _stale_upload_date is not None:
+                try:
+                    _stale_upload_ts = pd.Timestamp(_stale_upload_date)
+                    _stale_in_range = pd.Timestamp("1990-01-01") <= _stale_upload_ts <= pd.Timestamp("2100-12-31")
+                except (ValueError, TypeError, OverflowError):
+                    _stale_in_range = False
+                if not _stale_in_range:
+                    st.session_state["biodex_test_upload_date"] = datetime.today().date()
             selected_biodex_test_date = st.date_input(
                 "Test Date",
                 key="biodex_test_upload_date",
@@ -18509,6 +18537,15 @@ def render_biodex_test_tab():
                     )
                     biodex_df, numeric_columns = prepare_biodex_dataframe(uploaded_file)
                     file_start_datetime = pd.to_datetime(biodex_df["Time"].iloc[0], errors="coerce")
+                    # Same bogus-1970 guard as the detection above (a non-timestamp
+                    # "Time" column, e.g. plain elapsed seconds, parses "successfully"
+                    # to a Unix-epoch-adjacent datetime instead of NaT) -- without this,
+                    # a bad file would silently store the session under the wrong date
+                    # instead of falling back to the manually entered one.
+                    if pd.notna(file_start_datetime) and not (
+                        datetime(1990, 1, 1) <= file_start_datetime <= datetime(2100, 12, 31)
+                    ):
+                        file_start_datetime = pd.NaT
                     if pd.notna(file_start_datetime):
                         file_start_datetime = file_start_datetime.to_pydatetime()
                     else:
