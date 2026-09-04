@@ -3400,63 +3400,37 @@ def _integrate_biodex_rep_phase(
     }
 
 def find_biodex_internal_external_crossing_pct(movement_pct, torque_values, search_start_pct, search_end_pct):
-    """Movement-cycle percent where `torque_values` crosses from positive to negative
-    within [search_start_pct, search_end_pct], linearly interpolated between samples.
+    """Movement-cycle percent (or, for a time-aligned curve, elapsed seconds) where
+    `torque_values` crosses from positive to negative within
+    [search_start_pct, search_end_pct], linearly interpolated between samples.
 
     Used to split a conditioning rep/group's aligned curve into its internal-rotation
-    (positive) and external-rotation (negative) portions for the Phase View toggle, on the
-    same 0-100% axis the curves are already plotted on. Falls back to search_end_pct if no
+    (positive) and external-rotation (negative) portions for the Phase View toggle, on
+    whichever axis the curve is already plotted on. Falls back to search_end_pct if no
     crossing is found in range (e.g. a noisy or incomplete curve).
+
+    Anchored to the window's own peak torque sample before searching forward, same as
+    find_biodex_rep_crossing_idx_and_time -- searching from search_start_pct directly
+    can false-trigger on a brief noise dip during the ascent (torque hasn't reliably
+    separated from zero yet that early), well before the real internal/external
+    reversal. Nothing before the peak matters for finding the post-peak crossing.
     """
     movement_pct = np.asarray(movement_pct, dtype=float)
     torque_values = np.asarray(torque_values, dtype=float)
     mask = (movement_pct >= search_start_pct) & (movement_pct <= search_end_pct)
     idxs = np.flatnonzero(mask)
-    for i in range(len(idxs) - 1):
-        i0, i1 = idxs[i], idxs[i + 1]
+    if len(idxs) < 2:
+        return float(search_end_pct)
+    peak_local_idx = int(np.argmax(torque_values[idxs]))
+    search_idxs = idxs[peak_local_idx:]
+    for i in range(len(search_idxs) - 1):
+        i0, i1 = search_idxs[i], search_idxs[i + 1]
         if torque_values[i0] > 0 and torque_values[i1] <= 0:
             v0, v1 = torque_values[i0], torque_values[i1]
             t0, t1 = movement_pct[i0], movement_pct[i1]
             frac = v0 / (v0 - v1) if (v0 - v1) != 0 else 0.0
             return float(t0 + frac * (t1 - t0))
     return float(search_end_pct)
-
-def _diagnose_biodex_internal_peak_structure(segment_time, segment_torque):
-    """Diagnostic only — does not affect IR Torque, RTD, alignment, or any other value.
-
-    IR Torque (and therefore Internal RTD) is `argmax` over the internal segment. When
-    a rep has two comparable-height sub-contractions (a double peak) or a broad
-    plateau, sample-level noise can flip which candidate wins, moving IR Torque and RTD
-    by a large amount even though the underlying contraction barely changed. This
-    doesn't fix that — it can't, the ambiguity is real — but it reports how many
-    distinct peaks were found and how far apart the top two are in time, so a
-    suspicious jump in IR Torque or Internal RTD between reps can be checked against
-    "did this rep actually have two peaks" instead of just guessed at.
-
-    Returns (peak_count, gap_seconds). peak_count is 1 for a clean single-peak rep
-    (the normal case); gap_seconds is None unless at least two candidate peaks were
-    found.
-    """
-    if len(segment_torque) < 7:
-        return 1, None
-    smooth_window = get_valid_savgol_window(11, len(segment_torque), 3)
-    smooth = (
-        savgol_filter(segment_torque, window_length=smooth_window, polyorder=3)
-        if smooth_window is not None else segment_torque
-    )
-    amplitude_span = float(np.nanmax(smooth) - np.nanmin(smooth))
-    if amplitude_span <= 0:
-        return 1, None
-    prominence = max(1.0, amplitude_span * 0.15)
-    min_distance = max(1, len(smooth) // 12)
-    peaks, props = find_peaks(smooth, prominence=prominence, distance=min_distance)
-    if len(peaks) < 1:
-        return 1, None
-    gap_s = None
-    if len(peaks) >= 2:
-        top2 = np.sort(peaks[np.argsort(props["prominences"])[-2:]])
-        gap_s = float(segment_time[top2[1]] - segment_time[top2[0]])
-    return len(peaks), gap_s
 
 def find_biodex_rep_crossing_idx_and_time(time_values, torque_values, start_idx, end_idx):
     """The internal/external zero crossing within [start_idx, end_idx] on the raw
@@ -3507,8 +3481,8 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     internal-rotation values, but the second contraction is often too subtle for
     reliable peak-finding to isolate on its own — landmark detection (see
     detect_shoulder_er_ir_conditioning_rep_landmarks) no longer even attempts to find
-    it. This is inherently fragile when a rep has two comparable-height peaks (see
-    _diagnose_biodex_internal_peak_structure) — not fixed here, just measured.
+    it. This is inherently fragile when a rep has two comparable-height peaks — not
+    fixed here, just worth keeping in mind.
 
     AUC, by contrast, IS baseline-corrected: the dynamometer handle's own weight loads
     the sensor via gravity whenever the athlete isn't pushing, so the resting torque
@@ -3532,9 +3506,6 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     rep_df = rep_info["rep_df"]
     time_values = rep_df[time_col].to_numpy(dtype=float)
     torque_values = rep_df[value_col].to_numpy(dtype=float)
-    position_values = (
-        rep_df["Position_Deg"].to_numpy(dtype=float) if "Position_Deg" in rep_df.columns else None
-    )
 
     # The internal/external zero crossing is found fresh here, independent of whatever
     # landmark is pinned for alignment (see detect_shoulder_er_ir_conditioning_rep_landmarks
@@ -3584,24 +3555,6 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     internal_time_to_peak_s = float(time_values[internal_peak_idx] - time_values[start_idx])
     external_time_to_peak_s = float(time_values[external_peak_idx] - external_phase_start_time)
 
-    internal_peak_count, internal_peak_gap_s = _diagnose_biodex_internal_peak_structure(
-        time_values[start_idx:crossing_idx + 1], internal_segment,
-    )
-
-    # ROM (range of motion) per phase, from Position_Deg — separate from torque
-    # entirely. A fatigued rep can still hit a normal peak torque while sweeping less
-    # angle, which torque-only metrics have no way to show; None when position data
-    # isn't available for this test.
-    internal_rom_deg = None
-    external_rom_deg = None
-    if position_values is not None:
-        internal_pos_segment = position_values[start_idx:crossing_idx + 1]
-        external_pos_segment = position_values[crossing_idx:end_idx + 1]
-        if np.isfinite(internal_pos_segment).any():
-            internal_rom_deg = float(np.nanmax(internal_pos_segment) - np.nanmin(internal_pos_segment))
-        if np.isfinite(external_pos_segment).any():
-            external_rom_deg = float(np.nanmax(external_pos_segment) - np.nanmin(external_pos_segment))
-
     # ER/IR ratio: external (ER) strength as a fraction of internal (IR) strength — the
     # standard clinical convention for rotator-cuff strength ratios. Peak-torque-based,
     # so it's a single-instant snapshot — see the AUC-based ratio below for a
@@ -3619,7 +3572,7 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
     # neuromuscular readiness than peak torque alone — two reps can reach the same peak
     # at very different speeds, and RTD is what captures that difference. Inherits IR
     # Torque's peak-selection fragility (and worse: numerator and denominator can both
-    # jump together if peak selection flips) — cross-check against internal_peak_count.
+    # jump together if peak selection flips).
     internal_rtd_nm_s = (
         internal_peak_torque_nm / internal_time_to_peak_s if internal_time_to_peak_s > 0 else None
     )
@@ -3641,15 +3594,11 @@ def compute_biodex_conditioning_rep_auc(rep_info, time_col="Elapsed Seconds", va
         "internal_time_to_peak_s": internal_time_to_peak_s,
         "internal_peak_torque_nm": internal_peak_torque_nm,
         "internal_rtd_nm_s": internal_rtd_nm_s,
-        "internal_peak_count": internal_peak_count,
-        "internal_peak_gap_s": internal_peak_gap_s,
-        "internal_rom_deg": internal_rom_deg,
         "external_auc_nm_s": external["auc_nm_s"],
         "external_duration_s": external["phase_duration_s"],
         "external_time_to_peak_s": external_time_to_peak_s,
         "external_peak_torque_nm": external_peak_torque_nm,
         "external_rtd_nm_s": external_rtd_nm_s,
-        "external_rom_deg": external_rom_deg,
         "er_ir_ratio": er_ir_ratio,
         "auc_er_ir_ratio": auc_er_ir_ratio,
         "internal_phase_fraction": internal_phase_fraction,
@@ -3673,10 +3622,8 @@ def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, r
     IR Torque and Internal RTD are both fragile when a rep has two comparable-height
     internal peaks (double-peak or plateau reps) — sample-level noise can flip which
     candidate `argmax` picks, moving both values by a large amount for no real
-    physiological reason. Internal Peak Count / Internal Peak Gap are included so a
-    suspicious swing in either can be checked against "did this rep actually have two
-    peaks" — a count of 1 means the pick was unambiguous; 2+ means treat that rep's IR
-    Torque and RTD with more skepticism than usual, especially if the gap is small.
+    physiological reason. Not fixed here, just worth keeping in mind when a rep's IR
+    Torque or RTD looks like an outlier.
     """
     row = dict(meta)
     row["Bodyweight (kg)"] = round(bodyweight_kg, 1) if bodyweight_kg else None
@@ -3693,11 +3640,6 @@ def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, r
         row[f"{prefix}Internal Time to Peak (s)"] = float(np.mean([r["internal_time_to_peak_s"] for r in auc_results]))
         internal_rtd_values = [r["internal_rtd_nm_s"] for r in auc_results if r["internal_rtd_nm_s"] is not None]
         row[f"{prefix}Internal RTD (Nm/s)"] = float(np.mean(internal_rtd_values)) if internal_rtd_values else None
-        row[f"{prefix}Internal Peak Count"] = float(np.mean([r["internal_peak_count"] for r in auc_results]))
-        peak_gap_values = [r["internal_peak_gap_s"] for r in auc_results if r["internal_peak_gap_s"] is not None]
-        row[f"{prefix}Internal Peak Gap (s)"] = float(np.mean(peak_gap_values)) if peak_gap_values else None
-        rom_values = [r["internal_rom_deg"] for r in auc_results if r["internal_rom_deg"] is not None]
-        row[f"{prefix}Internal ROM (deg)"] = float(np.mean(rom_values)) if rom_values else None
     if phase_view in ("Full", "External"):
         er = float(np.mean([r["external_peak_torque_nm"] for r in auc_results]))
         row[f"{prefix}ER Torque{unit_suffix}"] = er
@@ -3706,8 +3648,6 @@ def build_biodex_peak_torque_row(meta, auc_results, bodyweight_kg, phase_view, r
         row[f"{prefix}External Time to Peak (s)"] = float(np.mean([r["external_time_to_peak_s"] for r in auc_results]))
         external_rtd_values = [r["external_rtd_nm_s"] for r in auc_results if r["external_rtd_nm_s"] is not None]
         row[f"{prefix}External RTD (Nm/s)"] = float(np.mean(external_rtd_values)) if external_rtd_values else None
-        external_rom_values = [r["external_rom_deg"] for r in auc_results if r["external_rom_deg"] is not None]
-        row[f"{prefix}External ROM (deg)"] = float(np.mean(external_rom_values)) if external_rom_values else None
     if phase_view == "Full":
         ratio_values = [r["er_ir_ratio"] for r in auc_results if r["er_ir_ratio"] is not None]
         row[f"{prefix}ER/IR Ratio"] = float(np.mean(ratio_values)) if ratio_values else None
@@ -3801,8 +3741,7 @@ def prepare_biodex_fatigue_trend_data(peak_torque_rows, auc_rows, series_col="At
         "Internal RTD (Nm/s)", "External RTD (Nm/s)",
         "Internal AUC (Nm·s)", "External AUC (Nm·s)",
         "Internal Duration (s)", "External Duration (s)", "Internal Phase Fraction",
-        "Internal ROM (deg)", "External ROM (deg)",
-        "Internal Peak Count", "Internal Peak Gap (s)", "Baseline Torque (Nm)",
+        "Baseline Torque (Nm)",
     ]
     metric_cols = [col for col in metric_priority if col in df.columns]
     metric_cols += [
@@ -22060,9 +21999,9 @@ Raw peak readings, not smoothed or averaged within the rep. ⚠️ **IR Torque i
 fragile**: when a rep has two comparable-height internal peaks (a double contraction or
 a broad plateau), sample-level noise can flip which one `argmax` picks, moving this
 value by a large amount even though the underlying contraction barely changed. Treat an
-isolated jump in IR Torque with more skepticism than the equivalent ER Torque jump, and
-cross-check it against **Internal Peak Count** below — ER Torque doesn't have this
-problem since the external phase only ever has one candidate trough.
+isolated jump in IR Torque with more skepticism than the equivalent ER Torque jump — ER
+Torque doesn't have this problem since the external phase only ever has one candidate
+trough.
 
 **IR Torque / ER Torque (Nm/kg)** — the above divided by the athlete's bodyweight in kg
 (looked up from the `takes` table, nearest date to the session — if the nearest record
@@ -22117,22 +22056,7 @@ IR Torque's fragility, worse**: if peak selection flips between two candidate pe
 both the numerator (torque) and denominator (time to reach it) shift at once, which can
 swing RTD by a large factor even when the contraction was nearly identical. This is the
 most fatigue-sensitive metric here by design, which is exactly why it's the one you can
-least afford to misread as physiology when it's actually landmark noise — always check
-**Internal Peak Count** alongside a notable RTD swing.
-
-**Internal Peak Count / Internal Peak Gap (s)** — diagnostics for the fragility flagged
-above, not fatigue metrics themselves. Peak Count is how many distinct local maxima
-(above a prominence threshold) were found in the internal phase: 1 means IR Torque and
-Internal RTD came from an unambiguous single peak; 2 or more means there were multiple
-comparable candidates, and Peak Gap (time between the top two) tells you how close
-together they were — a small gap with a large IR Torque or RTD swing from the previous
-rep is a sign of landmark noise, not a real strength change.
-
-**Internal/External ROM (deg)** — the range of Position_Deg swept during each phase
-(max − min), independent of torque entirely. A fatigued rep can still hit a normal peak
-torque while sweeping less angle — torque-only metrics have no way to show that, so ROM
-is the metric to watch for excursion shrinking even when the strength numbers still
-look fine.
+least afford to misread as physiology when it's actually landmark noise.
 
 **Baseline Torque (Nm)** — the per-rep resting torque value subtracted before AUC
 integration (see above), shown directly so it can be checked: it should sit in a
