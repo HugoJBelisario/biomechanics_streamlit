@@ -21280,8 +21280,8 @@ def render_biodex_test_tab():
                         )
                         session_bodyweight_by_run[run_id] = info["bodyweight_kg"] if info else None
 
+                    compare_used_time_axis = False
                     if compare_display_mode == "Individual Reps":
-                        compare_used_time_axis = False
                         for run_id in selected_compare_run_ids:
                             session_row = processed_sessions_df[
                                 processed_sessions_df["biodex_processing_run_id"] == run_id
@@ -21397,13 +21397,26 @@ def render_biodex_test_tab():
                                 ))
                     else:
                         for run_id in selected_compare_run_ids:
-                            curve_df = fetch_biodex_mean_curve(cur, run_id)
-                            if curve_df.empty:
-                                continue
-
                             session_row = processed_sessions_df[
                                 processed_sessions_df["biodex_processing_run_id"] == run_id
                             ].iloc[0]
+
+                            # Built live from the saved reps (same as Custom Groups),
+                            # not fetched from the persisted biodex_mean_curves table --
+                            # that table is always movement_pct-based, so reading from it
+                            # meant this chart couldn't ever show the raw-time axis
+                            # conditioning reps otherwise get everywhere else.
+                            session_valid_reps = reconstruct_biodex_rep_curves_from_saved_landmarks(
+                                cur,
+                                biodex_processing_run_id=int(run_id),
+                                biodex_test_id=int(session_row["biodex_test_id"]),
+                            )
+                            if not session_valid_reps:
+                                continue
+                            reps_long_df, mean_df, curve_metadata = build_biodex_aligned_curve_auto(session_valid_reps)
+                            if mean_df.empty:
+                                continue
+
                             label = short_session_labels.get(run_id, f"Run {run_id}")
                             color = athlete_color_map.get(session_row["athlete_name"], "#9ca3af")
                             bodyweight_kg = session_bodyweight_by_run.get(run_id)
@@ -21414,35 +21427,37 @@ def render_biodex_test_tab():
                             )
                             row_meta = {"Athlete": session_row["athlete_name"], "Session Date": session_date_str}
 
-                            # Phase View trims this saved mean curve the same way Custom
-                            # Groups and Individual Reps do -- the persisted curve is
-                            # always movement_pct-based (biodex_mean_curves has no
-                            # raw-time variant), so this always searches/trims on that
-                            # axis regardless of what the live-detection charts use.
-                            plot_curve_df = curve_df
+                            uses_time_axis = "rel_time_s" in mean_df.columns
+                            x_col = "rel_time_s" if uses_time_axis else "movement_pct"
+                            compare_used_time_axis = compare_used_time_axis or uses_time_axis
+
+                            # Phase View trims this mean curve the same way Custom Groups
+                            # and Individual Reps do.
+                            plot_mean_df = mean_df
                             if session_phase_view != "Full":
-                                crossing_pct = find_biodex_internal_external_crossing_pct(
-                                    curve_df["movement_pct"].to_numpy(), curve_df["mean_torque_nm"].to_numpy(),
-                                    0.0, 100.0,
+                                x_values = mean_df[x_col].to_numpy()
+                                crossing_x = find_biodex_internal_external_crossing_pct(
+                                    x_values, mean_df["mean_torque_nm"].to_numpy(),
+                                    float(x_values.min()), float(x_values.max()),
                                 )
                                 if session_phase_view == "Internal":
-                                    plot_curve_df = curve_df[curve_df["movement_pct"] <= crossing_pct]
+                                    plot_mean_df = mean_df[mean_df[x_col] <= crossing_x]
                                 else:
-                                    plot_curve_df = curve_df[curve_df["movement_pct"] >= crossing_pct]
-                            if plot_curve_df.empty:
+                                    plot_mean_df = mean_df[mean_df[x_col] >= crossing_x]
+                            if plot_mean_df.empty:
                                 continue
 
                             compare_fig.add_trace(go.Scatter(
-                                x=plot_curve_df["movement_pct"],
-                                y=plot_curve_df["mean_torque_nm"],
+                                x=plot_mean_df[x_col],
+                                y=plot_mean_df["mean_torque_nm"],
                                 mode="lines",
                                 line=dict(width=4, color=color),
                                 name=label,
                                 legendgroup=label,
                             ))
                             compare_fig.add_trace(go.Scatter(
-                                x=plot_curve_df["movement_pct"],
-                                y=plot_curve_df["upper_band"],
+                                x=plot_mean_df[x_col],
+                                y=plot_mean_df["upper_band"],
                                 mode="lines",
                                 line=dict(width=0),
                                 legendgroup=label,
@@ -21450,8 +21465,8 @@ def render_biodex_test_tab():
                                 hoverinfo="skip",
                             ))
                             compare_fig.add_trace(go.Scatter(
-                                x=plot_curve_df["movement_pct"],
-                                y=plot_curve_df["lower_band"],
+                                x=plot_mean_df[x_col],
+                                y=plot_mean_df["lower_band"],
                                 mode="lines",
                                 line=dict(width=0, color=color),
                                 fill="tonexty",
@@ -21461,11 +21476,6 @@ def render_biodex_test_tab():
                                 visible="legendonly",
                             ))
 
-                            session_valid_reps = reconstruct_biodex_rep_curves_from_saved_landmarks(
-                                cur,
-                                biodex_processing_run_id=int(run_id),
-                                biodex_test_id=int(session_row["biodex_test_id"]),
-                            )
                             session_auc_results = [
                                 r for r in (
                                     compute_biodex_conditioning_rep_auc(rep_info)
@@ -21489,19 +21499,12 @@ def render_biodex_test_tab():
                             title=(
                                 (
                                     "Individual Reps by Session"
-                                    + ("" if session_phase_view == "Full" else f" ({session_phase_view})")
+                                    if compare_display_mode == "Individual Reps"
+                                    else "Landmark-Aligned Biodex Mean Curves"
                                 )
-                                if compare_display_mode == "Individual Reps"
-                                else (
-                                    "Saved Landmark-Aligned Biodex Mean Curves"
-                                    + ("" if session_phase_view == "Full" else f" ({session_phase_view})")
-                                )
+                                + ("" if session_phase_view == "Full" else f" ({session_phase_view})")
                             ),
-                            xaxis_title=(
-                                "Time (s)"
-                                if compare_display_mode == "Individual Reps" and compare_used_time_axis
-                                else "Movement Cycle (%)"
-                            ),
+                            xaxis_title="Time (s)" if compare_used_time_axis else "Movement Cycle (%)",
                             yaxis_title="Torque",
                             height=600,
                             legend=dict(
