@@ -420,21 +420,58 @@ def prepare_biodex_dataframe(uploaded_file):
         if position_source_col is not None:
             df = df.rename(columns={position_source_col: "Position_Deg"})
 
+    # Same normalization for torque: most exports already call it "Torque_Nm",
+    # but at least one seen so far just calls it "Torque" -- every downstream
+    # rep-detection/AUC/chart check looks for the exact name "Torque_Nm", so an
+    # unrenamed column was silently treated as "this file has no torque data"
+    # even though the values were right there.
+    if "Torque_Nm" not in df.columns:
+        torque_source_col = next(
+            (col for col in df.columns if col.strip().lower().startswith("torque")),
+            None,
+        )
+        if torque_source_col is not None:
+            df = df.rename(columns={torque_source_col: "Torque_Nm"})
+
     if df.empty:
         raise ValueError("The uploaded Biodex file is empty.")
 
     if "Time" not in df.columns:
         raise ValueError("The uploaded Biodex file must include a 'Time' column.")
 
-    df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
-    df = df.dropna(subset=["Time"]).sort_values("Time").reset_index(drop=True)
+    # "Time" is a wall-clock timestamp in most exports (e.g. "8/21/2026
+    # 12:50:53.428000"), but at least one seen so far is plain elapsed seconds
+    # from test start instead ("0.0", "0.01", ...). pd.to_datetime on that
+    # numeric column doesn't fail -- it "succeeds" by treating the values as a
+    # nanosecond offset from 1970-01-01, so the whole file collapses to a
+    # near-epoch instant and every elapsed-seconds difference comes out wrong
+    # by a factor of ~1e9. Detect a genuinely numeric Time column up front and
+    # treat it as elapsed seconds directly instead of running it through
+    # datetime parsing at all.
+    raw_time_col = df["Time"]
+    time_as_numeric = pd.to_numeric(raw_time_col, errors="coerce")
+    if pd.api.types.is_numeric_dtype(raw_time_col) or time_as_numeric.notna().all():
+        df = df.loc[time_as_numeric.notna()].copy()
+        time_as_numeric = time_as_numeric.loc[df.index]
+        df = df.assign(**{"Elapsed Seconds": time_as_numeric - time_as_numeric.iloc[0]})
+        df = df.sort_values("Elapsed Seconds").reset_index(drop=True)
+        df["Time"] = pd.Timestamp("1970-01-01") + pd.to_timedelta(df["Elapsed Seconds"], unit="s")
+    else:
+        df["Time"] = pd.to_datetime(raw_time_col, errors="coerce")
+        df = df.dropna(subset=["Time"]).sort_values("Time").reset_index(drop=True)
+
+        if df.empty:
+            raise ValueError("The uploaded Biodex file does not contain any valid timestamps.")
+
+        start_time = df["Time"].iloc[0]
+        df["Elapsed Seconds"] = (df["Time"] - start_time).dt.total_seconds()
 
     if df.empty:
         raise ValueError("The uploaded Biodex file does not contain any valid timestamps.")
 
     numeric_columns = []
     for col in df.columns:
-        if col == "Time":
+        if col in ("Time", "Elapsed Seconds"):
             continue
         df[col] = pd.to_numeric(df[col], errors="coerce")
         if df[col].notna().any():
@@ -443,8 +480,6 @@ def prepare_biodex_dataframe(uploaded_file):
     if not numeric_columns:
         raise ValueError("The uploaded Biodex file does not contain any numeric measurement columns.")
 
-    start_time = df["Time"].iloc[0]
-    df["Elapsed Seconds"] = (df["Time"] - start_time).dt.total_seconds()
     return df, numeric_columns
 
 def fetch_all_athletes(cur):
