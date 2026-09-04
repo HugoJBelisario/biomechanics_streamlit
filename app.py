@@ -21500,7 +21500,7 @@ def render_biodex_test_tab():
                                 (
                                     "Individual Reps by Session"
                                     if compare_display_mode == "Individual Reps"
-                                    else "Landmark-Aligned Biodex Mean Curves"
+                                    else "Mean Torque Curve by Session"
                                 )
                                 + ("" if session_phase_view == "Full" else f" ({session_phase_view})")
                             ),
